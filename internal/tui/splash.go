@@ -8,7 +8,7 @@ const catLogo = `
       /\___/\
      / ⌐■_■ \
     (  = ~ = )
-     \__U___/
+     \______/
 `
 
 // RenderSplash returns a string representation of the loading splash screen.

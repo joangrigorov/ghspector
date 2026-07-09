@@ -52,16 +52,19 @@ type Model struct {
 	repos         []gh.Repository
 	runs          []gh.WorkflowRun
 	selectedRunIdx int
+	runStartIndex  int
 	runPage       int
 	hasMoreRuns   bool
 
 	jobs          []gh.WorkflowJob
 	selectedJobIdx int
+	jobStartIndex  int
 
 	// Logs browser
 	logs          string
 	logsViewport  viewport.Model
 	logsLoading   bool
+	followLogs    bool
 
 	// Status messages & flags
 	statusMsg   string
@@ -81,6 +84,10 @@ type initDataMsg struct {
 	err     error
 }
 type runsLoadedMsg struct {
+	runs []gh.WorkflowRun
+	err  error
+}
+type runsPolledMsg struct {
 	runs []gh.WorkflowRun
 	err  error
 }

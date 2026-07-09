@@ -22,6 +22,7 @@ type Theme struct {
 	StatusFailed     lipgloss.Style
 	StatusQueued     lipgloss.Style
 	StatusNeutral    lipgloss.Style
+	StatusWaiting    lipgloss.Style
 
 	// Custom UI styles
 	CatGlasses lipgloss.Style
@@ -103,6 +104,10 @@ func GetTheme() *Theme {
 
 		StatusNeutral: lipgloss.NewStyle().
 			Foreground(neutralColor),
+
+		StatusWaiting: lipgloss.NewStyle().
+			Foreground(primaryColor).
+			Bold(true),
 
 		// Logo Styles
 		CatGlasses: lipgloss.NewStyle().

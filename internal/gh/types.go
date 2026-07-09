@@ -48,6 +48,7 @@ type WorkflowRun struct {
 	UpdatedAt    time.Time   `json:"updated_at"`
 	Repository   Repository  `json:"repository"`
 	DisplayTitle string      `json:"display_title"`
+	Actor        *User       `json:"actor"`
 }
 
 // WorkflowJob represents a job in a GitHub Actions workflow run.
