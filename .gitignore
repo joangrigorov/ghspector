@@ -1,0 +1,18 @@
+# Binaries
+bin/
+dist/
+
+# System Files
+.DS_Store
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Config files (do not commit real local tokens)
+config.yaml
+config.yml
+.env
+.env.local
+.env.*.local
