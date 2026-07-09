@@ -55,10 +55,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				if m.selectedRunIdx < maxIdx {
 					m.selectedRunIdx++
+					m.scrollRuns()
 				}
 			case "k", "up":
 				if m.selectedRunIdx > 0 {
 					m.selectedRunIdx--
+					m.scrollRuns()
 				}
 			case "enter":
 				// If we selected "Load More..."
@@ -75,6 +77,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = viewSplash
 					m.loadingMsg = "Fetching jobs for " + run.Name
 					m.selectedJobIdx = 0
+					m.jobStartIndex = 0
 					m.jobs = nil
 					return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID)
 				}
@@ -84,6 +87,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.runPage = 1
 				m.hasMoreRuns = true
 				m.selectedRunIdx = 0
+				m.runStartIndex = 0
 				m.runs = nil
 				return m, m.fetchRunsCmd()
 			}
@@ -93,10 +97,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "j", "down":
 				if m.selectedJobIdx < len(m.jobs)-1 {
 					m.selectedJobIdx++
+					m.scrollJobs()
 				}
 			case "k", "up":
 				if m.selectedJobIdx > 0 {
 					m.selectedJobIdx--
+					m.scrollJobs()
 				}
 			case "enter":
 				if len(m.jobs) > 0 {
@@ -115,6 +121,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = viewSplash
 				m.loadingMsg = "Refreshing jobs"
 				m.jobs = nil
+				m.selectedJobIdx = 0
+				m.jobStartIndex = 0
 				return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID)
 			}
 
@@ -131,9 +139,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logsLoading = true
 				return m, m.fetchLogsCmd(run.Repository.Owner.Login, run.Repository.Name, job.ID)
 			default:
-				// Forward movement keys to viewport
+				// Forward movement keys to viewport and handle log follow status
+				oldY := m.logsViewport.YOffset
 				m.logsViewport, cmd = m.logsViewport.Update(msg)
 				cmds = append(cmds, cmd)
+
+				if m.logsViewport.YOffset < oldY {
+					m.followLogs = false
+				}
+				if m.logsViewport.AtBottom() {
+					m.followLogs = true
+				}
 			}
 
 		case viewSwitcher:
@@ -153,6 +169,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.runPage = 1
 				m.hasMoreRuns = true
 				m.selectedRunIdx = 0
+				m.runStartIndex = 0
 				return m, m.fetchRunsCmd()
 			case "esc":
 				m.state = m.prevState
@@ -176,7 +193,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Periodically poll active items on screen
 		var pollCmd tea.Cmd
 		if m.state == viewMain {
-			pollCmd = m.pollActiveRunsCmd()
+			pollCmd = m.pollRunsCmd()
 		} else if m.state == viewJobs {
 			pollCmd = m.pollActiveJobsCmd()
 		} else if m.state == viewLogs {
@@ -233,13 +250,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runs = append(m.runs, msg.runs...)
 		}
 
+		// Sort all runs using stable status priority and date logic
+		sortRuns(m.runs)
+
 		// If no runs or small amount returned, mark as no more runs
 		if len(msg.runs) == 0 {
 			m.hasMoreRuns = false
 		}
 
+		m.scrollRuns()
 		m.state = viewMain
 		m.statusMsg = "Successfully loaded runs"
+
+	case runsPolledMsg:
+		if msg.err == nil && len(msg.runs) > 0 {
+			m.runs = mergeRuns(m.runs, msg.runs)
+			m.scrollRuns()
+		}
 
 	case jobsLoadedMsg:
 		m.isLoading = false
@@ -249,6 +276,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.jobs = msg.jobs
+		sortJobs(m.jobs)
+		m.selectedJobIdx = 0
+		m.jobStartIndex = 0
 		m.state = viewJobs
 		m.statusMsg = ""
 
@@ -261,9 +291,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.logs = msg.logs
 
-		// Initialize/Update Viewport contents
-		m.logsViewport = viewport.New(m.width-4, m.height-8)
+		// Initialize viewport only if we are entering logs view for the first time
+		if m.state != viewLogs {
+			m.followLogs = true
+			m.logsViewport = viewport.New(m.width-4, m.height-8)
+			if m.logsViewport.Height < 5 {
+				m.logsViewport.Height = 5
+			}
+		}
+
 		m.logsViewport.SetContent(m.logs)
+		if m.followLogs {
+			m.logsViewport.GotoBottom()
+		}
 		m.state = viewLogs
 
 	case runUpdateMsg:
@@ -297,6 +337,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		sortRuns(m.runs)
+		m.scrollRuns()
 
 	case batchJobsUpdateMsg:
 		for _, update := range msg {
@@ -309,6 +351,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		sortJobs(m.jobs)
+		m.scrollJobs()
 	}
 
 	return m, tea.Batch(cmds...)
@@ -368,10 +412,8 @@ func (m Model) fetchRunsCmd() tea.Cmd {
 		}
 		wg.Wait()
 
-		// Sort all runs descending by CreatedAt
-		sort.Slice(allRuns, func(i, j int) bool {
-			return allRuns[i].CreatedAt.After(allRuns[j].CreatedAt)
-		})
+		// Sort all runs
+		sortRuns(allRuns)
 
 		return runsLoadedMsg{runs: allRuns}
 	}
@@ -393,39 +435,82 @@ func (m Model) fetchLogsCmd(owner, repo string, jobID int64) tea.Cmd {
 	}
 }
 
-// pollActiveRunsCmd fetches updates for running/queued workflows.
-func (m Model) pollActiveRunsCmd() tea.Cmd {
+// mergeRuns merges new workflow runs into the existing slice, updating status/conclusion, removing duplicates, and sorting by CreatedAt descending.
+func mergeRuns(existing []gh.WorkflowRun, newRuns []gh.WorkflowRun) []gh.WorkflowRun {
+	runMap := make(map[int64]gh.WorkflowRun)
+	for _, r := range existing {
+		runMap[r.ID] = r
+	}
+	for _, r := range newRuns {
+		runMap[r.ID] = r
+	}
+
+	merged := make([]gh.WorkflowRun, 0, len(runMap))
+	for _, r := range runMap {
+		merged = append(merged, r)
+	}
+
+	sortRuns(merged)
+
+	return merged
+}
+
+// pollRunsCmd fetches the first page of runs for active repositories to detect new runs and update existing ones.
+func (m Model) pollRunsCmd() tea.Cmd {
 	return func() tea.Msg {
+		if len(m.targets) == 0 {
+			return nil
+		}
+		target := m.targets[m.selectedTargetIdx]
+
+		// 1. Fetch repositories sorted by pushes
+		var repos []gh.Repository
+		var err error
+		if target.IsOrg {
+			repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 15)
+		} else {
+			repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 15)
+		}
+		if err != nil {
+			return runsPolledMsg{err: err}
+		}
+
+		if len(repos) == 0 {
+			return runsPolledMsg{runs: nil}
+		}
+
+		// 2. Fetch page 1 runs concurrently
 		var wg sync.WaitGroup
 		var mu sync.Mutex
-		var updates batchRunsUpdateMsg
+		var allRuns []gh.WorkflowRun
 
-		count := 0
-		for _, run := range m.runs {
-			if run.Status == "queued" || run.Status == "in_progress" {
-				// Don't poll more than 5 at a time
-				if count >= 5 {
-					break
-				}
-				count++
-				wg.Add(1)
-				go func(r gh.WorkflowRun) {
-					defer wg.Done()
-					updated, err := m.client.GetWorkflowRun(m.ctx, r.Repository.Owner.Login, r.Repository.Name, r.ID)
-					if err == nil {
-						mu.Lock()
-						updates = append(updates, runUpdateMsg{
-							runID:      r.ID,
-							status:     updated.Status,
-							conclusion: updated.Conclusion,
-						})
-						mu.Unlock()
+		limit := len(repos)
+		if limit > 8 {
+			limit = 8
+		}
+
+		for i := 0; i < limit; i++ {
+			repo := repos[i]
+			wg.Add(1)
+			go func(r gh.Repository) {
+				defer wg.Done()
+				runs, err := m.client.GetWorkflowRuns(m.ctx, r.Owner.Login, r.Name, 1, 8)
+				if err == nil {
+					for j := range runs {
+						runs[j].Repository = r
 					}
-				}(run)
-			}
+					mu.Lock()
+					allRuns = append(allRuns, runs...)
+					mu.Unlock()
+				}
+			}(repo)
 		}
 		wg.Wait()
-		return updates
+
+		// Sort all runs
+		sortRuns(allRuns)
+
+		return runsPolledMsg{runs: allRuns}
 	}
 }
 
@@ -470,4 +555,88 @@ func (m Model) pollLogsCmd() tea.Cmd {
 		}
 		return nil
 	}
+}
+
+// scrollRuns adjusts runStartIndex to keep the selectedRunIdx visible in the viewport.
+func (m *Model) scrollRuns() {
+	visibleRows := m.height - 12
+	if visibleRows < 5 {
+		visibleRows = 5
+	}
+	totalRows := len(m.runs)
+	if m.hasMoreRuns {
+		totalRows++
+	}
+	if m.selectedRunIdx < m.runStartIndex {
+		m.runStartIndex = m.selectedRunIdx
+	}
+	if m.selectedRunIdx >= m.runStartIndex+visibleRows {
+		m.runStartIndex = m.selectedRunIdx - visibleRows + 1
+	}
+	if m.runStartIndex > totalRows-visibleRows {
+		m.runStartIndex = totalRows - visibleRows
+	}
+	if m.runStartIndex < 0 {
+		m.runStartIndex = 0
+	}
+}
+
+// scrollJobs adjusts jobStartIndex to keep the selectedJobIdx visible in the viewport.
+func (m *Model) scrollJobs() {
+	visibleRows := m.height - 15
+	if visibleRows < 5 {
+		visibleRows = 5
+	}
+	totalRows := len(m.jobs)
+	if m.selectedJobIdx < m.jobStartIndex {
+		m.jobStartIndex = m.selectedJobIdx
+	}
+	if m.selectedJobIdx >= m.jobStartIndex+visibleRows {
+		m.jobStartIndex = m.selectedJobIdx - visibleRows + 1
+	}
+	if m.jobStartIndex > totalRows-visibleRows {
+		m.jobStartIndex = totalRows - visibleRows
+	}
+	if m.jobStartIndex < 0 {
+		m.jobStartIndex = 0
+	}
+}
+
+func statusPriority(status string) int {
+	switch status {
+	case "queued":
+		return 0
+	case "in_progress":
+		return 1
+	default:
+		return 2
+	}
+}
+
+func sortRuns(runs []gh.WorkflowRun) {
+	sort.SliceStable(runs, func(i, j int) bool {
+		pI := statusPriority(runs[i].Status)
+		pJ := statusPriority(runs[j].Status)
+		if pI != pJ {
+			return pI < pJ
+		}
+		if !runs[i].CreatedAt.Equal(runs[j].CreatedAt) {
+			return runs[i].CreatedAt.After(runs[j].CreatedAt)
+		}
+		return runs[i].ID > runs[j].ID
+	})
+}
+
+func sortJobs(jobs []gh.WorkflowJob) {
+	sort.SliceStable(jobs, func(i, j int) bool {
+		pI := statusPriority(jobs[i].Status)
+		pJ := statusPriority(jobs[j].Status)
+		if pI != pJ {
+			return pI < pJ
+		}
+		if !jobs[i].StartedAt.Equal(jobs[j].StartedAt) {
+			return jobs[i].StartedAt.After(jobs[j].StartedAt)
+		}
+		return jobs[i].ID > jobs[j].ID
+	})
 }

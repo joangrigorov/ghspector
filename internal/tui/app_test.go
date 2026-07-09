@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/viewport"
 
 	"ghspector/internal/auth"
 	"ghspector/internal/gh"
@@ -174,5 +176,130 @@ func TestTUI_Integration(t *testing.T) {
 	model = rawModel.(Model)
 	if model.state != viewMain {
 		t.Errorf("expected Esc to return to viewMain, got %d", model.state)
+	}
+
+	// 6. Test scrolling window functionality
+	model.height = 10 // restrict height
+	model.runs = make([]gh.WorkflowRun, 15) // mock 15 runs
+	model.selectedRunIdx = 0
+	model.runStartIndex = 0
+	model.hasMoreRuns = false
+
+	// Scroll down 9 times to row 9
+	for i := 0; i < 9; i++ {
+		model.selectedRunIdx++
+		model.scrollRuns()
+	}
+
+	// With height 10, visibleRows is m.height - 8 = 2.
+	// We started at index 0. If selectedRunIdx = 9, runStartIndex should have moved.
+	if model.runStartIndex == 0 {
+		t.Errorf("expected runStartIndex to scroll and be > 0, got %d (selectedRunIdx: %d)", model.runStartIndex, model.selectedRunIdx)
+	}
+
+	// 7. Test background polling merge and sorting order
+	now := time.Now()
+	runOld := gh.WorkflowRun{ID: 5001, Name: "Old Run", CreatedAt: now.Add(-1 * time.Hour)}
+	runNew := gh.WorkflowRun{ID: 5002, Name: "New Run", CreatedAt: now}
+	
+	// Start with only old run
+	model.runs = []gh.WorkflowRun{runOld}
+	
+	// Simulate poll returns a new run and updates status of old run
+	runOldUpdated := runOld
+	runOldUpdated.Status = "completed"
+	runOldUpdated.Conclusion = "success"
+	
+	polledMsg := runsPolledMsg{
+		runs: []gh.WorkflowRun{runOldUpdated, runNew},
+	}
+	
+	rawModel, _ = model.Update(polledMsg)
+	model = rawModel.(Model)
+	
+	if len(model.runs) != 2 {
+		t.Errorf("expected 2 runs after poll merge, got %d", len(model.runs))
+	}
+	// Check sorting (New run should be first because it is newer)
+	if model.runs[0].ID != 5002 {
+		t.Errorf("expected newest run to be first in list, got ID: %d", model.runs[0].ID)
+	}
+	// Check updated status of old run
+	if model.runs[1].Status != "completed" {
+		t.Errorf("expected old run status to be updated, got: %s", model.runs[1].Status)
+	}
+
+	// 8. Test status-based priority sorting (queued must float to the top)
+	runQueuedOld := gh.WorkflowRun{ID: 5003, Name: "Queued Old Run", Status: "queued", CreatedAt: now.Add(-2 * time.Hour)}
+	
+	polledMsgPriority := runsPolledMsg{
+		runs: []gh.WorkflowRun{runOldUpdated, runNew, runQueuedOld},
+	}
+	
+	rawModel, _ = model.Update(polledMsgPriority)
+	model = rawModel.(Model)
+	
+	if len(model.runs) != 3 {
+		t.Errorf("expected 3 runs, got %d", len(model.runs))
+	}
+	// The queued old run should be first (index 0) because queued priority is higher than completed
+	if model.runs[0].ID != 5003 {
+		t.Errorf("expected queued run to float to top (index 0), got ID: %d", model.runs[0].ID)
+	}
+
+	// 9. Test tail/follow logs behavior
+	model.state = viewLogs
+	model.followLogs = true
+	model.logsViewport = viewport.New(80, 5)
+	model.logsViewport.SetContent("line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7")
+
+	if !model.followLogs {
+		t.Error("expected followLogs to be true initially")
+	}
+
+	// Move scroll up: YOffset should become less than oldY (which was at bottom/max height)
+	// We can manually decrease YOffset to simulate scrolling up
+	model.logsViewport.YOffset = 1
+	rawModel, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("up")})
+	model = rawModel.(Model)
+
+	if model.followLogs {
+		t.Error("expected followLogs to be false after scrolling up")
+	}
+
+	// 10. Test waiting status and Actor rendering in main view
+	model.state = viewMain
+	model.runs = []gh.WorkflowRun{
+		{
+			ID:     6001,
+			Name:   "Waiting Run",
+			Status: "waiting",
+			Actor:  &gh.User{Login: "octocat"},
+			Repository: gh.Repository{
+				Name: "test-repo",
+			},
+		},
+	}
+	rendered := model.View()
+	// Should show actor "octocat"
+	if !strings.Contains(rendered, "octocat") {
+		t.Error("expected main view to render actor 'octocat'")
+	}
+	// Should render the waiting status indicator "◆"
+	if !strings.Contains(rendered, "◆") {
+		t.Error("expected main view to render waiting status indicator '◆'")
+	}
+
+	// 11. Test legend rendering & responsive hiding
+	model.width = 80
+	renderedWithLegend := model.View()
+	if !strings.Contains(renderedWithLegend, "Legend:") {
+		t.Error("expected legend to be rendered for screen width 80")
+	}
+
+	model.width = 60
+	renderedWithoutLegend := model.View()
+	if strings.Contains(renderedWithoutLegend, "Legend:") {
+		t.Error("expected legend to be hidden for screen width 60")
 	}
 }

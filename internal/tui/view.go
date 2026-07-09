@@ -58,6 +58,9 @@ func formatDuration(d time.Duration) string {
 }
 
 func (m Model) getStatusIndicator(status, conclusion string) string {
+	if status == "waiting" || conclusion == "action_required" {
+		return m.theme.StatusWaiting.Render("◆")
+	}
 	switch status {
 	case "queued":
 		return m.theme.StatusQueued.Render("□")
@@ -85,9 +88,9 @@ func (m Model) renderHeader() string {
 	}
 
 	rl := m.client.GetRateLimit()
-	rlStr := "Rate Limit: N/A"
+	rlStr := ""
 	if rl.Limit > 0 {
-		rlStr = fmt.Sprintf("API: %d/%d", rl.Remaining, rl.Limit)
+		rlStr = fmt.Sprintf("Rate Limit: %d/%d reqs", rl.Remaining, rl.Limit)
 		// Warning color if rate limit is low
 		if rl.Remaining < 200 {
 			rlStr = m.theme.StatusFailed.Render(rlStr)
@@ -101,18 +104,49 @@ func (m Model) renderHeader() string {
 	title := m.theme.Title.Render("ghspector")
 	contextInfo := m.theme.Subtitle.Render("Account/Org: " + activeTarget)
 
-	// Right-align rate limit
+	// Clamp/protect layout dimensions
 	width := m.width
 	if width < 40 {
 		width = 40
 	}
-	rightSpace := width - lipgloss.Width(title) - lipgloss.Width(contextInfo) - 4
-	if rightSpace < 2 {
-		rightSpace = 2
+
+	neededWidth := lipgloss.Width(title) + lipgloss.Width(contextInfo) + 6
+	if rlStr != "" {
+		neededWidth += lipgloss.Width(rlStr)
+	}
+
+	if width < neededWidth {
+		// Hide rate limit first
+		rlStr = ""
+		neededWidth = lipgloss.Width(title) + lipgloss.Width(contextInfo) + 6
+		if width < neededWidth {
+			// Hide context info too
+			contextInfo = ""
+		}
+	}
+
+	rightSpace := width - lipgloss.Width(title) - 4
+	if contextInfo != "" {
+		rightSpace -= lipgloss.Width(contextInfo)
+	}
+	if rlStr != "" {
+		rightSpace -= lipgloss.Width(rlStr)
+	}
+
+	if rightSpace < 1 {
+		rightSpace = 1
 	}
 	spaces := strings.Repeat(" ", rightSpace)
 
-	return "\n " + title + "  " + contextInfo + spaces + rlStr + "\n"
+	res := "\n " + title + "  "
+	if contextInfo != "" {
+		res += contextInfo
+	}
+	res += spaces
+	if rlStr != "" {
+		res += rlStr
+	}
+	return res + "\n"
 }
 
 // renderFooter renders the standard bottom bar.
@@ -129,14 +163,40 @@ func (m Model) renderFooter(keys []string) string {
 
 	status := ""
 	if m.statusMsg != "" {
-		status = m.theme.Subtitle.Render(" | msg: " + m.statusMsg)
+		lowerMsg := strings.ToLower(m.statusMsg)
+		if strings.HasPrefix(lowerMsg, "error") {
+			cleanErr := m.statusMsg
+			cleanErr = strings.TrimPrefix(cleanErr, "Error: ")
+			cleanErr = strings.TrimPrefix(cleanErr, "error: ")
+			status = " | " + m.theme.StatusFailed.Render("error: "+cleanErr)
+		} else {
+			status = m.theme.Subtitle.Render(" | msg: " + m.statusMsg)
+		}
 	}
 
 	content := strings.Join(formatted, "  ") + status
 	return "\n" + m.theme.BottomBar.Render(content) + "\n"
 }
 
-// renderMainView renders the Workflow Runs list.
+func shortenEvent(event string) string {
+	switch event {
+	case "pull_request":
+		return "pull_req"
+	case "pull_request_target":
+		return "pr_target"
+	case "workflow_dispatch":
+		return "dispatch"
+	case "workflow_run":
+		return "wf_run"
+	default:
+		if len(event) > 12 {
+			return event[:9] + "..."
+		}
+		return event
+	}
+}
+
+// renderMainView renders the Workflow Runs list with a scrolling window.
 func (m Model) renderMainView() string {
 	var sb strings.Builder
 
@@ -144,75 +204,104 @@ func (m Model) renderMainView() string {
 	sb.WriteString("\n")
 
 	// Table header
-	header := fmt.Sprintf("  %-3s %-20s %-30s %-12s %-12s", "ST", "REPOSITORY", "WORKFLOW RUN", "EVENT", "DURATION")
+	header := fmt.Sprintf("  %-3s %-18s %-26s %-12s %-12s %-12s", "ST", "REPOSITORY", "WORKFLOW RUN", "EVENT", "ACTOR", "DURATION")
 	sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
 
+	renderedCount := 0
 	if len(m.runs) == 0 {
 		sb.WriteString("\n  " + m.theme.HelpDesc.Render("No recent workflow runs found.") + "\n\n")
+		renderedCount = 3
 	} else {
-		for i, run := range m.runs {
-			statusInd := m.getStatusIndicator(run.Status, run.Conclusion)
-
-			// Calculate Duration / Age
-			durStr := ""
-			if run.Status == "in_progress" {
-				durStr = formatDuration(time.Since(run.CreatedAt))
-				durStr = m.theme.StatusRunning.Render(durStr)
-			} else if run.Status == "queued" {
-				durStr = "queued"
-				durStr = m.theme.StatusQueued.Render(durStr)
-			} else {
-				durStr = formatDuration(run.UpdatedAt.Sub(run.CreatedAt))
-			}
-
-			repoName := run.Repository.Name
-			if len(repoName) > 18 {
-				repoName = repoName[:15] + "..."
-			}
-
-			runName := run.Name
-			if runName == "" && run.DisplayTitle != "" {
-				runName = run.DisplayTitle
-			}
-			if len(runName) > 28 {
-				runName = runName[:25] + "..."
-			}
-
-			rowText := fmt.Sprintf("  %-3s %-20s %-30s %-12s %-12s",
-				statusInd,
-				repoName,
-				runName,
-				run.Event,
-				durStr,
-			)
-
-			if i == m.selectedRunIdx {
-				sb.WriteString(m.theme.TableSelected.Render(rowText) + "\n")
-			} else {
-				sb.WriteString(m.theme.TableRow.Render(rowText) + "\n")
-			}
+		visibleRows := m.height - 12
+		if visibleRows < 5 {
+			visibleRows = 5
 		}
 
-		// Draw "Load More" row
+		endIdx := m.runStartIndex + visibleRows
+		totalRows := len(m.runs)
 		if m.hasMoreRuns {
-			loadText := "  [-- Load More Workflow Runs... --]"
-			if m.selectedRunIdx == len(m.runs) {
-				sb.WriteString(m.theme.TableSelected.Render(loadText) + "\n")
-			} else {
-				sb.WriteString(m.theme.Subtitle.Render(loadText) + "\n")
+			totalRows++
+		}
+		if endIdx > totalRows {
+			endIdx = totalRows
+		}
+
+		renderedCount = endIdx - m.runStartIndex
+
+		for i := m.runStartIndex; i < endIdx; i++ {
+			if i < len(m.runs) {
+				run := m.runs[i]
+				statusInd := m.getStatusIndicator(run.Status, run.Conclusion)
+
+				// Calculate Duration / Age
+				durStr := ""
+				if run.Status == "in_progress" {
+					durStr = formatDuration(m.client.Now().Sub(run.CreatedAt))
+					durStr = m.theme.StatusRunning.Render(durStr)
+				} else if run.Status == "queued" {
+					durStr = "queued"
+					durStr = m.theme.StatusQueued.Render(durStr)
+				} else {
+					durStr = formatDuration(run.UpdatedAt.Sub(run.CreatedAt))
+				}
+
+				repoName := run.Repository.Name
+				if len(repoName) > 16 {
+					repoName = repoName[:13] + "..."
+				}
+
+				runName := run.Name
+				if runName == "" && run.DisplayTitle != "" {
+					runName = run.DisplayTitle
+				}
+				if len(runName) > 24 {
+					runName = runName[:21] + "..."
+				}
+
+				actorName := "unknown"
+				if run.Actor != nil && run.Actor.Login != "" {
+					actorName = run.Actor.Login
+				}
+				if len(actorName) > 12 {
+					actorName = actorName[:9] + "..."
+				}
+
+				rowText := fmt.Sprintf("  %-3s %-18s %-26s %-12s %-12s %-12s",
+					statusInd,
+					repoName,
+					runName,
+					shortenEvent(run.Event),
+					actorName,
+					durStr,
+				)
+
+				if i == m.selectedRunIdx {
+					sb.WriteString(m.theme.TableSelected.Render(rowText) + "\n")
+				} else {
+					sb.WriteString(m.theme.TableRow.Render(rowText) + "\n")
+				}
+			} else if i == len(m.runs) && m.hasMoreRuns {
+				loadText := "  [-- Load More Workflow Runs... --]"
+				if m.selectedRunIdx == len(m.runs) {
+					sb.WriteString(m.theme.TableSelected.Render(loadText) + "\n")
+				} else {
+					sb.WriteString(m.theme.Subtitle.Render(loadText) + "\n")
+				}
 			}
 		}
 	}
 
 	// Dynamic sizing pads
-	contentHeight := len(m.runs) + 6
-	if m.hasMoreRuns {
-		contentHeight++
+	contentHeight := renderedCount + 11
+	legendStr := m.renderLegend()
+	padding := m.height - contentHeight
+	if legendStr == "" {
+		padding += 2
 	}
-	padding := m.height - contentHeight - 5
 	for i := 0; i < padding; i++ {
 		sb.WriteString("\n")
 	}
+	sb.WriteString(legendStr)
 
 	keys := []string{"j/k:Navigate", "Enter:View Jobs", "o:Switch Context", "r:Refresh", "q:Quit"}
 	sb.WriteString(m.renderFooter(keys))
@@ -220,7 +309,7 @@ func (m Model) renderMainView() string {
 	return sb.String()
 }
 
-// renderJobsView renders the list of jobs in a workflow run.
+// renderJobsView renders the list of jobs in a workflow run with a scrolling window.
 func (m Model) renderJobsView() string {
 	var sb strings.Builder
 	sb.WriteString(m.renderHeader())
@@ -233,10 +322,25 @@ func (m Model) renderJobsView() string {
 	header := fmt.Sprintf("  %-3s %-40s %-15s %-12s", "ST", "JOB NAME", "STARTED", "DURATION")
 	sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
 
+	renderedCount := 0
 	if len(m.jobs) == 0 {
 		sb.WriteString("\n  " + m.theme.HelpDesc.Render("No jobs found for this workflow run.") + "\n\n")
+		renderedCount = 3
 	} else {
-		for i, job := range m.jobs {
+		visibleRows := m.height - 15
+		if visibleRows < 5 {
+			visibleRows = 5
+		}
+
+		endIdx := m.jobStartIndex + visibleRows
+		if endIdx > len(m.jobs) {
+			endIdx = len(m.jobs)
+		}
+
+		renderedCount = endIdx - m.jobStartIndex
+
+		for i := m.jobStartIndex; i < endIdx; i++ {
+			job := m.jobs[i]
 			statusInd := m.getStatusIndicator(job.Status, job.Conclusion)
 
 			startedStr := job.StartedAt.Format("15:04:05")
@@ -246,7 +350,7 @@ func (m Model) renderJobsView() string {
 
 			durStr := ""
 			if job.Status == "in_progress" {
-				durStr = formatDuration(time.Since(job.StartedAt))
+				durStr = formatDuration(m.client.Now().Sub(job.StartedAt))
 				durStr = m.theme.StatusRunning.Render(durStr)
 			} else if job.Status == "queued" {
 				durStr = "queued"
@@ -277,11 +381,16 @@ func (m Model) renderJobsView() string {
 		}
 	}
 
-	contentHeight := len(m.jobs) + 9
-	padding := m.height - contentHeight - 4
+	contentHeight := renderedCount + 14
+	legendStr := m.renderLegend()
+	padding := m.height - contentHeight
+	if legendStr == "" {
+		padding += 2
+	}
 	for i := 0; i < padding; i++ {
 		sb.WriteString("\n")
 	}
+	sb.WriteString(legendStr)
 
 	keys := []string{"j/k:Navigate", "Enter:View Logs", "Esc:Back", "r:Refresh", "q:Quit"}
 	sb.WriteString(m.renderFooter(keys))
@@ -352,4 +461,19 @@ func (m Model) renderSwitcherView() string {
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
+}
+
+func (m Model) renderLegend() string {
+	if m.width < 70 {
+		return ""
+	}
+
+	running := m.theme.StatusRunning.Render("■") + " running"
+	success := m.theme.StatusSuccessful.Render("■") + " success"
+	failed := m.theme.StatusFailed.Render("■") + " failed"
+	queued := m.theme.StatusQueued.Render("□") + " queued"
+	waiting := m.theme.StatusWaiting.Render("◆") + " waiting"
+
+	legend := fmt.Sprintf("  Legend: %s  %s  %s  %s  %s", running, success, failed, queued, waiting)
+	return legend + "\n"
 }

@@ -106,6 +106,14 @@ func TestClient_GetWorkflowRunsAndJobs(t *testing.T) {
 			w.Write([]byte("Job logs line 1\nJob logs line 2"))
 			return
 		}
+		if r.URL.Path == "/repos/owner/repo/actions/jobs/404/logs" {
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.
+RequestId:f907b3df-401e-0001-0fa1-0fc4e0000000
+Time:2026-07-09T12:51:16.9150158Z</Message></Error>`))
+			return
+		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
@@ -134,5 +142,15 @@ func TestClient_GetWorkflowRunsAndJobs(t *testing.T) {
 	}
 	if logs != "Job logs line 1\nJob logs line 2" {
 		t.Errorf("unexpected logs: %s", logs)
+	}
+
+	// Test XML BlobNotFound error parsing
+	_, err = client.GetJobLogs(context.Background(), "owner", "repo", 404)
+	if err == nil {
+		t.Fatal("expected error for job 404, got nil")
+	}
+	expectedErr := "github api logs error (status 404): BlobNotFound: The specified blob does not exist."
+	if err.Error() != expectedErr {
+		t.Errorf("expected error message %q, got %q", expectedErr, err.Error())
 	}
 }

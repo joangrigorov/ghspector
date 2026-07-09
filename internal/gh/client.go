@@ -3,12 +3,14 @@ package gh
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,8 +26,17 @@ type Client struct {
 	token      string
 	baseURL    string
 
-	mu        sync.RWMutex
-	rateLimit RateLimitInfo
+	mu           sync.RWMutex
+	rateLimit    RateLimitInfo
+	serverOffset time.Duration
+}
+
+// Now returns the current time synchronized with the GitHub API server clock.
+func (c *Client) Now() time.Time {
+	c.mu.RLock()
+	offset := c.serverOffset
+	c.mu.RUnlock()
+	return time.Now().Add(offset)
 }
 
 // NewClient returns a new GitHub API client.
@@ -64,6 +75,16 @@ func (c *Client) updateRateLimit(header http.Header) {
 	if resetStr := header.Get("X-RateLimit-Reset"); resetStr != "" {
 		if resetUnix, err := strconv.ParseInt(resetStr, 10, 64); err == nil {
 			c.rateLimit.Reset = time.Unix(resetUnix, 0)
+		}
+	}
+}
+
+func (c *Client) updateTimeOffset(header http.Header) {
+	if dateStr := header.Get("Date"); dateStr != "" {
+		if serverTime, err := http.ParseTime(dateStr); err == nil {
+			c.mu.Lock()
+			c.serverOffset = serverTime.Sub(time.Now())
+			c.mu.Unlock()
 		}
 	}
 }
@@ -126,6 +147,7 @@ func (c *Client) doRequest(ctx context.Context, method, apiPath string, query pa
 	defer resp.Body.Close()
 
 	c.updateRateLimit(resp.Header)
+	c.updateTimeOffset(resp.Header)
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return ErrRateLimited
@@ -263,6 +285,7 @@ func (c *Client) GetJobLogs(ctx context.Context, owner, repo string, jobID int64
 	defer resp.Body.Close()
 
 	c.updateRateLimit(resp.Header)
+	c.updateTimeOffset(resp.Header)
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return "", ErrRateLimited
@@ -272,6 +295,14 @@ func (c *Client) GetJobLogs(ctx context.Context, owner, repo string, jobID int64
 	}
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
+		var xErr xmlError
+		if err := xml.Unmarshal(body, &xErr); err == nil && xErr.Code != "" {
+			msg := xErr.Message
+			if idx := strings.Index(msg, "\n"); idx != -1 {
+				msg = strings.TrimSpace(msg[:idx])
+			}
+			return "", fmt.Errorf("github api logs error (status %d): %s: %s", resp.StatusCode, xErr.Code, msg)
+		}
 		return "", fmt.Errorf("github api logs error (status %d): %s", resp.StatusCode, string(body))
 	}
 
@@ -281,4 +312,9 @@ func (c *Client) GetJobLogs(ctx context.Context, owner, repo string, jobID int64
 	}
 
 	return string(body), nil
+}
+
+type xmlError struct {
+	Code    string `xml:"Code"`
+	Message string `xml:"Message"`
 }
