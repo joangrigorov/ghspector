@@ -277,9 +277,25 @@ func (m Model) tick() tea.Cmd {
 
 // pollTick schedules the next status poll event.
 func (m Model) pollTick() tea.Cmd {
-	interval := 5 * time.Second
+	workflowsInterval := 5
+	prsInterval := 10
+
+	if m.config != nil {
+		if m.config.PollingIntervalSeconds > 0 {
+			workflowsInterval = m.config.PollingIntervalSeconds
+			prsInterval = m.config.PollingIntervalSeconds
+		}
+		if m.config.Polling.WorkflowsIntervalSeconds > 0 {
+			workflowsInterval = m.config.Polling.WorkflowsIntervalSeconds
+		}
+		if m.config.Polling.PRsIntervalSeconds > 0 {
+			prsInterval = m.config.Polling.PRsIntervalSeconds
+		}
+	}
+
+	interval := time.Duration(workflowsInterval) * time.Second
 	if m.state == viewMain && m.activeTab == tabPRs {
-		interval = 10 * time.Second
+		interval = time.Duration(prsInterval) * time.Second
 	}
 	return tea.Tick(interval, func(t time.Time) tea.Msg {
 		return pollMsg(t)

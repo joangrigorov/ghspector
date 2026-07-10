@@ -12,12 +12,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// PollingConfig holds configuration for background polling intervals.
+type PollingConfig struct {
+	WorkflowsIntervalSeconds int `yaml:"workflows_interval_seconds,omitempty"`
+	PRsIntervalSeconds       int `yaml:"prs_interval_seconds,omitempty"`
+}
+
 // Config holds the configuration options.
 type Config struct {
-	GitHubToken            string `yaml:"github_token"`
-	DefaultOrg             string `yaml:"default_org,omitempty"`
-	DefaultAccount         string `yaml:"default_account,omitempty"`
-	PollingIntervalSeconds int    `yaml:"polling_interval_seconds,omitempty"`
+	GitHubToken            string        `yaml:"github_token"`
+	DefaultOrg             string        `yaml:"default_org,omitempty"`
+	DefaultAccount         string        `yaml:"default_account,omitempty"`
+	PollingIntervalSeconds int           `yaml:"polling_interval_seconds,omitempty"`
+	Polling                PollingConfig `yaml:"polling,omitempty"`
 }
 
 // ErrUnauthenticated is returned when no GitHub token is found.
