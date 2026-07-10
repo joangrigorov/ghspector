@@ -77,6 +77,12 @@ nfpms:
 - Reordered CI steps in `.github/workflows/ci.yml` so `govulncheck` runs before test suite execution.
 - Added `.idea/` to `.gitignore` to prevent committing JetBrains IDE metadata.
 
+### 10. Documentation Update (Iteration 4)
+- Updated `README.md` intro to correctly describe `ghspector` as a universal GitHub operational TUI.
+- Added a section to the README explaining the core problem solved (eliminating browser tab clutter by aggregating runs/PRs across scopes).
+- Refined the `Features` section to highlight workflow monitoring, real-time log trailing, and pull request management (reading checks/comments and merging/closing from the keyboard).
+- Fixed the Table of Contents alignment.
+
 ## Verification Results
 
 - **Unit and Integration Tests**: All passed successfully (`go test ./...`).
