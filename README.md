@@ -38,10 +38,37 @@
 
 ## Installation
 
-> [!NOTE]
-> Detailed installation guides and pre-built packages will be available soon.
+`ghspector` offers pre-built binaries and native packages for multiple platforms.
 
-*TODO: Add installation instructions (Go installer, homebrew, binary downloads, etc.).*
+### Pre-Built Binaries
+
+Download the appropriate archive for your system (Linux, macOS, or Windows) from the [Releases](https://github.com/joangrigorov/ghspector/releases) page, extract it, and move the binary to a directory in your `PATH`.
+
+### Linux Package Installation
+
+We provide native packages for popular package managers. Download the package for your architecture (e.g., `amd64`, `arm64`) from the [Releases](https://github.com/joangrigorov/ghspector/releases) page and install it:
+
+#### Debian / Ubuntu (`.deb`)
+```bash
+sudo dpkg -i ghspector_<version>_linux_<arch>.deb
+```
+
+#### Fedora / RHEL (`.rpm`)
+```bash
+sudo rpm -ivh ghspector_<version>_linux_<arch>.rpm
+```
+
+#### Alpine Linux (`.apk`)
+```bash
+sudo apk add --allow-untrusted ghspector_<version>_linux_<arch>.apk
+```
+
+### From Source
+
+If you have Go 1.26.5 or later installed, you can build and install the latest release directly:
+```bash
+go install github.com/joangrigorov/ghspector/cmd/ghspector@latest
+```
 
 ---
 
