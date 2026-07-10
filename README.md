@@ -73,6 +73,42 @@ sudo rpm -ivh ghspector_<version>_linux_<arch>.rpm
 sudo apk add --allow-untrusted ghspector_<version>_linux_<arch>.apk
 ```
 
+### macOS Installation
+
+You can download and install the pre-built macOS binary directly via your terminal. 
+
+Select the commands corresponding to your Mac's architecture:
+
+#### Apple Silicon (M-series)
+```bash
+# Download the archive
+curl -Lo ghspector.tar.gz https://github.com/joangrigorov/ghspector/releases/latest/download/ghspector_darwin_arm64.tar.gz
+
+# Extract the binary
+tar -xzf ghspector.tar.gz ghspector
+
+# Move the binary to your PATH
+sudo mv ghspector /usr/local/bin/
+
+# Clean up
+rm ghspector.tar.gz
+```
+
+#### Intel
+```bash
+# Download the archive
+curl -Lo ghspector.tar.gz https://github.com/joangrigorov/ghspector/releases/latest/download/ghspector_darwin_x86_64.tar.gz
+
+# Extract the binary
+tar -xzf ghspector.tar.gz ghspector
+
+# Move the binary to your PATH
+sudo mv ghspector /usr/local/bin/
+
+# Clean up
+rm ghspector.tar.gz
+```
+
 ### From Source
 
 If you have Go 1.26.5 or later installed, you can build and install the latest release directly:
