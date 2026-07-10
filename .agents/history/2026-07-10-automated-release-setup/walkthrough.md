@@ -75,6 +75,7 @@ nfpms:
 ### 9. Workflow Optimization & Deprecation Fixes (Iteration 3)
 - Swapped deprecated `google-github-actions/release-please-action` for `googleapis/release-please-action` in `.github/workflows/release.yml`.
 - Reordered CI steps in `.github/workflows/ci.yml` so `govulncheck` runs before test suite execution.
+- Added `.idea/` to `.gitignore` to prevent committing JetBrains IDE metadata.
 
 ## Verification Results
 

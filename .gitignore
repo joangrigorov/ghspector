@@ -16,3 +16,6 @@ config.yml
 .env
 .env.local
 .env.*.local
+
+# IDEs and editors
+.idea/
