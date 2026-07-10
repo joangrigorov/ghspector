@@ -25,6 +25,8 @@ func (m Model) View() string {
 		return m.renderLogsView()
 	case viewSwitcher:
 		return m.renderSwitcherView()
+	case viewHelp:
+		return m.renderHelpView()
 	default:
 		return "Unknown application state"
 	}
@@ -85,6 +87,9 @@ func (m Model) renderHeader() string {
 	activeTarget := "None"
 	if len(m.targets) > 0 && m.selectedTargetIdx < len(m.targets) {
 		activeTarget = m.targets[m.selectedTargetIdx].Name
+	}
+	if m.filterActor != "" {
+		activeTarget += fmt.Sprintf(" (Filter: @%s)", m.filterActor)
 	}
 
 	rl := m.client.GetRateLimit()
@@ -213,6 +218,9 @@ func (m Model) renderMainView() string {
 		renderedCount = 3
 	} else {
 		visibleRows := m.height - 12
+		if m.showFilterInput {
+			visibleRows -= 2
+		}
 		if visibleRows < 5 {
 			visibleRows = 5
 		}
@@ -266,10 +274,13 @@ func (m Model) renderMainView() string {
 					actorName = actorName[:9] + "..."
 				}
 
-				rowText := fmt.Sprintf("  %-3s %-18s %-26s %-12s %-12s %-12s",
+				paddedRunName := fmt.Sprintf("%-26s", runName)
+				hyperlinkedRunName := renderHyperlink(paddedRunName, run.HTMLURL)
+
+				rowText := fmt.Sprintf("  %-3s %-18s %s %-12s %-12s %-12s",
 					statusInd,
 					repoName,
-					runName,
+					hyperlinkedRunName,
 					shortenEvent(run.Event),
 					actorName,
 					durStr,
@@ -292,18 +303,23 @@ func (m Model) renderMainView() string {
 	}
 
 	// Dynamic sizing pads
-	contentHeight := renderedCount + 11
-	legendStr := m.renderLegend()
+	contentHeight := renderedCount + 10
+	if m.showFilterInput {
+		contentHeight += 2
+	}
 	padding := m.height - contentHeight
-	if legendStr == "" {
-		padding += 2
+	if padding < 0 {
+		padding = 0
 	}
 	for i := 0; i < padding; i++ {
 		sb.WriteString("\n")
 	}
-	sb.WriteString(legendStr)
 
-	keys := []string{"j/k:Navigate", "Enter:View Jobs", "o:Switch Context", "r:Refresh", "q:Quit"}
+	if m.showFilterInput {
+		sb.WriteString("  Filter by actor: " + m.textInput.View() + "\n")
+	}
+
+	keys := []string{"?:Help", "j/k:Navigate", "Enter:Jobs", "w:Browser", "r:Refresh"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
@@ -316,8 +332,14 @@ func (m Model) renderJobsView() string {
 	sb.WriteString("\n")
 
 	run := m.runs[m.selectedRunIdx]
-	sb.WriteString("  " + m.theme.LogoText.Render("Workflow: "+run.Name) + "\n")
-	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Branch: %s | SHA: %s", run.Repository.FullName, run.HeadBranch, run.HeadSHA[:7])) + "\n\n")
+	workflowTitleText := renderHyperlink("Workflow: "+run.Name, run.HTMLURL)
+	sb.WriteString("  " + m.theme.LogoText.Render(workflowTitleText) + "\n")
+
+	attemptText := ""
+	if run.RunAttempt > 1 {
+		attemptText = fmt.Sprintf(" | Attempt %d of %d (use [ / ] to switch)", m.selectedAttempt, run.RunAttempt)
+	}
+	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Branch: %s | SHA: %s%s", run.Repository.FullName, run.HeadBranch, run.HeadSHA[:7], attemptText)) + "\n\n")
 
 	header := fmt.Sprintf("  %-3s %-40s %-15s %-12s", "ST", "JOB NAME", "STARTED", "DURATION")
 	sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
@@ -366,9 +388,12 @@ func (m Model) renderJobsView() string {
 				jobName = jobName[:35] + "..."
 			}
 
-			rowText := fmt.Sprintf("  %-3s %-40s %-15s %-12s",
+			paddedJobName := fmt.Sprintf("%-40s", jobName)
+			hyperlinkedJobName := renderHyperlink(paddedJobName, job.HTMLURL)
+
+			rowText := fmt.Sprintf("  %-3s %s %-15s %-12s",
 				statusInd,
-				jobName,
+				hyperlinkedJobName,
 				startedStr,
 				durStr,
 			)
@@ -382,17 +407,15 @@ func (m Model) renderJobsView() string {
 	}
 
 	contentHeight := renderedCount + 14
-	legendStr := m.renderLegend()
 	padding := m.height - contentHeight
-	if legendStr == "" {
-		padding += 2
+	if padding < 0 {
+		padding = 0
 	}
 	for i := 0; i < padding; i++ {
 		sb.WriteString("\n")
 	}
-	sb.WriteString(legendStr)
 
-	keys := []string{"j/k:Navigate", "Enter:View Logs", "Esc:Back", "r:Refresh", "q:Quit"}
+	keys := []string{"?:Help", "j/k:Navigate", "Enter:Logs", "Esc:Back", "w/v:Browser", "[/]:Attempts"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
@@ -422,7 +445,7 @@ func (m Model) renderLogsView() string {
 	// Draw viewport
 	sb.WriteString("  " + m.theme.Border.Render(m.logsViewport.View()) + "\n")
 
-	keys := []string{"u/d:Scroll Up/Down", "Esc:Back to Jobs", "r:Refresh logs", "q:Quit"}
+	keys := []string{"?:Help", "u/d:Scroll", "Esc:Back", "r:Refresh"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
@@ -457,23 +480,89 @@ func (m Model) renderSwitcherView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"j/k:Navigate", "Enter:Confirm", "Esc/o:Close Switcher", "q:Quit"}
+	keys := []string{"?:Help", "j/k:Navigate", "Enter:Confirm", "Esc:Close"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
 }
 
 func (m Model) renderLegend() string {
-	if m.width < 70 {
-		return ""
-	}
-
 	running := m.theme.StatusRunning.Render("■") + " running"
 	success := m.theme.StatusSuccessful.Render("■") + " success"
 	failed := m.theme.StatusFailed.Render("■") + " failed"
 	queued := m.theme.StatusQueued.Render("□") + " queued"
 	waiting := m.theme.StatusWaiting.Render("◆") + " waiting"
 
-	legend := fmt.Sprintf("  Legend: %s  %s  %s  %s  %s", running, success, failed, queued, waiting)
-	return legend + "\n"
+	if m.width < 70 {
+		return fmt.Sprintf("  Legend:\n    %s  %s\n    %s  %s\n    %s\n", running, success, failed, queued, waiting)
+	}
+	return fmt.Sprintf("  Legend: %s  %s  %s  %s  %s\n", running, success, failed, queued, waiting)
+}
+
+// renderHelpView renders the full keyboard shortcuts help list and status legend.
+func (m Model) renderHelpView() string {
+	var sb strings.Builder
+	sb.WriteString(m.renderHeader())
+	sb.WriteString("\n")
+
+	sb.WriteString("  " + m.theme.LogoText.Render("Keyboard Shortcuts & Help") + "\n\n")
+
+	// Global / Navigation shortcuts
+	sb.WriteString("  " + m.theme.TableHeader.Render("GLOBAL KEYS") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("?") + "                " + m.theme.HelpDesc.Render("Toggle this Help screen") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("o") + "                " + m.theme.HelpDesc.Render("Switch GitHub Account/Org Context") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("q / Ctrl+C") + "       " + m.theme.HelpDesc.Render("Quit application") + "\n\n")
+
+	// Main screen shortcuts
+	sb.WriteString("  " + m.theme.TableHeader.Render("WORKFLOW RUNS (Main View)") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("j / k / Up / Down") + " " + m.theme.HelpDesc.Render("Navigate runs list") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("Enter") + "              " + m.theme.HelpDesc.Render("View Jobs of selected workflow run") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("r") + "                  " + m.theme.HelpDesc.Render("Refresh workflow runs list") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("w") + "                  " + m.theme.HelpDesc.Render("Open selected workflow run in browser") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("m") + "                  " + m.theme.HelpDesc.Render("Toggle filtering by your own runs") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("f") + "                  " + m.theme.HelpDesc.Render("Filter by specific actor name") + "\n\n")
+
+	// Jobs screen shortcuts
+	sb.WriteString("  " + m.theme.TableHeader.Render("WORKFLOW JOBS") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("j / k / Up / Down") + " " + m.theme.HelpDesc.Render("Navigate jobs list") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("Enter") + "              " + m.theme.HelpDesc.Render("View Logs of selected job") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("[ / ]") + "              " + m.theme.HelpDesc.Render("Cycle through previous workflow run attempts") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("w") + "                  " + m.theme.HelpDesc.Render("Open workflow run in browser") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("v") + "                  " + m.theme.HelpDesc.Render("Open selected job in browser") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("Esc / Backspace") + "    " + m.theme.HelpDesc.Render("Go back to workflow runs list") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("r") + "                  " + m.theme.HelpDesc.Render("Refresh jobs list") + "\n\n")
+
+	// Logs screen shortcuts
+	sb.WriteString("  " + m.theme.TableHeader.Render("LOGS VIEWER") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("u / d") + "              " + m.theme.HelpDesc.Render("Scroll logs up/down") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("Esc / Backspace") + "    " + m.theme.HelpDesc.Render("Go back to jobs list") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("r") + "                  " + m.theme.HelpDesc.Render("Refresh logs") + "\n\n")
+
+	// Legend
+	sb.WriteString(m.renderLegend())
+	sb.WriteString("\n")
+
+	contentHeight := 28
+	if m.width < 70 {
+		contentHeight = 31
+	}
+	padding := m.height - contentHeight
+	if padding < 0 {
+		padding = 0
+	}
+	for i := 0; i < padding; i++ {
+		sb.WriteString("\n")
+	}
+
+	keys := []string{"Esc:Close Help", "q:Quit"}
+	sb.WriteString(m.renderFooter(keys))
+
+	return sb.String()
+}
+
+func renderHyperlink(text, url string) string {
+	if url == "" {
+		return text
+	}
+	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", url, text)
 }

@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -19,6 +22,35 @@ type batchJobsUpdateMsg []jobUpdateMsg
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
+
+	// If filtering input is active, intercept key messages first
+	if m.showFilterInput {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "enter":
+				m.filterActor = m.textInput.Value()
+				m.showFilterInput = false
+				m.state = viewSplash
+				m.loadingMsg = "Filtering runs"
+				m.runPage = 1
+				m.hasMoreRuns = true
+				m.selectedRunIdx = 0
+				m.runStartIndex = 0
+				m.runs = nil
+				return m, m.fetchRunsCmd()
+			case "esc":
+				m.showFilterInput = false
+				return m, nil
+			case "ctrl+c":
+				if m.cancel != nil {
+					m.cancel()
+				}
+				return m, tea.Quit
+			}
+		}
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
+	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -38,6 +70,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// open switcher
 					m.prevState = m.state
 					m.state = viewSwitcher
+				}
+				return m, nil
+			}
+		case "?":
+			if m.state != viewSplash {
+				if m.state == viewHelp {
+					// close help
+					m.state = m.prevState
+				} else {
+					// open help
+					m.prevState = m.state
+					m.state = viewHelp
 				}
 				return m, nil
 			}
@@ -79,7 +123,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedJobIdx = 0
 					m.jobStartIndex = 0
 					m.jobs = nil
-					return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID)
+					m.selectedAttempt = run.RunAttempt
+					return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
 				}
 			case "r", "ctrl+r":
 				m.state = viewSplash
@@ -90,6 +135,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.runStartIndex = 0
 				m.runs = nil
 				return m, m.fetchRunsCmd()
+			case "m":
+				if m.filterActor == m.currentUser && m.currentUser != "" {
+					m.filterActor = ""
+				} else {
+					m.filterActor = m.currentUser
+				}
+				m.state = viewSplash
+				m.loadingMsg = "Filtering runs"
+				m.runPage = 1
+				m.hasMoreRuns = true
+				m.selectedRunIdx = 0
+				m.runStartIndex = 0
+				m.runs = nil
+				return m, m.fetchRunsCmd()
+			case "f":
+				m.showFilterInput = true
+				m.textInput.SetValue(m.filterActor)
+				m.textInput.Focus()
+				return m, textinput.Blink
+			case "w":
+				if len(m.runs) > 0 && m.selectedRunIdx < len(m.runs) {
+					run := m.runs[m.selectedRunIdx]
+					if run.HTMLURL != "" {
+						_ = openBrowser(run.HTMLURL)
+					}
+				}
 			}
 
 		case viewJobs:
@@ -123,7 +194,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.jobs = nil
 				m.selectedJobIdx = 0
 				m.jobStartIndex = 0
-				return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID)
+				return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
+			case "[":
+				run := m.runs[m.selectedRunIdx]
+				if m.selectedAttempt > 1 {
+					m.selectedAttempt--
+					m.state = viewSplash
+					m.loadingMsg = fmt.Sprintf("Fetching jobs for %s (Attempt %d)", run.Name, m.selectedAttempt)
+					m.selectedJobIdx = 0
+					m.jobStartIndex = 0
+					m.jobs = nil
+					return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
+				}
+			case "]":
+				run := m.runs[m.selectedRunIdx]
+				if m.selectedAttempt < run.RunAttempt {
+					m.selectedAttempt++
+					m.state = viewSplash
+					m.loadingMsg = fmt.Sprintf("Fetching jobs for %s (Attempt %d)", run.Name, m.selectedAttempt)
+					m.selectedJobIdx = 0
+					m.jobStartIndex = 0
+					m.jobs = nil
+					return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
+				}
+			case "w":
+				run := m.runs[m.selectedRunIdx]
+				if run.HTMLURL != "" {
+					_ = openBrowser(run.HTMLURL)
+				}
+			case "v":
+				if len(m.jobs) > 0 && m.selectedJobIdx < len(m.jobs) {
+					job := m.jobs[m.selectedJobIdx]
+					if job.HTMLURL != "" {
+						_ = openBrowser(job.HTMLURL)
+					}
+				}
 			}
 
 		case viewLogs:
@@ -174,6 +279,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				m.state = m.prevState
 			}
+
+		case viewHelp:
+			switch msg.String() {
+			case "esc", "?":
+				m.state = m.prevState
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -206,6 +317,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 			return m, nil
 		}
+
+		m.currentUser = msg.user.Login
 
 		// Compile target options (User first, then Orgs)
 		m.targets = append(m.targets, Target{Name: msg.user.Login, IsOrg: false})
@@ -244,10 +357,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		filtered := msg.runs
+		if m.filterActor != "" {
+			filtered = nil
+			for _, r := range msg.runs {
+				if r.Actor != nil && matchActor(r.Actor.Login, m.filterActor) {
+					filtered = append(filtered, r)
+				}
+			}
+		}
+
 		if m.runPage == 1 {
-			m.runs = msg.runs
+			m.runs = filtered
 		} else {
-			m.runs = append(m.runs, msg.runs...)
+			m.runs = append(m.runs, filtered...)
 		}
 
 		// Sort all runs using stable status priority and date logic
@@ -264,7 +387,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case runsPolledMsg:
 		if msg.err == nil && len(msg.runs) > 0 {
-			m.runs = mergeRuns(m.runs, msg.runs)
+			filtered := msg.runs
+			if m.filterActor != "" {
+				filtered = nil
+				for _, r := range msg.runs {
+					if r.Actor != nil && matchActor(r.Actor.Login, m.filterActor) {
+						filtered = append(filtered, r)
+					}
+				}
+			}
+			m.runs = mergeRuns(m.runs, filtered)
 			m.scrollRuns()
 		}
 
@@ -398,7 +530,7 @@ func (m Model) fetchRunsCmd() tea.Cmd {
 			wg.Add(1)
 			go func(r gh.Repository) {
 				defer wg.Done()
-				runs, err := m.client.GetWorkflowRuns(m.ctx, r.Owner.Login, r.Name, m.runPage, 8)
+				runs, err := m.client.GetWorkflowRuns(m.ctx, r.Owner.Login, r.Name, m.runPage, 8, m.filterActor)
 				if err == nil {
 					// Embed owner and repo context into runs for displaying
 					for j := range runs {
@@ -419,10 +551,16 @@ func (m Model) fetchRunsCmd() tea.Cmd {
 	}
 }
 
-// fetchJobsCmd fetches jobs inside a workflow run.
-func (m Model) fetchJobsCmd(owner, repo string, runID int64) tea.Cmd {
+// fetchJobsCmd fetches jobs inside a workflow run, optionally for a specific attempt.
+func (m Model) fetchJobsCmd(owner, repo string, runID int64, attempt int) tea.Cmd {
 	return func() tea.Msg {
-		jobs, err := m.client.GetWorkflowRunJobs(m.ctx, owner, repo, runID)
+		var jobs []gh.WorkflowJob
+		var err error
+		if attempt > 0 {
+			jobs, err = m.client.GetWorkflowRunAttemptJobs(m.ctx, owner, repo, runID, attempt)
+		} else {
+			jobs, err = m.client.GetWorkflowRunJobs(m.ctx, owner, repo, runID)
+		}
 		return jobsLoadedMsg{jobs: jobs, err: err}
 	}
 }
@@ -494,7 +632,7 @@ func (m Model) pollRunsCmd() tea.Cmd {
 			wg.Add(1)
 			go func(r gh.Repository) {
 				defer wg.Done()
-				runs, err := m.client.GetWorkflowRuns(m.ctx, r.Owner.Login, r.Name, 1, 8)
+				runs, err := m.client.GetWorkflowRuns(m.ctx, r.Owner.Login, r.Name, 1, 8, m.filterActor)
 				if err == nil {
 					for j := range runs {
 						runs[j].Repository = r
@@ -639,4 +777,17 @@ func sortJobs(jobs []gh.WorkflowJob) {
 		}
 		return jobs[i].ID > jobs[j].ID
 	})
+}
+
+// matchActor matches a user login name against the filter term case-insensitively, handling bot suffixes.
+func matchActor(actorLogin, filter string) bool {
+	cleanActor := strings.ToLower(actorLogin)
+	cleanFilter := strings.ToLower(filter)
+	if cleanActor == cleanFilter {
+		return true
+	}
+	if strings.HasPrefix(cleanActor, cleanFilter) && strings.HasSuffix(cleanActor, "[bot]") {
+		return true
+	}
+	return false
 }
