@@ -72,6 +72,10 @@ nfpms:
 ### 8. Linter Quick Fixes (Iteration 2)
 - Resolved `staticcheck` warnings in `internal/tui/view.go` under check `QF1012`. Replaced performance-inefficient `sb.WriteString(fmt.Sprintf(...))` calls with standard `fmt.Fprintf(&sb, ...)` statements.
 
+### 9. Workflow Optimization & Deprecation Fixes (Iteration 3)
+- Swapped deprecated `google-github-actions/release-please-action` for `googleapis/release-please-action` in `.github/workflows/release.yml`.
+- Reordered CI steps in `.github/workflows/ci.yml` so `govulncheck` runs before test suite execution.
+
 ## Verification Results
 
 - **Unit and Integration Tests**: All passed successfully (`go test ./...`).
