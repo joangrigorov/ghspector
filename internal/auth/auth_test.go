@@ -119,3 +119,47 @@ func TestResolveTokenWithCliGetter(t *testing.T) {
 		}
 	})
 }
+
+func TestPollingConfig(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "ghspector-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	defer os.Unsetenv("XDG_CONFIG_HOME")
+	os.Setenv("APPDATA", tmpDir)
+	defer os.Unsetenv("APPDATA")
+
+	cfg := &Config{
+		GitHubToken: "test",
+		Polling: PollingConfig{
+			WorkflowsIntervalSeconds: 15,
+			PRsIntervalSeconds:       25,
+		},
+	}
+
+	err = SaveConfig(cfg)
+	if err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	path, err := ResolveConfigPath()
+	if err != nil {
+		t.Fatalf("failed to resolve config path: %v", err)
+	}
+
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	if loaded.Polling.WorkflowsIntervalSeconds != 15 {
+		t.Errorf("expected WorkflowsIntervalSeconds 15, got %d", loaded.Polling.WorkflowsIntervalSeconds)
+	}
+	if loaded.Polling.PRsIntervalSeconds != 25 {
+		t.Errorf("expected PRsIntervalSeconds 25, got %d", loaded.Polling.PRsIntervalSeconds)
+	}
+}
+

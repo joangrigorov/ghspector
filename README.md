@@ -88,8 +88,10 @@ default_org: "my-organization-name"
 # (Optional) Default user account context to open on startup
 default_account: "my-github-username"
 
-# (Optional) Background polling interval in seconds
-polling_interval_seconds: 5
+# (Optional) Background polling intervals in seconds (contextualized per tab/use-case)
+polling:
+  workflows_interval_seconds: 5
+  prs_interval_seconds: 10
 ```
 
 ---

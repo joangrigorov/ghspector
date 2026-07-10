@@ -954,3 +954,30 @@ func TestRenderJobsViewEmptySHA(t *testing.T) {
 		t.Errorf("expected view to contain 'SHA: unknown', got: %q", viewStr)
 	}
 }
+
+func TestModelPollTick(t *testing.T) {
+	client := gh.NewClient("test-token", "https://api.github.com")
+	
+	t.Run("Default intervals", func(t *testing.T) {
+		m := InitModel(client, &auth.Config{})
+		cmd := m.pollTick()
+		if cmd == nil {
+			t.Error("expected cmd to be non-nil")
+		}
+	})
+
+	t.Run("Configured intervals", func(t *testing.T) {
+		cfg := &auth.Config{
+			Polling: auth.PollingConfig{
+				WorkflowsIntervalSeconds: 15,
+				PRsIntervalSeconds:       25,
+			},
+		}
+		m := InitModel(client, cfg)
+		cmd := m.pollTick()
+		if cmd == nil {
+			t.Error("expected cmd to be non-nil")
+		}
+	})
+}
+
