@@ -211,12 +211,15 @@ func (c *Client) GetRepos(ctx context.Context, ownerType, owner string, page, pe
 	return repos, nil
 }
 
-// GetWorkflowRuns fetches the workflow runs for a specific repository.
-func (c *Client) GetWorkflowRuns(ctx context.Context, owner, repo string, page, perPage int) ([]WorkflowRun, error) {
+// GetWorkflowRuns fetches the workflow runs for a specific repository, optionally filtered by actor.
+func (c *Client) GetWorkflowRuns(ctx context.Context, owner, repo string, page, perPage int, actor string) ([]WorkflowRun, error) {
 	var wrResp WorkflowRunsResponse
 	q := params{
 		"page":     strconv.Itoa(page),
 		"per_page": strconv.Itoa(perPage),
+	}
+	if actor != "" {
+		q["actor"] = actor
 	}
 	path := fmt.Sprintf("/repos/%s/%s/actions/runs", owner, repo)
 	err := c.doRequest(ctx, "GET", path, q, &wrResp)
@@ -241,6 +244,17 @@ func (c *Client) GetWorkflowRun(ctx context.Context, owner, repo string, runID i
 func (c *Client) GetWorkflowRunJobs(ctx context.Context, owner, repo string, runID int64) ([]WorkflowJob, error) {
 	var jResp WorkflowJobsResponse
 	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/jobs", owner, repo, runID)
+	err := c.doRequest(ctx, "GET", path, nil, &jResp)
+	if err != nil {
+		return nil, err
+	}
+	return jResp.Jobs, nil
+}
+
+// GetWorkflowRunAttemptJobs fetches the jobs of a workflow run for a specific run attempt.
+func (c *Client) GetWorkflowRunAttemptJobs(ctx context.Context, owner, repo string, runID int64, attempt int) ([]WorkflowJob, error) {
+	var jResp WorkflowJobsResponse
+	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/attempts/%d/jobs", owner, repo, runID, attempt)
 	err := c.doRequest(ctx, "GET", path, nil, &jResp)
 	if err != nil {
 		return nil, err

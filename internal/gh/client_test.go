@@ -120,7 +120,7 @@ Time:2026-07-09T12:51:16.9150158Z</Message></Error>`))
 
 	client := NewClient("test-token", server.URL)
 
-	runs, err := client.GetWorkflowRuns(context.Background(), "owner", "repo", 1, 10)
+	runs, err := client.GetWorkflowRuns(context.Background(), "owner", "repo", 1, 10, "")
 	if err != nil {
 		t.Fatalf("unexpected error fetching runs: %v", err)
 	}
@@ -152,5 +152,60 @@ Time:2026-07-09T12:51:16.9150158Z</Message></Error>`))
 	expectedErr := "github api logs error (status 404): BlobNotFound: The specified blob does not exist."
 	if err.Error() != expectedErr {
 		t.Errorf("expected error message %q, got %q", expectedErr, err.Error())
+	}
+}
+
+func TestClient_GetWorkflowRuns_ActorFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		actor := r.URL.Query().Get("actor")
+		if actor != "octocat" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		runsResp := WorkflowRunsResponse{
+			TotalCount: 1,
+			WorkflowRuns: []WorkflowRun{
+				{ID: 102, Name: "Filtered Build", RunAttempt: 2},
+			},
+		}
+		json.NewEncoder(w).Encode(runsResp)
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	runs, err := client.GetWorkflowRuns(context.Background(), "owner", "repo", 1, 10, "octocat")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(runs) != 1 || runs[0].ID != 102 || runs[0].RunAttempt != 2 {
+		t.Errorf("unexpected runs response: %+v", runs)
+	}
+}
+
+func TestClient_GetWorkflowRunAttemptJobs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/owner/repo/actions/runs/101/attempts/2/jobs" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		jobsResp := WorkflowJobsResponse{
+			TotalCount: 1,
+			Jobs: []WorkflowJob{
+				{ID: 301, RunID: 101, Name: "attempt-2-job", Status: "completed", Conclusion: "success"},
+			},
+		}
+		json.NewEncoder(w).Encode(jobsResp)
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	jobs, err := client.GetWorkflowRunAttemptJobs(context.Background(), "owner", "repo", 101, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].ID != 301 || jobs[0].Name != "attempt-2-job" {
+		t.Errorf("unexpected jobs: %+v", jobs)
 	}
 }

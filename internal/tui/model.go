@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -19,6 +20,7 @@ const (
 	viewJobs
 	viewLogs
 	viewSwitcher
+	viewHelp
 )
 
 // Target represents a selected organization or user account to browse.
@@ -73,6 +75,15 @@ type Model struct {
 	
 	// Error handling
 	err         error
+
+	// Actor filter fields
+	filterActor     string
+	showFilterInput bool
+	textInput       textinput.Model
+	currentUser     string
+
+	// Attempt browsing
+	selectedAttempt int
 }
 
 // Message types
@@ -113,6 +124,11 @@ type jobUpdateMsg struct {
 // InitModel initializes the model.
 func InitModel(client *gh.Client, config *auth.Config) Model {
 	ctx, cancel := context.WithCancel(context.Background())
+	ti := textinput.New()
+	ti.Placeholder = "username"
+	ti.CharLimit = 39
+	ti.Width = 20
+
 	return Model{
 		client:       client,
 		config:       config,
@@ -123,6 +139,7 @@ func InitModel(client *gh.Client, config *auth.Config) Model {
 		loadingMsg:   "Initializing ghspector",
 		hasMoreRuns:  true,
 		runPage:      1,
+		textInput:    ti,
 	}
 }
 

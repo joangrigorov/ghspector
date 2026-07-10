@@ -290,16 +290,164 @@ func TestTUI_Integration(t *testing.T) {
 		t.Error("expected main view to render waiting status indicator '◆'")
 	}
 
-	// 11. Test legend rendering & responsive hiding
+	// 11. Test legend rendering on Help page
+	model.state = viewHelp
 	model.width = 80
 	renderedWithLegend := model.View()
 	if !strings.Contains(renderedWithLegend, "Legend:") {
-		t.Error("expected legend to be rendered for screen width 80")
+		t.Error("expected legend to be rendered for screen width 80 on Help view")
+	}
+}
+
+func TestTUI_HelpScreen(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	m := InitModel(client, nil)
+	m.state = viewMain
+
+	// Pressing ? should enter Help View
+	rawModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = rawModel.(Model)
+	if m.state != viewHelp {
+		t.Errorf("expected viewHelp, got state: %d", m.state)
+	}
+	if cmd != nil {
+		t.Error("expected no command for Help toggle")
 	}
 
-	model.width = 60
-	renderedWithoutLegend := model.View()
-	if strings.Contains(renderedWithoutLegend, "Legend:") {
-		t.Error("expected legend to be hidden for screen width 60")
+	viewStr := m.View()
+	if !strings.Contains(viewStr, "Keyboard Shortcuts & Help") {
+		t.Error("expected Help view to display shortcuts header")
+	}
+	if !strings.Contains(viewStr, "Legend:") {
+		t.Error("expected Help view to display status legend")
+	}
+
+	// Pressing esc should close Help View and restore viewMain
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("esc")})
+	m = rawModel.(Model)
+	if m.state != viewMain {
+		t.Errorf("expected restore to viewMain, got state: %d", m.state)
+	}
+}
+
+func TestTUI_ActorFilter(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	m := InitModel(client, nil)
+	m.currentUser = "octocat"
+	m.state = viewMain
+	m.targets = []Target{{Name: "octocat", IsOrg: false}}
+
+	// Test quick filter own toggle (m)
+	rawModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = rawModel.(Model)
+	if m.filterActor != "octocat" {
+		t.Errorf("expected filterActor to be 'octocat', got '%s'", m.filterActor)
+	}
+	if cmd == nil {
+		t.Fatal("expected fetchRunsCmd to be returned")
+	}
+
+	// Pressing m again should clear it
+	m.state = viewMain
+	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = rawModel.(Model)
+	if m.filterActor != "" {
+		t.Errorf("expected filterActor to be cleared, got '%s'", m.filterActor)
+	}
+
+	// Test custom filter prompt input (f)
+	m.state = viewMain
+	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = rawModel.(Model)
+	if !m.showFilterInput {
+		t.Error("expected showFilterInput to be true")
+	}
+
+	// Input keys while filter input is active
+	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = rawModel.(Model)
+	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	m = rawModel.(Model)
+
+	// Press enter to apply
+	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = rawModel.(Model)
+	if m.showFilterInput {
+		t.Error("expected filter input to be closed")
+	}
+	if m.filterActor != "ab" {
+		t.Errorf("expected filterActor 'ab', got '%s'", m.filterActor)
+	}
+	if cmd == nil {
+		t.Error("expected fetchRunsCmd after filter apply")
+	}
+}
+
+func TestTUI_AttemptNavigation(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	m := InitModel(client, nil)
+	m.state = viewJobs
+	m.runs = []gh.WorkflowRun{
+		{ID: 101, Name: "CI", RunAttempt: 3, Repository: gh.Repository{Name: "repo", Owner: &gh.User{Login: "owner"}}},
+	}
+	m.selectedRunIdx = 0
+	m.selectedAttempt = 3
+
+	// Pressing [ should navigate to attempt 2
+	rawModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[")})
+	m = rawModel.(Model)
+	if m.selectedAttempt != 2 {
+		t.Errorf("expected selectedAttempt to be 2, got %d", m.selectedAttempt)
+	}
+	if cmd == nil {
+		t.Fatal("expected fetchJobsCmd to be triggered")
+	}
+
+	// Pressing [ again should navigate to attempt 1
+	m.state = viewJobs
+	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[")})
+	m = rawModel.(Model)
+	if m.selectedAttempt != 1 {
+		t.Errorf("expected selectedAttempt to be 1, got %d", m.selectedAttempt)
+	}
+
+	// Pressing [ at attempt 1 should do nothing
+	m.state = viewJobs
+	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[")})
+	m = rawModel.(Model)
+	if m.selectedAttempt != 1 {
+		t.Errorf("expected attempt to stay 1, got %d", m.selectedAttempt)
+	}
+
+	// Pressing ] should navigate to attempt 2
+	m.state = viewJobs
+	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	m = rawModel.(Model)
+	if m.selectedAttempt != 2 {
+		t.Errorf("expected attempt to increase to 2, got %d", m.selectedAttempt)
+	}
+}
+
+func Test_MatchActor(t *testing.T) {
+	tests := []struct {
+		actor  string
+		filter string
+		want   bool
+	}{
+		{"yoan", "yoan", true},
+		{"Yoan", "yoan", true},
+		{"yoan", "Yoan", true},
+		{"dependabot[bot]", "dependabot", true},
+		{"dependabot[bot]", "dependabot[bot]", true},
+		{"dependabot[bot]", "dep", true},
+		{"some-other-bot[bot]", "some-other-bot", true},
+		{"yoan", "dependabot", false},
+	}
+
+	for _, tt := range tests {
+		got := matchActor(tt.actor, tt.filter)
+		if got != tt.want {
+			t.Errorf("matchActor(%q, %q) = %v; want %v", tt.actor, tt.filter, got, tt.want)
+		}
 	}
 }
