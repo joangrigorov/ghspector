@@ -20,12 +20,25 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 
+nfpms:
+  - file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    homepage: https://github.com/joangrigorov/ghspector
+    maintainer: Yoan-Alexander Grigorov
+    description: "Sleek, terminal-native TUI for browsing, monitoring, and debugging GitHub Actions workflows."
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     # use zip for windows archives
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     name_template: >-
       {{ .ProjectName }}_
       {{- .Os }}_

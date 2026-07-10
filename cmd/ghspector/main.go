@@ -12,10 +12,25 @@ import (
 	"ghspector/internal/tui"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
+	versionFlag := flag.Bool("v", false, "Print version information and exit")
+	versionLongFlag := flag.Bool("version", false, "Print version information and exit")
 	orgFlag := flag.String("org", "", "GitHub organization to view by default")
 	userFlag := flag.String("user", "", "GitHub user account to view by default")
 	flag.Parse()
+
+	if *versionFlag || *versionLongFlag {
+		fmt.Printf("ghspector %s\n", version)
+		fmt.Printf("commit: %s\n", commit)
+		fmt.Printf("build date: %s\n", date)
+		os.Exit(0)
+	}
 
 	// 1. Resolve token and read/write config
 	token, config, err := auth.ResolveToken()
