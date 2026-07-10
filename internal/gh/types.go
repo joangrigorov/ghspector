@@ -86,3 +86,103 @@ type WorkflowJobsResponse struct {
 	TotalCount int           `json:"total_count"`
 	Jobs       []WorkflowJob `json:"jobs"`
 }
+
+// PullRequest represents a GitHub pull request.
+type PullRequest struct {
+	ID                 int64          `json:"id"`
+	Number             int            `json:"number"`
+	Title              string         `json:"title"`
+	Body               string         `json:"body"`
+	State              string         `json:"state"` // open, closed
+	Draft              bool           `json:"draft"`
+	HTMLURL            string         `json:"html_url"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	MergedAt           *time.Time     `json:"merged_at"`
+	User               *User          `json:"user"` // PR author
+	Assignees          []User         `json:"assignees"`
+	RequestedReviewers []User         `json:"requested_reviewers"`
+	Labels             []Label        `json:"labels"`
+	Milestone          *Milestone     `json:"milestone"`
+	Head               PullRequestRef `json:"head"`
+	Base               PullRequestRef `json:"base"`
+	Repository         Repository     `json:"repository"`
+}
+
+// Label represents a GitHub label.
+type Label struct {
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
+}
+
+// Milestone represents a GitHub milestone.
+type Milestone struct {
+	Title string `json:"title"`
+}
+
+// PullRequestRef represents a git ref in a pull request (head or base).
+type PullRequestRef struct {
+	Label string      `json:"label"`
+	Ref   string      `json:"ref"`
+	SHA   string      `json:"sha"`
+	Repo  *Repository `json:"repo"`
+}
+
+// CommitFile represents a file changed in a PR or commit.
+type CommitFile struct {
+	Filename  string `json:"filename"`
+	Status    string `json:"status"` // added, modified, deleted
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
+	Changes   int    `json:"changes"`
+	Patch     string `json:"patch"`
+}
+
+// RepositoryCommit represents a commit in a repository.
+type RepositoryCommit struct {
+	SHA     string `json:"sha"`
+	HTMLURL string `json:"html_url"`
+	Commit  struct {
+		Message string `json:"message"`
+		Author  struct {
+			Name  string    `json:"name"`
+			Email string    `json:"email"`
+			Date  time.Time `json:"date"`
+		} `json:"author"`
+	} `json:"commit"`
+	Author *User `json:"author"`
+}
+
+// CheckRun represents a single check run (PR check).
+type CheckRun struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Status      string    `json:"status"`     // queued, in_progress, completed
+	Conclusion  string    `json:"conclusion"` // success, failure, etc.
+	HTMLURL     string    `json:"html_url"`
+	App         *CheckApp `json:"app"`
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
+type CheckApp struct {
+	Slug string `json:"slug"` // "github-actions" for Actions workflows
+	Name string `json:"name"`
+}
+
+type CheckRunsResponse struct {
+	TotalCount int        `json:"total_count"`
+	CheckRuns  []CheckRun `json:"check_runs"`
+}
+
+// IssueComment represents a comment on a PR (issue comment).
+type IssueComment struct {
+	ID        int64     `json:"id"`
+	HTMLURL   string    `json:"html_url"`
+	Body      string    `json:"body"`
+	User      *User     `json:"user"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
