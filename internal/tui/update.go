@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -23,6 +24,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
+	// Always handle tickMsg first to keep the loading spinner animating
+	if _, ok := msg.(tickMsg); ok {
+		m.tickCount++
+		return m, m.tick()
+	}
+
 	// If filtering input is active, intercept key messages first
 	if m.showFilterInput {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
@@ -30,7 +37,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.filterActor = m.textInput.Value()
 				m.showFilterInput = false
-				m.state = viewSplash
+				m.isLoading = true
 				m.loadingMsg = "Filtering runs"
 				m.runPage = 1
 				m.hasMoreRuns = true
@@ -50,6 +57,140 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.textInput, cmd = m.textInput.Update(msg)
 		return m, cmd
+	}
+
+	// Intercept keys for PR user filter input
+	if m.state == viewPRFilterInput {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "enter":
+				m.prFilterUser = m.textInput.Value()
+				m.state = viewPRFilterTypeSelect
+				return m, nil
+			case "esc":
+				m.state = viewMain
+				return m, nil
+			case "ctrl+c":
+				if m.cancel != nil {
+					m.cancel()
+				}
+				return m, tea.Quit
+			}
+		}
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
+	}
+
+	// Intercept keys for PR filter type selection
+	if m.state == viewPRFilterTypeSelect {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "a", "A":
+				m.filterPRAuthor = m.prFilterUser
+				m.filterPRAssignee = ""
+				m.filterPRReviewer = ""
+				m.state = viewMain
+				m.isLoading = true
+				m.loadingMsg = "Filtering PRs by author..."
+				m.pullPage = 1
+				m.hasMorePulls = true
+				m.selectedPullIdx = 0
+				m.pullStartIndex = 0
+				m.pulls = nil
+				return m, m.fetchPullsCmd()
+			case "i", "I":
+				m.filterPRAuthor = ""
+				m.filterPRAssignee = m.prFilterUser
+				m.filterPRReviewer = ""
+				m.state = viewMain
+				m.isLoading = true
+				m.loadingMsg = "Filtering PRs by assignee..."
+				m.pullPage = 1
+				m.hasMorePulls = true
+				m.selectedPullIdx = 0
+				m.pullStartIndex = 0
+				m.pulls = nil
+				return m, m.fetchPullsCmd()
+			case "r", "R":
+				m.filterPRAuthor = ""
+				m.filterPRAssignee = ""
+				m.filterPRReviewer = m.prFilterUser
+				m.state = viewMain
+				m.isLoading = true
+				m.loadingMsg = "Filtering PRs by reviewer..."
+				m.pullPage = 1
+				m.hasMorePulls = true
+				m.selectedPullIdx = 0
+				m.pullStartIndex = 0
+				m.pulls = nil
+				return m, m.fetchPullsCmd()
+			case "esc", "c", "C":
+				m.state = viewMain
+				return m, nil
+			}
+		}
+		return m, nil
+	}
+
+	// Intercept keys for merge confirmation
+	if m.state == viewPRDetails && m.mergeState > 0 {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch m.mergeState {
+			case 1: // choose method
+				switch keyMsg.String() {
+				case "s", "S":
+					m.mergeMethod = 0
+					m.mergeState = 2
+					return m, nil
+				case "m", "M":
+					m.mergeMethod = 1
+					m.mergeState = 2
+					return m, nil
+				case "r", "R":
+					m.mergeMethod = 2
+					m.mergeState = 2
+					return m, nil
+				case "esc", "c", "C":
+					m.mergeState = 0
+					return m, nil
+				}
+			case 2: // confirm
+				switch keyMsg.String() {
+				case "y", "Y":
+					m.isLoading = true
+					m.loadingMsg = "Merging pull request..."
+					methodStr := "squash"
+					if m.mergeMethod == 1 {
+						methodStr = "merge"
+					} else if m.mergeMethod == 2 {
+						methodStr = "rebase"
+					}
+					owner := m.selectedPull.Repository.Owner.Login
+					repo := m.selectedPull.Repository.Name
+					num := m.selectedPull.Number
+					m.mergeState = 0 // reset
+					return m, m.mergePRCmd(owner, repo, num, "", "", methodStr)
+				case "n", "N", "esc":
+					m.mergeState = 0
+					return m, nil
+				}
+			case 4: // confirm close
+				switch keyMsg.String() {
+				case "y", "Y":
+					m.isLoading = true
+					m.loadingMsg = "Closing pull request..."
+					owner := m.selectedPull.Repository.Owner.Login
+					repo := m.selectedPull.Repository.Name
+					num := m.selectedPull.Number
+					m.mergeState = 0 // reset
+					return m, m.closePRCmd(owner, repo, num)
+				case "n", "N", "esc":
+					m.mergeState = 0
+					return m, nil
+				}
+			}
+		}
+		return m, nil
 	}
 
 	switch msg := msg.(type) {
@@ -91,76 +232,462 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.state {
 		case viewMain:
 			switch msg.String() {
+			case "tab":
+				m.activeTab = (m.activeTab + 1) % 2
+				m.selectedRunIdx = 0
+				m.selectedPullIdx = 0
+				return m, m.fetchActiveTabCmd()
+			case "shift+tab":
+				m.activeTab = (m.activeTab - 1 + 2) % 2
+				m.selectedRunIdx = 0
+				m.selectedPullIdx = 0
+				return m, m.fetchActiveTabCmd()
 			case "j", "down":
-				maxIdx := len(m.runs)
-				if !m.hasMoreRuns {
-					maxIdx = len(m.runs) - 1
-				}
-
-				if m.selectedRunIdx < maxIdx {
-					m.selectedRunIdx++
-					m.scrollRuns()
+				if m.activeTab == tabWorkflows {
+					maxIdx := len(m.runs)
+					if !m.hasMoreRuns {
+						maxIdx = len(m.runs) - 1
+					}
+					if m.selectedRunIdx < maxIdx {
+						m.selectedRunIdx++
+						m.scrollRuns()
+					}
+				} else if m.activeTab == tabPRs {
+					maxIdx := len(m.pulls)
+					if !m.hasMorePulls {
+						maxIdx = len(m.pulls) - 1
+					}
+					if m.selectedPullIdx < maxIdx {
+						m.selectedPullIdx++
+						m.scrollPulls()
+					}
 				}
 			case "k", "up":
-				if m.selectedRunIdx > 0 {
-					m.selectedRunIdx--
-					m.scrollRuns()
+				if m.activeTab == tabWorkflows {
+					if m.selectedRunIdx > 0 {
+						m.selectedRunIdx--
+						m.scrollRuns()
+					}
+				} else if m.activeTab == tabPRs {
+					if m.selectedPullIdx > 0 {
+						m.selectedPullIdx--
+						m.scrollPulls()
+					}
 				}
 			case "enter":
-				// If we selected "Load More..."
-				if m.hasMoreRuns && m.selectedRunIdx == len(m.runs) {
-					m.runPage++
-					m.isLoading = true
-					m.statusMsg = "Loading more runs..."
-					return m, m.fetchRunsCmd()
-				}
+				if m.activeTab == tabWorkflows {
+					// If we selected "Load More..."
+					if m.hasMoreRuns && m.selectedRunIdx == len(m.runs) {
+						m.runPage++
+						m.isLoading = true
+						m.statusMsg = "Loading more runs..."
+						return m, m.fetchRunsCmd()
+					}
 
-				// Otherwise click into Workflow Run
-				if len(m.runs) > 0 && m.selectedRunIdx < len(m.runs) {
-					run := m.runs[m.selectedRunIdx]
-					m.state = viewSplash
-					m.loadingMsg = "Fetching jobs for " + run.Name
-					m.selectedJobIdx = 0
-					m.jobStartIndex = 0
-					m.jobs = nil
-					m.selectedAttempt = run.RunAttempt
-					return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
+					// Otherwise click into Workflow Run
+					if len(m.runs) > 0 && m.selectedRunIdx < len(m.runs) {
+						run := m.getRun()
+						m.state = viewJobs
+						m.isLoading = true
+						m.loadingMsg = "Fetching jobs for " + run.Name
+						m.selectedJobIdx = 0
+						m.jobStartIndex = 0
+						m.jobs = nil
+						m.selectedAttempt = run.RunAttempt
+						m.prevState = viewMain
+						return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
+					}
+				} else if m.activeTab == tabPRs {
+					// Load more PRs
+					if m.hasMorePulls && m.selectedPullIdx == len(m.pulls) {
+						m.pullPage++
+						m.isLoading = true
+						m.statusMsg = "Loading more PRs..."
+						return m, m.fetchPullsCmd()
+					}
+
+					// Go into PR details
+					if len(m.pulls) > 0 && m.selectedPullIdx < len(m.pulls) {
+						pr := m.pulls[m.selectedPullIdx]
+						m.selectedPull = &pr
+						m.state = viewPRDetails
+						m.isLoading = true
+						m.loadingMsg = fmt.Sprintf("Fetching details for PR #%d", pr.Number)
+						m.activePRTab = prTabInfo
+						m.selectedFileIdx = 0
+						m.selectedCommitIdx = 0
+						m.selectedCheckIdx = 0
+						m.prDescViewport.SetContent("Loading description...")
+						m.prChecks = nil
+						m.runs = nil
+						return m, m.fetchPRDetailsCmd(pr.Repository.Owner.Login, pr.Repository.Name, pr.Number, pr.Head.SHA, pr.Head.Ref)
+					}
 				}
 			case "r", "ctrl+r":
-				m.state = viewSplash
-				m.loadingMsg = "Refreshing workflow runs"
-				m.runPage = 1
-				m.hasMoreRuns = true
-				m.selectedRunIdx = 0
-				m.runStartIndex = 0
-				m.runs = nil
-				return m, m.fetchRunsCmd()
-			case "m":
-				if m.filterActor == m.currentUser && m.currentUser != "" {
-					m.filterActor = ""
-				} else {
-					m.filterActor = m.currentUser
+				m.isLoading = true
+				if m.activeTab == tabWorkflows {
+					m.loadingMsg = "Refreshing workflow runs"
+					m.runPage = 1
+					m.hasMoreRuns = true
+					m.selectedRunIdx = 0
+					m.runStartIndex = 0
+					m.runs = nil
+					return m, m.fetchRunsCmd()
+				} else if m.activeTab == tabPRs {
+					m.loadingMsg = "Refreshing pull requests"
+					m.pullPage = 1
+					m.hasMorePulls = true
+					m.selectedPullIdx = 0
+					m.pullStartIndex = 0
+					m.pulls = nil
+					return m, m.fetchPullsCmd()
 				}
-				m.state = viewSplash
-				m.loadingMsg = "Filtering runs"
-				m.runPage = 1
-				m.hasMoreRuns = true
-				m.selectedRunIdx = 0
-				m.runStartIndex = 0
-				m.runs = nil
-				return m, m.fetchRunsCmd()
+			case "m":
+				if m.activeTab == tabWorkflows {
+					if m.filterActor == m.currentUser && m.currentUser != "" {
+						m.filterActor = ""
+					} else {
+						m.filterActor = m.currentUser
+					}
+					m.isLoading = true
+					m.loadingMsg = "Filtering runs"
+					m.runPage = 1
+					m.hasMoreRuns = true
+					m.selectedRunIdx = 0
+					m.runStartIndex = 0
+					m.runs = nil
+					return m, m.fetchRunsCmd()
+				}
+			case "a":
+				if m.activeTab == tabPRs {
+					m.filterPRAuthor = m.currentUser
+					m.filterPRAssignee = ""
+					m.filterPRReviewer = ""
+					m.isLoading = true
+					m.loadingMsg = "Filtering PRs by author..."
+					m.pullPage = 1
+					m.hasMorePulls = true
+					m.selectedPullIdx = 0
+					m.pullStartIndex = 0
+					m.pulls = nil
+					return m, m.fetchPullsCmd()
+				}
+			case "i":
+				if m.activeTab == tabPRs {
+					m.filterPRAuthor = ""
+					m.filterPRAssignee = m.currentUser
+					m.filterPRReviewer = ""
+					m.isLoading = true
+					m.loadingMsg = "Filtering PRs by assignee..."
+					m.pullPage = 1
+					m.hasMorePulls = true
+					m.selectedPullIdx = 0
+					m.pullStartIndex = 0
+					m.pulls = nil
+					return m, m.fetchPullsCmd()
+				}
+			case "v":
+				if m.activeTab == tabPRs {
+					m.filterPRAuthor = ""
+					m.filterPRAssignee = ""
+					m.filterPRReviewer = m.currentUser
+					m.isLoading = true
+					m.loadingMsg = "Filtering PRs by reviewer..."
+					m.pullPage = 1
+					m.hasMorePulls = true
+					m.selectedPullIdx = 0
+					m.pullStartIndex = 0
+					m.pulls = nil
+					return m, m.fetchPullsCmd()
+				}
+			case "x":
+				if m.activeTab == tabPRs {
+					m.filterPRAuthor = ""
+					m.filterPRAssignee = ""
+					m.filterPRReviewer = ""
+					m.filterPRState = "open"
+					m.isLoading = true
+					m.loadingMsg = "Clearing PR filters..."
+					m.pullPage = 1
+					m.hasMorePulls = true
+					m.selectedPullIdx = 0
+					m.pullStartIndex = 0
+					m.pulls = nil
+					return m, m.fetchPullsCmd()
+				} else if m.activeTab == tabWorkflows {
+					m.filterActor = ""
+					m.isLoading = true
+					m.loadingMsg = "Clearing workflow filters..."
+					m.runPage = 1
+					m.hasMoreRuns = true
+					m.selectedRunIdx = 0
+					m.runStartIndex = 0
+					m.runs = nil
+					return m, m.fetchRunsCmd()
+				}
+			case "s":
+				if m.activeTab == tabPRs {
+					if m.filterPRState == "open" {
+						m.filterPRState = "closed"
+					} else if m.filterPRState == "closed" {
+						m.filterPRState = "all"
+					} else {
+						m.filterPRState = "open"
+					}
+					m.isLoading = true
+					m.loadingMsg = "Toggling PR state filter..."
+					m.pullPage = 1
+					m.hasMorePulls = true
+					m.selectedPullIdx = 0
+					m.pullStartIndex = 0
+					m.pulls = nil
+					return m, m.fetchPullsCmd()
+				}
 			case "f":
-				m.showFilterInput = true
-				m.textInput.SetValue(m.filterActor)
-				m.textInput.Focus()
-				return m, textinput.Blink
+				if m.activeTab == tabWorkflows {
+					m.showFilterInput = true
+					m.textInput.SetValue(m.filterActor)
+					m.textInput.Focus()
+					return m, textinput.Blink
+				} else if m.activeTab == tabPRs {
+					m.state = viewPRFilterInput
+					m.textInput.SetValue("")
+					m.textInput.Focus()
+					return m, textinput.Blink
+				}
 			case "w":
-				if len(m.runs) > 0 && m.selectedRunIdx < len(m.runs) {
-					run := m.runs[m.selectedRunIdx]
+				if m.activeTab == tabWorkflows && len(m.runs) > 0 && m.selectedRunIdx < len(m.runs) {
+					run := m.getRun()
 					if run.HTMLURL != "" {
 						_ = openBrowser(run.HTMLURL)
 					}
+				} else if m.activeTab == tabPRs && len(m.pulls) > 0 && m.selectedPullIdx < len(m.pulls) {
+					pr := m.pulls[m.selectedPullIdx]
+					if pr.HTMLURL != "" {
+						_ = openBrowser(pr.HTMLURL)
+					}
 				}
+			}
+
+		case viewSplash:
+			switch msg.String() {
+			case "esc", "backspace":
+				if m.cancel != nil {
+					m.cancel()
+				}
+				m.ctx, m.cancel = context.WithCancel(context.Background())
+				if m.prevState != viewSplash && m.prevState != 0 {
+					m.state = m.prevState
+				} else {
+					m.state = viewMain
+				}
+				m.isLoading = false
+				return m, nil
+			}
+
+		case viewPRDetails:
+			switch msg.String() {
+			case "esc", "backspace":
+				m.state = viewMain
+				m.activeTab = tabPRs
+			case "tab", "shift+tab":
+				m.prDescFocused = !m.prDescFocused
+			case "j", "down":
+				if m.prDescFocused {
+					m.prDescViewport.ScrollDown(1)
+				} else {
+					if len(m.prChecks) > 0 && m.selectedCheckIdx < len(m.prChecks)-1 {
+						m.selectedCheckIdx++
+					}
+				}
+			case "k", "up":
+				if m.prDescFocused {
+					m.prDescViewport.ScrollUp(1)
+				} else {
+					if m.selectedCheckIdx > 0 {
+						m.selectedCheckIdx--
+					}
+				}
+			case "u":
+				if m.prDescFocused {
+					m.prDescViewport.ScrollUp(6)
+				}
+			case "d":
+				if m.prDescFocused {
+					m.prDescViewport.ScrollDown(6)
+				}
+			case "enter":
+				if !m.prDescFocused && len(m.prChecks) > 0 && m.selectedCheckIdx < len(m.prChecks) {
+					check := m.prChecks[m.selectedCheckIdx]
+					isActions := false
+					if check.App != nil && (check.App.Slug == "github-actions" || strings.Contains(strings.ToLower(check.App.Name), "github actions") || strings.Contains(strings.ToLower(check.App.Slug), "action")) {
+						isActions = true
+					}
+					runID := int64(0)
+					if isActions && check.HTMLURL != "" {
+						runID = extractRunIDFromURL(check.HTMLURL)
+					}
+
+					matchedRunIdx := -1
+					if runID > 0 {
+						for idx, r := range m.runs {
+							if r.ID == runID {
+								matchedRunIdx = idx
+								break
+							}
+						}
+					}
+					if matchedRunIdx == -1 {
+						for idx, r := range m.runs {
+							if r.Name == check.Name || strings.Contains(strings.ToLower(check.Name), strings.ToLower(r.Name)) || strings.Contains(strings.ToLower(r.Name), strings.ToLower(check.Name)) {
+								matchedRunIdx = idx
+								break
+							}
+						}
+					}
+
+					if matchedRunIdx != -1 {
+						matchedRun := &m.runs[matchedRunIdx]
+						m.selectedRunIdx = matchedRunIdx
+						m.targetJobName = check.Name
+						m.state = viewJobs
+						m.isLoading = true
+						m.loadingMsg = "Fetching jobs for check workflow " + matchedRun.Name
+						m.selectedJobIdx = 0
+						m.jobStartIndex = 0
+						m.jobs = nil
+						m.selectedAttempt = matchedRun.RunAttempt
+						m.prevState = viewPRDetails
+						return m, m.fetchJobsCmd(matchedRun.Repository.Owner.Login, matchedRun.Repository.Name, matchedRun.ID, m.selectedAttempt)
+					} else if runID > 0 {
+						owner := m.selectedPull.Repository.Owner.Login
+						repo := m.selectedPull.Repository.Name
+						m.selectedRunIdx = -1
+						m.targetJobName = check.Name
+						m.state = viewJobs
+						m.isLoading = true
+						m.loadingMsg = "Fetching jobs for check run " + check.Name
+						m.selectedJobIdx = 0
+						m.jobStartIndex = 0
+						m.jobs = nil
+						m.selectedAttempt = 0
+						m.prevState = viewPRDetails
+						return m, m.fetchJobsCmd(owner, repo, runID, 0)
+					} else {
+						if check.HTMLURL != "" {
+							_ = openBrowser(check.HTMLURL)
+						}
+					}
+				}
+			case "w":
+				if m.prDescFocused {
+					if m.selectedPull != nil && m.selectedPull.HTMLURL != "" {
+						_ = openBrowser(m.selectedPull.HTMLURL)
+					}
+				} else if len(m.prChecks) > 0 && m.selectedCheckIdx < len(m.prChecks) {
+					check := m.prChecks[m.selectedCheckIdx]
+					if check.HTMLURL != "" {
+						_ = openBrowser(check.HTMLURL)
+					}
+				}
+			case "m":
+				if m.viewerCanMerge() {
+					m.mergeState = 1
+				} else {
+					m.statusMsg = "You don't have write scopes (repo) to merge this PR."
+				}
+			case "c":
+				if m.selectedPull != nil {
+					m.state = viewPRComments
+					m.isLoading = true
+					m.commentsViewport.SetContent("Loading comments...")
+					owner := m.selectedPull.Repository.Owner.Login
+					repo := m.selectedPull.Repository.Name
+					num := m.selectedPull.Number
+					return m, m.fetchPRCommentsCmd(owner, repo, num)
+				}
+			case "C":
+				if m.viewerCanMerge() {
+					m.mergeState = 4
+				} else {
+					m.statusMsg = "You don't have write scopes (repo) to close this PR."
+				}
+			case "v":
+				if m.selectedPull != nil {
+					m.state = viewPRCommits
+					m.selectedCommitIdx = 0
+				}
+			}
+
+		case viewPRCommits:
+			switch msg.String() {
+			case "esc", "backspace":
+				m.state = viewPRDetails
+			case "j", "down":
+				if len(m.prCommits) > 0 && m.selectedCommitIdx < len(m.prCommits)-1 {
+					m.selectedCommitIdx++
+				}
+			case "k", "up":
+				if m.selectedCommitIdx > 0 {
+					m.selectedCommitIdx--
+				}
+			case "enter":
+				if len(m.prCommits) > 0 && m.selectedCommitIdx < len(m.prCommits) {
+					c := m.prCommits[m.selectedCommitIdx]
+					m.isLoading = true
+					shaText := c.SHA
+					if len(shaText) > 7 {
+						shaText = shaText[:7]
+					}
+					m.loadingMsg = "Fetching commit details for " + shaText
+					owner := m.selectedPull.Repository.Owner.Login
+					repo := m.selectedPull.Repository.Name
+					return m, m.fetchCommitDetailsCmd(owner, repo, c.SHA)
+				}
+			case "q":
+				return m, tea.Quit
+			}
+
+		case viewCommitDetails:
+			switch msg.String() {
+			case "esc", "backspace":
+				m.state = viewPRCommits
+			case "j", "down":
+				if m.selectedCommitFileIdx < len(m.commitFiles)-1 {
+					m.selectedCommitFileIdx++
+					m.updateCommitDiffViewport()
+				}
+			case "k", "up":
+				if m.selectedCommitFileIdx > 0 {
+					m.selectedCommitFileIdx--
+					m.updateCommitDiffViewport()
+				}
+			case "u":
+				m.commitDiffViewport.ScrollUp(3)
+			case "d":
+				m.commitDiffViewport.ScrollDown(3)
+			case "w":
+				if m.viewingCommit != nil && m.viewingCommit.HTMLURL != "" {
+					_ = openBrowser(m.viewingCommit.HTMLURL)
+				}
+			}
+
+		case viewPRComments:
+			switch msg.String() {
+			case "esc", "backspace":
+				m.state = viewPRDetails
+			case "r", "ctrl+r":
+				if m.selectedPull != nil {
+					m.isLoading = true
+					m.commentsViewport.SetContent("Refreshing comments...")
+					owner := m.selectedPull.Repository.Owner.Login
+					repo := m.selectedPull.Repository.Name
+					num := m.selectedPull.Number
+					return m, m.fetchPRCommentsCmd(owner, repo, num)
+				}
+			default:
+				m.commentsViewport, cmd = m.commentsViewport.Update(msg)
+				cmds = append(cmds, cmd)
 			}
 
 		case viewJobs:
@@ -178,28 +705,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				if len(m.jobs) > 0 {
 					job := m.jobs[m.selectedJobIdx]
-					run := m.runs[m.selectedRunIdx]
-					m.state = viewSplash
+					run := m.getRun()
+					m.state = viewLogs
 					m.loadingMsg = "Fetching logs for " + job.Name
 					m.logs = ""
 					m.logsLoading = true
 					return m, m.fetchLogsCmd(run.Repository.Owner.Login, run.Repository.Name, job.ID)
 				}
 			case "esc", "backspace":
-				m.state = viewMain
+				if m.prevState == viewPRDetails {
+					m.state = viewPRDetails
+					m.prevState = viewMain
+				} else {
+					m.state = viewMain
+				}
 			case "r", "ctrl+r":
-				run := m.runs[m.selectedRunIdx]
-				m.state = viewSplash
+				run := m.getRun()
+				m.isLoading = true
 				m.loadingMsg = "Refreshing jobs"
 				m.jobs = nil
 				m.selectedJobIdx = 0
 				m.jobStartIndex = 0
 				return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
 			case "[":
-				run := m.runs[m.selectedRunIdx]
+				run := m.getRun()
 				if m.selectedAttempt > 1 {
 					m.selectedAttempt--
-					m.state = viewSplash
+					m.isLoading = true
 					m.loadingMsg = fmt.Sprintf("Fetching jobs for %s (Attempt %d)", run.Name, m.selectedAttempt)
 					m.selectedJobIdx = 0
 					m.jobStartIndex = 0
@@ -207,10 +739,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
 				}
 			case "]":
-				run := m.runs[m.selectedRunIdx]
+				run := m.getRun()
 				if m.selectedAttempt < run.RunAttempt {
 					m.selectedAttempt++
-					m.state = viewSplash
+					m.isLoading = true
 					m.loadingMsg = fmt.Sprintf("Fetching jobs for %s (Attempt %d)", run.Name, m.selectedAttempt)
 					m.selectedJobIdx = 0
 					m.jobStartIndex = 0
@@ -218,7 +750,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
 				}
 			case "w":
-				run := m.runs[m.selectedRunIdx]
+				run := m.getRun()
 				if run.HTMLURL != "" {
 					_ = openBrowser(run.HTMLURL)
 				}
@@ -237,11 +769,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = viewJobs
 			case "r", "ctrl+r":
 				job := m.jobs[m.selectedJobIdx]
-				run := m.runs[m.selectedRunIdx]
-				m.state = viewSplash
-				m.loadingMsg = "Refreshing logs"
+				run := m.getRun()
 				m.logs = ""
 				m.logsLoading = true
+				m.loadingMsg = "Refreshing logs"
 				return m, m.fetchLogsCmd(run.Repository.Owner.Login, run.Repository.Name, job.ID)
 			default:
 				// Forward movement keys to viewport and handle log follow status
@@ -268,14 +799,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedTargetIdx--
 				}
 			case "enter":
-				m.state = viewSplash
-				m.loadingMsg = "Loading runs for " + m.targets[m.selectedTargetIdx].Name
+				m.state = viewMain
+				m.isLoading = true
+				targetName := m.targets[m.selectedTargetIdx].Name
+				m.loadingMsg = "Loading data for " + targetName
+				
 				m.runs = nil
 				m.runPage = 1
 				m.hasMoreRuns = true
 				m.selectedRunIdx = 0
 				m.runStartIndex = 0
-				return m, m.fetchRunsCmd()
+				
+				m.pulls = nil
+				m.pullPage = 1
+				m.hasMorePulls = true
+				m.selectedPullIdx = 0
+				m.pullStartIndex = 0
+				
+				m.dashboardPRsCount = 0
+				m.dashboardWorkflowsCount = 0
+				
+				return m, m.fetchActiveTabCmd()
 			case "esc":
 				m.state = m.prevState
 			}
@@ -290,21 +834,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		
 		m.logsViewport.Width = msg.Width - 4
 		m.logsViewport.Height = msg.Height - 8
 		if m.logsViewport.Height < 5 {
 			m.logsViewport.Height = 5
 		}
+		
+		m.diffViewport.Width = msg.Width - 34
+		m.diffViewport.Height = msg.Height - 10
+		if m.diffViewport.Height < 5 {
+			m.diffViewport.Height = 5
+		}
+		
+		m.commentsViewport.Width = msg.Width - 6
+		m.commentsViewport.Height = msg.Height - 10
+		if m.commentsViewport.Height < 5 {
+			m.commentsViewport.Height = 5
+		}
+		
+		m.commitDiffViewport.Width = msg.Width - 44
+		m.commitDiffViewport.Height = msg.Height - 10
+		if m.commitDiffViewport.Height < 5 {
+			m.commitDiffViewport.Height = 5
+		}
 
-	case tickMsg:
-		m.tickCount++
-		return m, m.tick()
+		sidebarWidth := msg.Width / 5
+		if sidebarWidth < 40 {
+			sidebarWidth = 40
+		}
+		m.prDescViewport.Width = msg.Width - sidebarWidth - 4
+		if m.prDescViewport.Width < 20 {
+			m.prDescViewport.Width = 20
+		}
+		m.prDescViewport.Height = msg.Height - 10
+		if m.prDescViewport.Height < 5 {
+			m.prDescViewport.Height = 5
+		}
+		if m.selectedPull != nil && m.selectedPull.Body != "" {
+			if md, err := renderMarkdown(m.selectedPull.Body, m.prDescViewport.Width); err == nil {
+				m.prDescViewport.SetContent(md)
+			}
+		}
 
 	case pollMsg:
-		// Periodically poll active items on screen
 		var pollCmd tea.Cmd
-		if m.state == viewMain {
+		if m.state == viewMain && m.activeTab == tabWorkflows {
 			pollCmd = m.pollRunsCmd()
+		} else if m.state == viewMain && m.activeTab == tabPRs {
+			pollCmd = m.fetchPullsCmd()
 		} else if m.state == viewJobs {
 			pollCmd = m.pollActiveJobsCmd()
 		} else if m.state == viewLogs {
@@ -320,13 +898,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.currentUser = msg.user.Login
 
-		// Compile target options (User first, then Orgs)
 		m.targets = append(m.targets, Target{Name: msg.user.Login, IsOrg: false})
 		for _, org := range msg.orgs {
 			m.targets = append(m.targets, Target{Name: org.Login, IsOrg: true})
 		}
 
-		// Try to match defaults from configuration or fall back to user profile
 		m.selectedTargetIdx = 0
 		if m.config != nil {
 			if m.config.DefaultOrg != "" {
@@ -346,10 +922,182 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		m.loadingMsg = "Loading runs for " + m.targets[m.selectedTargetIdx].Name
-		return m, m.fetchRunsCmd()
+		m.loadingMsg = "Loading dashboard for " + m.targets[m.selectedTargetIdx].Name
+		return m, m.fetchActiveTabCmd()
+
+	case dashboardStatsLoadedMsg:
+		m.isLoading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading dashboard: " + msg.err.Error()
+		} else {
+			m.dashboardPRsCount = msg.prsCount
+			m.dashboardWorkflowsCount = msg.workflowsCount
+			m.statusMsg = "Dashboard stats updated"
+		}
+		m.state = viewMain
+
+	case pullsLoadedMsg:
+		if (m.state != viewMain && m.state != viewSplash) || m.activeTab != tabPRs {
+			return m, nil
+		}
+		m.isLoading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading PRs: " + msg.err.Error()
+			m.state = viewMain
+			return m, nil
+		}
+		
+		if m.pullPage == 1 {
+			m.pulls = msg.pulls
+		} else {
+			m.pulls = append(m.pulls, msg.pulls...)
+		}
+		
+		if len(msg.pulls) == 0 {
+			m.hasMorePulls = false
+		}
+		m.scrollPulls()
+		m.state = viewMain
+		m.statusMsg = "Successfully loaded Pull Requests"
+
+	case prDetailsLoadedMsg:
+		m.isLoading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading PR details: " + msg.err.Error()
+			m.state = viewMain
+			return m, nil
+		}
+		
+		m.selectedPull = msg.pull
+		m.prCommits = msg.commits
+		m.prFiles = msg.files
+		m.prChecks = msg.checkRuns
+		m.prCommitChecks = msg.commitChecks
+		m.prComments = msg.comments
+		m.runs = msg.actionsRuns
+		
+		m.activePRTab = prTabInfo
+		m.selectedFileIdx = 0
+		m.selectedCommitIdx = 0
+		m.selectedCheckIdx = 0
+		m.prDescFocused = true
+		
+		sidebarWidth := m.width / 5
+		if sidebarWidth < 40 {
+			sidebarWidth = 40
+		}
+		w := m.width - sidebarWidth - 4
+		if w < 20 {
+			w = 20
+		}
+		h := m.height - 10
+		if h < 5 {
+			h = 15
+		}
+		m.prDescViewport = viewport.New(w, h)
+		m.prDescViewport.SetContent(msg.renderedBody)
+		m.prDescViewport.YOffset = 0
+		
+		m.state = viewPRDetails
+		m.statusMsg = ""
+
+	case commitDetailsLoadedMsg:
+		m.isLoading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading commit details: " + msg.err.Error()
+			m.state = viewPRDetails
+			return m, nil
+		}
+		m.viewingCommit = msg.commit
+		m.commitFiles = msg.files
+		m.selectedCommitFileIdx = 0
+		m.updateCommitDiffViewport()
+		m.state = viewCommitDetails
+
+	case prCommentsLoadedMsg:
+		m.isLoading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading comments: " + msg.err.Error()
+			m.state = viewPRDetails
+			return m, nil
+		}
+		m.prComments = msg.comments
+		
+		// Sort comments by CreatedAt ascending (latest at bottom)
+		sort.Slice(m.prComments, func(i, j int) bool {
+			return m.prComments[i].CreatedAt.Before(m.prComments[j].CreatedAt)
+		})
+		
+		// Format comments and set viewport content
+		var sb strings.Builder
+		for idx, c := range m.prComments {
+			author := "unknown"
+			if c.User != nil {
+				author = c.User.Login
+			}
+			dateStr := c.CreatedAt.Format("2006-01-02 15:04:05")
+			sb.WriteString(m.theme.LogoText.Render(fmt.Sprintf("@%s", author)) + " " + m.theme.Subtitle.Render("commented at "+dateStr) + "\n")
+			
+			body := c.Body
+			if md, err := renderMarkdown(body, m.commentsViewport.Width-4); err == nil {
+				sb.WriteString(md)
+			} else {
+				sb.WriteString(body + "\n")
+			}
+			if idx < len(m.prComments)-1 {
+				sb.WriteString(m.theme.Border.Render(strings.Repeat("─", m.commentsViewport.Width-2)) + "\n\n")
+			}
+		}
+		
+		if len(m.prComments) == 0 {
+			sb.WriteString("No comments found for this Pull Request.")
+		}
+		
+		m.commentsViewport.SetContent(sb.String())
+		m.commentsViewport.GotoBottom()
+
+	case prMergedMsg:
+		m.isLoading = false
+		if msg.err != nil {
+			m.statusMsg = "Merge failed: " + msg.err.Error()
+			m.state = viewPRDetails
+			return m, nil
+		}
+		
+		m.statusMsg = "PR successfully merged!"
+		m.state = viewMain
+		m.isLoading = true
+		m.loadingMsg = "Refreshing pull requests"
+		m.pullPage = 1
+		m.hasMorePulls = true
+		m.selectedPullIdx = 0
+		m.pullStartIndex = 0
+		m.pulls = nil
+		return m, m.fetchPullsCmd()
+
+	case prClosedMsg:
+		m.isLoading = false
+		if msg.err != nil {
+			m.statusMsg = "Close failed: " + msg.err.Error()
+			m.state = viewPRDetails
+			return m, nil
+		}
+		
+		m.statusMsg = "PR successfully closed!"
+		m.state = viewMain
+		m.isLoading = true
+		m.loadingMsg = "Refreshing pull requests"
+		m.pullPage = 1
+		m.hasMorePulls = true
+		m.selectedPullIdx = 0
+		m.pullStartIndex = 0
+		m.pulls = nil
+		return m, m.fetchPullsCmd()
 
 	case runsLoadedMsg:
+		if (m.state != viewMain && m.state != viewSplash) || m.activeTab != tabWorkflows {
+			return m, nil
+		}
 		m.isLoading = false
 		if msg.err != nil {
 			m.statusMsg = "Error loading runs: " + msg.err.Error()
@@ -373,10 +1121,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runs = append(m.runs, filtered...)
 		}
 
-		// Sort all runs using stable status priority and date logic
 		sortRuns(m.runs)
 
-		// If no runs or small amount returned, mark as no more runs
 		if len(msg.runs) == 0 {
 			m.hasMoreRuns = false
 		}
@@ -386,6 +1132,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = "Successfully loaded runs"
 
 	case runsPolledMsg:
+		if m.state != viewMain || m.activeTab != tabWorkflows {
+			return m, nil
+		}
 		if msg.err == nil && len(msg.runs) > 0 {
 			filtered := msg.runs
 			if m.filterActor != "" {
@@ -404,13 +1153,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isLoading = false
 		if msg.err != nil {
 			m.statusMsg = "Error loading jobs: " + msg.err.Error()
-			m.state = viewMain
+			if m.prevState == viewPRDetails {
+				m.state = viewPRDetails
+			} else {
+				m.state = viewMain
+			}
 			return m, nil
+		}
+		if msg.run != nil {
+			m.viewingRun = msg.run
+		} else if m.selectedRunIdx >= 0 {
+			m.viewingRun = nil
 		}
 		m.jobs = msg.jobs
 		sortJobs(m.jobs)
+		
 		m.selectedJobIdx = 0
+		if m.targetJobName != "" {
+			for idx, job := range m.jobs {
+				if strings.EqualFold(job.Name, m.targetJobName) {
+					m.selectedJobIdx = idx
+					break
+				}
+			}
+			m.targetJobName = ""
+		}
+		
 		m.jobStartIndex = 0
+		m.scrollJobs()
 		m.state = viewJobs
 		m.statusMsg = ""
 
@@ -658,7 +1428,7 @@ func (m Model) pollActiveJobsCmd() tea.Cmd {
 		if len(m.jobs) == 0 {
 			return nil
 		}
-		run := m.runs[m.selectedRunIdx]
+		run := m.getRun()
 		updatedJobs, err := m.client.GetWorkflowRunJobs(m.ctx, run.Repository.Owner.Login, run.Repository.Name, run.ID)
 		if err != nil {
 			return nil
@@ -686,7 +1456,7 @@ func (m Model) pollLogsCmd() tea.Cmd {
 		if job.Status == "completed" {
 			return nil
 		}
-		run := m.runs[m.selectedRunIdx]
+		run := m.getRun()
 		logs, err := m.client.GetJobLogs(m.ctx, run.Repository.Owner.Login, run.Repository.Name, job.ID)
 		if err == nil {
 			return logsLoadedMsg{logs: logs}
@@ -790,4 +1560,400 @@ func matchActor(actorLogin, filter string) bool {
 		return true
 	}
 	return false
+}
+
+// scrollPulls adjusts pullStartIndex to keep the selectedPullIdx visible in the viewport.
+func (m *Model) scrollPulls() {
+	visibleRows := m.height - 12
+	if visibleRows < 5 {
+		visibleRows = 5
+	}
+	totalRows := len(m.pulls)
+	if m.hasMorePulls {
+		totalRows++
+	}
+	if m.selectedPullIdx < m.pullStartIndex {
+		m.pullStartIndex = m.selectedPullIdx
+	}
+	if m.selectedPullIdx >= m.pullStartIndex+visibleRows {
+		m.pullStartIndex = m.selectedPullIdx - visibleRows + 1
+	}
+	if m.pullStartIndex > totalRows-visibleRows {
+		m.pullStartIndex = totalRows - visibleRows
+	}
+	if m.pullStartIndex < 0 {
+		m.pullStartIndex = 0
+	}
+}
+
+func (m *Model) updateCommitDiffViewport() {
+	m.commitDiffViewport = viewport.New(m.width-44, m.height-10)
+	if m.selectedCommitFileIdx < len(m.commitFiles) {
+		m.commitDiffViewport.SetContent(m.formatDiff(m.commitFiles[m.selectedCommitFileIdx].Patch))
+	} else {
+		m.commitDiffViewport.SetContent("")
+	}
+}
+
+func (m Model) formatDiff(patch string) string {
+	if patch == "" {
+		return m.theme.HelpDesc.Render("No diff content available (binary file or empty).")
+	}
+	lines := strings.Split(patch, "\n")
+	var formatted []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "--- ") {
+			formatted = append(formatted, m.theme.LogoText.Render(line))
+		} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+			formatted = append(formatted, m.theme.StatusSuccessful.Render(line))
+		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+			formatted = append(formatted, m.theme.StatusFailed.Render(line))
+		} else if strings.HasPrefix(line, "@@") {
+			formatted = append(formatted, m.theme.HelpKey.Render(line))
+		} else {
+			formatted = append(formatted, m.theme.TableRow.Render(line))
+		}
+	}
+	return strings.Join(formatted, "\n")
+}
+
+func (m Model) viewerCanMerge() bool {
+	scopes := m.client.GetScopes()
+	if len(scopes) == 0 {
+		return true // Default to true if scopes header is missing so user can try (with friendly API error fallback)
+	}
+	for _, s := range scopes {
+		if s == "repo" || s == "public_repo" {
+			return true
+		}
+	}
+	return false
+}
+
+func (m Model) fetchActiveTabCmd() tea.Cmd {
+	switch m.activeTab {
+	case tabWorkflows:
+		if len(m.runs) == 0 {
+			m.isLoading = true
+			m.loadingMsg = "Loading runs"
+			return m.fetchRunsCmd()
+		}
+	case tabPRs:
+		if len(m.pulls) == 0 {
+			m.isLoading = true
+			m.loadingMsg = "Loading pull requests"
+			return m.fetchPullsCmd()
+		}
+	}
+	return nil
+}
+
+func (m Model) fetchPullsCmd() tea.Cmd {
+	return func() tea.Msg {
+		if len(m.targets) == 0 {
+			return pullsLoadedMsg{err: auth.ErrUnauthenticated}
+		}
+		target := m.targets[m.selectedTargetIdx]
+
+		var repos []gh.Repository
+		var err error
+		if target.IsOrg {
+			repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 15)
+		} else {
+			repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 15)
+		}
+		if err != nil {
+			return pullsLoadedMsg{err: err}
+		}
+
+		if len(repos) == 0 {
+			return pullsLoadedMsg{pulls: nil}
+		}
+
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		var allPulls []gh.PullRequest
+
+		limit := len(repos)
+		if limit > 8 {
+			limit = 8
+		}
+
+		for i := 0; i < limit; i++ {
+			repo := repos[i]
+			wg.Add(1)
+			go func(r gh.Repository) {
+				defer wg.Done()
+				state := m.filterPRState
+				if state == "" {
+					state = "open"
+				}
+				prs, err := m.client.GetPullRequestsWithState(m.ctx, r.Owner.Login, r.Name, state, m.pullPage, 8)
+				if err == nil {
+					for j := range prs {
+						prs[j].Repository = r
+					}
+					mu.Lock()
+					allPulls = append(allPulls, prs...)
+					mu.Unlock()
+				}
+			}(repo)
+		}
+		wg.Wait()
+		var filtered []gh.PullRequest
+		for _, pr := range allPulls {
+			if m.filterPRAuthor != "" {
+				if pr.User == nil || !strings.EqualFold(pr.User.Login, m.filterPRAuthor) {
+					continue
+				}
+			}
+			if m.filterPRAssignee != "" {
+				assigned := false
+				for _, u := range pr.Assignees {
+					if strings.EqualFold(u.Login, m.filterPRAssignee) {
+						assigned = true
+						break
+					}
+				}
+				if !assigned {
+					continue
+				}
+			}
+			if m.filterPRReviewer != "" {
+				reviewed := false
+				for _, u := range pr.RequestedReviewers {
+					if strings.EqualFold(u.Login, m.filterPRReviewer) {
+						reviewed = true
+						break
+					}
+				}
+				if !reviewed {
+					continue
+				}
+			}
+			filtered = append(filtered, pr)
+		}
+
+		sort.SliceStable(filtered, func(i, j int) bool {
+			return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
+		})
+
+		return pullsLoadedMsg{pulls: filtered}
+	}
+}
+
+func (m Model) fetchPRDetailsCmd(owner, repo string, number int, headSHA, headBranch string) tea.Cmd {
+	return func() tea.Msg {
+		var wg sync.WaitGroup
+		var err error
+
+		var pull *gh.PullRequest
+		var checks []gh.CheckRun
+		var runs []gh.WorkflowRun
+		var commits []gh.RepositoryCommit
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p, e := m.client.GetPullRequest(m.ctx, owner, repo, number)
+			if e == nil {
+				pull = p
+			} else {
+				err = e
+			}
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cList, e := m.client.GetPullRequestCommits(m.ctx, owner, repo, number)
+			if e == nil {
+				commits = cList
+			}
+		}()
+
+		if headSHA != "" {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				c, e := m.client.GetCheckRuns(m.ctx, owner, repo, headSHA)
+				if e == nil {
+					checks = c
+				}
+			}()
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r, e := m.client.GetWorkflowRuns(m.ctx, owner, repo, 1, 10, "")
+				if e == nil {
+					var filtered []gh.WorkflowRun
+					for _, run := range r {
+						if run.HeadSHA == headSHA {
+							run.Repository.Owner = &gh.User{Login: owner}
+							run.Repository.Name = repo
+							filtered = append(filtered, run)
+						}
+					}
+					runs = filtered
+				}
+			}()
+		}
+
+		wg.Wait()
+
+		if err != nil {
+			return prDetailsLoadedMsg{err: err}
+		}
+
+		if pull != nil {
+			pull.Repository.Name = repo
+			pull.Repository.FullName = owner + "/" + repo
+			pull.Repository.Owner = &gh.User{Login: owner}
+		}
+
+		commitChecks := make(map[string][]gh.CheckRun)
+		if len(commits) > 0 {
+			var checkWg sync.WaitGroup
+			var mu sync.Mutex
+			limit := 15
+			if len(commits) < limit {
+				limit = len(commits)
+			}
+			for i := 0; i < limit; i++ {
+				checkWg.Add(1)
+				go func(sha string) {
+					defer checkWg.Done()
+					runs, err := m.client.GetCheckRuns(m.ctx, owner, repo, sha)
+					if err == nil {
+						mu.Lock()
+						commitChecks[sha] = runs
+						mu.Unlock()
+					}
+				}(commits[i].SHA)
+			}
+			checkWg.Wait()
+		}
+
+		// Collect unique runIDs from all check runs
+		runIDsMap := make(map[int64]bool)
+		for _, c := range checks {
+			rid := extractRunIDFromURL(c.HTMLURL)
+			if rid > 0 {
+				runIDsMap[rid] = true
+			}
+		}
+		for _, cList := range commitChecks {
+			for _, c := range cList {
+				rid := extractRunIDFromURL(c.HTMLURL)
+				if rid > 0 {
+					runIDsMap[rid] = true
+				}
+			}
+		}
+
+		// Filter out runIDs that are already present in runs
+		for _, r := range runs {
+			delete(runIDsMap, r.ID)
+		}
+
+		// Fetch missing runs concurrently
+		if len(runIDsMap) > 0 {
+			var runsWg sync.WaitGroup
+			var runsMu sync.Mutex
+			for rid := range runIDsMap {
+				runsWg.Add(1)
+				go func(id int64) {
+					defer runsWg.Done()
+					r, err := m.client.GetWorkflowRun(m.ctx, owner, repo, id)
+					if err == nil {
+						r.Repository.Owner = &gh.User{Login: owner}
+						r.Repository.Name = repo
+						runsMu.Lock()
+						runs = append(runs, *r)
+						runsMu.Unlock()
+					}
+				}(rid)
+			}
+			runsWg.Wait()
+		}
+
+		sidebarWidth := m.width / 5
+		if sidebarWidth < 40 {
+			sidebarWidth = 40
+		}
+		w := m.width - sidebarWidth - 4
+		if w < 20 {
+			w = 20
+		}
+		renderedDesc := "No description provided."
+		if pull.Body != "" {
+			if md, err := renderMarkdown(pull.Body, w); err == nil {
+				renderedDesc = md
+			} else {
+				renderedDesc = pull.Body
+			}
+		}
+
+		return prDetailsLoadedMsg{
+			pull:         pull,
+			checkRuns:    checks,
+			commits:      commits,
+			commitChecks: commitChecks,
+			actionsRuns:  runs,
+			renderedBody: renderedDesc,
+		}
+	}
+}
+
+func (m Model) fetchCommitDetailsCmd(owner, repo, sha string) tea.Cmd {
+	return func() tea.Msg {
+		commit, files, err := m.client.GetCommit(m.ctx, owner, repo, sha)
+		if err != nil {
+			return commitDetailsLoadedMsg{err: err}
+		}
+		return commitDetailsLoadedMsg{
+			commit: commit,
+			files:  files,
+		}
+	}
+}
+
+func (m Model) mergePRCmd(owner, repo string, number int, title, message, method string) tea.Cmd {
+	return func() tea.Msg {
+		err := m.client.MergePullRequest(m.ctx, owner, repo, number, title, message, method)
+		return prMergedMsg{err: err}
+	}
+}
+
+func (m Model) closePRCmd(owner, repo string, number int) tea.Cmd {
+	return func() tea.Msg {
+		err := m.client.ClosePullRequest(m.ctx, owner, repo, number)
+		return prClosedMsg{err: err}
+	}
+}
+
+func (m Model) fetchPRCommentsCmd(owner, repo string, number int) tea.Cmd {
+	return func() tea.Msg {
+		comments, err := m.client.GetPullRequestComments(m.ctx, owner, repo, number)
+		return prCommentsLoadedMsg{comments: comments, err: err}
+	}
+}
+
+// extractRunIDFromURL parses the workflow run ID from a check run's HTML URL.
+func extractRunIDFromURL(url string) int64 {
+	idx := strings.Index(url, "/actions/runs/")
+	if idx == -1 {
+		return 0
+	}
+	sub := url[idx+len("/actions/runs/"):]
+	var runID int64
+	for i := 0; i < len(sub); i++ {
+		if sub[i] >= '0' && sub[i] <= '9' {
+			runID = runID*10 + int64(sub[i]-'0')
+		} else {
+			break
+		}
+	}
+	return runID
 }

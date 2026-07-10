@@ -58,10 +58,15 @@ The application resolves your GitHub credentials using the following hierarchy:
      ```bash
      export GH_TOKEN="ghp_yourpersonalaccesstokenhere"
      ```
+     *Note: To merge Pull Requests, this token must have the `repo` scope.*
 2. **Configuration File**:
    * Reads from `config.yaml` in your standard user configuration directory (see options below).
 3. **GitHub CLI fallback**:
    * If no token is found in the environment or file, `ghspector` integrates with the official GitHub CLI by querying `gh auth token` automatically.
+   * If you are already logged in but need write permissions (for merging PRs), refresh your scopes:
+     ```bash
+     gh auth refresh -s repo
+     ```
 
 ### Configuration File Options
 
@@ -96,9 +101,14 @@ Below is the complete keybindings map for navigating the application. Press `?` 
 ### Global Keys
 | Key | Action |
 | --- | --- |
+| `Tab` | Switch to the **next** main tab (Dashboard → Workflows → Pull Requests) |
+| `Shift+Tab` | Switch to the **previous** main tab |
 | `?` | Toggle Help overlay screen |
 | `o` | Open Context Switcher to swap account/organization scope |
 | `q` or `Ctrl+C` | Quit `ghspector` |
+
+### Dashboard View
+Displays your active GitHub context, API rate limit consumption status, aggregated pull request and workflow run metrics, and navigation shortcuts.
 
 ### Workflow Runs View
 | Key | Action |
@@ -109,7 +119,42 @@ Below is the complete keybindings map for navigating the application. Press `?` 
 | `r` | Refresh the workflow runs list |
 | `w` | Open the highlighted workflow run in your default browser |
 | `m` | Toggle filtering by your own runs (current user) |
-| `f` | Open text input to filter by specific actor username (type name and press `Enter`; `Esc` clears) |
+| `f` | Open text input to filter by specific actor username |
+
+### Pull Requests View
+| Key | Action |
+| --- | --- |
+| `j` / `Down` | Move selection down |
+| `k` / `Up` | Move selection up |
+| `Enter` | Open the detailed workspace for the highlighted pull request |
+| `r` | Refresh the pull requests list |
+| `w` | Open the highlighted pull request in your default browser |
+
+### Pull Request Details View
+Symmetric three-column layout (Checks sidebar, scrollable PR description body, Metadata details sidebar).
+| Key | Action |
+| --- | --- |
+| `Tab` / `Shift+Tab` | Toggle interactive focus between Checks sidebar and PR description viewport |
+| `j` / `k` (or `Down` / `Up`) | Navigate highlighted Check items, or scroll PR description body |
+| `u` / `d` | Scroll PR description body up/down |
+| `Enter` | Open selected Actions check run job in-app, or open non-actions check in browser |
+| `w` | Open the pull request (or selected check) page in your default browser |
+| `m` | Initiate Merge process (available only with repository write permissions) |
+| `c` | Initiate Close process (available only with repository write permissions) |
+| `Esc` / `Backspace` | Return to the Pull Requests list |
+
+### PR Merging & Closing Overlays
+Available when repository write scopes exist.
+| Key | Action |
+| --- | --- |
+| **Merge Selection (`m`):** | |
+| `s` / `S` | Select Squash Merge (default) and go to confirmation screen |
+| `m` / `M` | Select Normal Merge (create merge commit) and go to confirmation screen |
+| `r` / `R` | Select Rebase Merge and go to confirmation screen |
+| `esc` / `c` / `C` | Cancel merge process |
+| **Confirm Action:** | |
+| `y` / `Y` | Confirm merge or close execution |
+| `n` / `N` / `Esc` | Cancel confirmation and return |
 
 ### Workflow Jobs View
 | Key | Action |
@@ -121,7 +166,7 @@ Below is the complete keybindings map for navigating the application. Press `?` 
 | `]` | Cycle to the **next** workflow run attempt |
 | `w` | Open the parent workflow run in your default browser |
 | `v` | Open the highlighted job page in your default browser |
-| `Esc` / `Backspace` | Return to the Workflow Runs list |
+| `Esc` / `Backspace` | Return to the parent list (runs or PR checks) |
 | `r` | Refresh the jobs list for the active attempt |
 
 ### Logs Viewer

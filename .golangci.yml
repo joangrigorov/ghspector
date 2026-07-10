@@ -1,0 +1,43 @@
+version: "2"
+run:
+  issues-exit-code: 1
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - errcheck
+    - errname
+    - errorlint
+    - govet
+    - ineffassign
+    - nilnil
+    - staticcheck
+    - unconvert
+    - unused
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    staticcheck:
+      checks:
+        - "all"
+        - "-QF1003"
+        - "-ST1000"
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+      exclude-functions:
+        - "(*encoding/json.Encoder).Encode"
+        - "(*os.File).Close"
+        - "(io.Closer).Close"
+        - "os.Setenv"
+        - "os.Unsetenv"
+        - "os.RemoveAll"
+        - "io.WriteString"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

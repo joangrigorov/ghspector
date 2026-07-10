@@ -21,11 +21,34 @@ const (
 	viewLogs
 	viewSwitcher
 	viewHelp
+	viewPRDetails
+	viewCommitDetails
+	viewPRFilterInput
+	viewPRFilterTypeSelect
+	viewPRComments
+	viewPRCommits
+)
+
+type mainTab int
+
+const (
+	tabPRs mainTab = iota
+	tabWorkflows
+)
+
+type prTab int
+
+const (
+	prTabInfo prTab = iota
+	prTabCommits
+	prTabFiles
+	prTabChecks
+	prTabComments
 )
 
 // Target represents a selected organization or user account to browse.
 type Target struct {
-	Name string
+	Name  string
 	IsOrg bool
 }
 
@@ -43,6 +66,7 @@ type Model struct {
 	// Navigation State
 	state       viewState
 	prevState   viewState // stored when overlay/switcher opens
+	activeTab   mainTab
 	tickCount   int
 	width, height int
 
@@ -50,17 +74,53 @@ type Model struct {
 	targets       []Target
 	selectedTargetIdx int
 
-	// Data Cache
-	repos         []gh.Repository
+	// Data Cache - Workflows
 	runs          []gh.WorkflowRun
 	selectedRunIdx int
 	runStartIndex  int
 	runPage       int
 	hasMoreRuns   bool
+	viewingRun    *gh.WorkflowRun
 
 	jobs          []gh.WorkflowJob
 	selectedJobIdx int
 	jobStartIndex  int
+
+	// Data Cache - Pull Requests
+	pulls             []gh.PullRequest
+	selectedPullIdx   int
+	pullStartIndex    int
+	pullPage          int
+	hasMorePulls      bool
+	selectedPull      *gh.PullRequest
+	activePRTab       prTab
+	prCommits         []gh.RepositoryCommit
+	selectedCommitIdx int
+	prFiles           []gh.CommitFile
+	selectedFileIdx   int
+	diffViewport      viewport.Model
+	prChecks          []gh.CheckRun
+	selectedCheckIdx  int
+	prCommitChecks    map[string][]gh.CheckRun
+	prComments        []gh.IssueComment
+	commentsViewport  viewport.Model
+	prDescViewport    viewport.Model
+	prDescFocused     bool // true: description focused, false: checks sidebar focused
+	targetJobName     string
+
+	// Data Cache - Commit Viewer
+	viewingCommit         *gh.RepositoryCommit
+	commitFiles           []gh.CommitFile
+	selectedCommitFileIdx int
+	commitDiffViewport    viewport.Model
+
+	// Dashboard state
+	dashboardPRsCount       int
+	dashboardWorkflowsCount int
+
+	// Merge state
+	mergeState      int    // 0: none, 1: method selection, 2: confirmation, 3: completed
+	mergeMethod     int    // 0: squash, 1: merge, 2: rebase
 
 	// Logs browser
 	logs          string
@@ -81,6 +141,13 @@ type Model struct {
 	showFilterInput bool
 	textInput       textinput.Model
 	currentUser     string
+
+	// PR filter fields
+	filterPRAuthor   string
+	filterPRAssignee  string
+	filterPRReviewer  string
+	filterPRState     string
+	prFilterUser     string
 
 	// Attempt browsing
 	selectedAttempt int
@@ -104,6 +171,7 @@ type runsPolledMsg struct {
 }
 type jobsLoadedMsg struct {
 	jobs []gh.WorkflowJob
+	run  *gh.WorkflowRun
 	err  error
 }
 type logsLoadedMsg struct {
@@ -121,6 +189,48 @@ type jobUpdateMsg struct {
 	conclusion string
 }
 
+type pullsLoadedMsg struct {
+	pulls []gh.PullRequest
+	err   error
+}
+
+type prDetailsLoadedMsg struct {
+	pull         *gh.PullRequest
+	commits      []gh.RepositoryCommit
+	files        []gh.CommitFile
+	checkRuns    []gh.CheckRun
+	commitChecks map[string][]gh.CheckRun
+	comments     []gh.IssueComment
+	actionsRuns  []gh.WorkflowRun
+	renderedBody string
+	err          error
+}
+
+type prCommentsLoadedMsg struct {
+	comments []gh.IssueComment
+	err      error
+}
+
+type commitDetailsLoadedMsg struct {
+	commit *gh.RepositoryCommit
+	files  []gh.CommitFile
+	err    error
+}
+
+type prMergedMsg struct {
+	err error
+}
+
+type prClosedMsg struct {
+	err error
+}
+
+type dashboardStatsLoadedMsg struct {
+	prsCount       int
+	workflowsCount int
+	err            error
+}
+
 // InitModel initializes the model.
 func InitModel(client *gh.Client, config *auth.Config) Model {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -136,9 +246,15 @@ func InitModel(client *gh.Client, config *auth.Config) Model {
 		cancel:       cancel,
 		theme:        GetTheme(),
 		state:        viewSplash,
+		activeTab:    tabPRs,
 		loadingMsg:   "Initializing ghspector",
 		hasMoreRuns:  true,
 		runPage:      1,
+		commentsViewport: viewport.New(80, 20),
+		prCommitChecks:   make(map[string][]gh.CheckRun),
+		hasMorePulls:     true,
+		pullPage:     1,
+		filterPRState: "open",
 		textInput:    ti,
 	}
 }
@@ -161,7 +277,11 @@ func (m Model) tick() tea.Cmd {
 
 // pollTick schedules the next status poll event.
 func (m Model) pollTick() tea.Cmd {
-	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+	interval := 5 * time.Second
+	if m.state == viewMain && m.activeTab == tabPRs {
+		interval = 10 * time.Second
+	}
+	return tea.Tick(interval, func(t time.Time) tea.Msg {
 		return pollMsg(t)
 	})
 }
@@ -181,4 +301,30 @@ func (m Model) fetchInitialDataCmd() tea.Cmd {
 
 		return initDataMsg{user: user, orgs: orgs}
 	}
+}
+
+// getRun returns the active WorkflowRun, checking m.runs first and falling back to m.viewingRun.
+func (m Model) getRun() gh.WorkflowRun {
+	var run gh.WorkflowRun
+	if m.selectedRunIdx >= 0 && m.selectedRunIdx < len(m.runs) {
+		run = m.runs[m.selectedRunIdx]
+	} else if m.viewingRun != nil {
+		run = *m.viewingRun
+	}
+	if run.Repository.Owner == nil {
+		run.Repository.Owner = &gh.User{}
+	}
+	if run.Repository.Owner.Login == "" && m.selectedPull != nil && m.selectedPull.Repository.Owner != nil {
+		run.Repository.Owner.Login = m.selectedPull.Repository.Owner.Login
+	}
+	if run.Repository.Name == "" && m.selectedPull != nil {
+		run.Repository.Name = m.selectedPull.Repository.Name
+	}
+	if run.Repository.FullName == "" && m.selectedPull != nil {
+		run.Repository.FullName = m.selectedPull.Repository.FullName
+	}
+	if run.Actor == nil {
+		run.Actor = &gh.User{}
+	}
+	return run
 }

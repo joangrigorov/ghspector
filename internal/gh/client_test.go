@@ -103,13 +103,13 @@ func TestClient_GetWorkflowRunsAndJobs(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/repos/owner/repo/actions/jobs/201/logs" {
-			w.Write([]byte("Job logs line 1\nJob logs line 2"))
+			_, _ = w.Write([]byte("Job logs line 1\nJob logs line 2"))
 			return
 		}
 		if r.URL.Path == "/repos/owner/repo/actions/jobs/404/logs" {
 			w.Header().Set("Content-Type", "application/xml")
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.
 RequestId:f907b3df-401e-0001-0fa1-0fc4e0000000
 Time:2026-07-09T12:51:16.9150158Z</Message></Error>`))
 			return
@@ -207,5 +207,50 @@ func TestClient_GetWorkflowRunAttemptJobs(t *testing.T) {
 	}
 	if len(jobs) != 1 || jobs[0].ID != 301 || jobs[0].Name != "attempt-2-job" {
 		t.Errorf("unexpected jobs: %+v", jobs)
+	}
+}
+
+func TestClient_GetCheckRunsDuplicateFiltering(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/owner/repo/commits/sha123/check-runs" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		
+		t1 := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
+		t2 := time.Date(2026, 7, 10, 10, 30, 0, 0, time.UTC)
+		
+		resp := CheckRunsResponse{
+			TotalCount: 4,
+			CheckRuns: []CheckRun{
+				{ID: 1, Name: "semantic-pr", Status: "completed", Conclusion: "failure", StartedAt: t1},
+				{ID: 2, Name: "semantic-pr", Status: "completed", Conclusion: "success", StartedAt: t2},
+				{ID: 3, Name: "run-tests", Status: "completed", Conclusion: "success", StartedAt: t1},
+				{ID: 4, Name: "run-tests", Status: "completed", Conclusion: "failure", StartedAt: t1}, // duplicate same started_at but higher ID
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	runs, err := client.GetCheckRuns(context.Background(), "owner", "repo", "sha123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(runs) != 2 {
+		t.Fatalf("expected 2 filtered check runs, got: %d", len(runs))
+	}
+
+	// First should be semantic-pr (success, which is the latest started_at)
+	if runs[0].Name != "semantic-pr" || runs[0].Conclusion != "success" || runs[0].ID != 2 {
+		t.Errorf("expected latest semantic-pr success, got: %+v", runs[0])
+	}
+
+	// Second should be run-tests (failure, which is the higher ID with same started_at)
+	if runs[1].Name != "run-tests" || runs[1].Conclusion != "failure" || runs[1].ID != 4 {
+		t.Errorf("expected latest run-tests failure, got: %+v", runs[1])
 	}
 }
