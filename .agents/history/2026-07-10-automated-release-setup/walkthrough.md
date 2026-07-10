@@ -69,6 +69,9 @@ nfpms:
 ### 7. Documentation
 - Updated [README.md](README.md) to add an Installation section with instructions for pre-built binaries, `.deb`/`.rpm`/`.apk` packages, and `go install`.
 
+### 8. Linter Quick Fixes (Iteration 2)
+- Resolved `staticcheck` warnings in `internal/tui/view.go` under check `QF1012`. Replaced performance-inefficient `sb.WriteString(fmt.Sprintf(...))` calls with standard `fmt.Fprintf(&sb, ...)` statements.
+
 ## Verification Results
 
 - **Unit and Integration Tests**: All passed successfully (`go test ./...`).

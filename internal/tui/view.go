@@ -573,12 +573,12 @@ func (m Model) renderLegend() string {
 	sb.WriteString("  " + m.theme.TableHeader.Render("LEGENDS") + "\n")
 	if m.width < 70 {
 		sb.WriteString("    Workflow Runs Status:\n")
-		sb.WriteString(fmt.Sprintf("      %s  %s  %s\n      %s  %s\n", runRunning, runSuccess, runFailed, runQueued, runWaiting))
+		fmt.Fprintf(&sb, "      %s  %s  %s\n      %s  %s\n", runRunning, runSuccess, runFailed, runQueued, runWaiting)
 		sb.WriteString("    Pull Requests Status:\n")
-		sb.WriteString(fmt.Sprintf("      %s  %s  %s  %s\n", prOpen, prDraft, prMerged, prClosed))
+		fmt.Fprintf(&sb, "      %s  %s  %s  %s\n", prOpen, prDraft, prMerged, prClosed)
 	} else {
-		sb.WriteString(fmt.Sprintf("    Workflow Runs: %s  %s  %s  %s  %s\n", runRunning, runSuccess, runFailed, runQueued, runWaiting))
-		sb.WriteString(fmt.Sprintf("    Pull Requests: %s  %s  %s  %s\n", prOpen, prDraft, prMerged, prClosed))
+		fmt.Fprintf(&sb, "    Workflow Runs: %s  %s  %s  %s  %s\n", runRunning, runSuccess, runFailed, runQueued, runWaiting)
+		fmt.Fprintf(&sb, "    Pull Requests: %s  %s  %s  %s\n", prOpen, prDraft, prMerged, prClosed)
 	}
 	return sb.String()
 }
