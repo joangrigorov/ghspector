@@ -9,17 +9,25 @@
     g h s p e c t o r
 ```
 
-`ghspector` is a sleek, terminal-native user interface (TUI) for browsing, monitoring, and debugging GitHub Actions workflow runs, jobs, and logs in real-time. Built in Go using the Bubble Tea framework, it provides developer-friendly navigation, quick filters, historical run attempt browsing, and cross-platform browser integration.
+`ghspector` is a sleek, terminal-native developer dashboard (TUI) for universal GitHub operations. Built in Go using the Bubble Tea framework, it provides a unified interface to browse, monitor, and manage your workflows and pull requests across entire user or organization scopes in real-time.
+
+With `ghspector`, you can tail workflow logs, cycle through run attempts, inspect pull request checks and metadata, and merge or close pull requests directly from your terminal.
+
+### The Problem It Solves
+
+Monitoring GitHub Actions workflows across multiple active repositories typically requires opening dozens of browser tabs, navigating back and forth, and constantly reloading pages. `ghspector` solves this friction by aggregating all workflow runs and pull requests within a user account or organization into a single, cohesive dashboard. It eliminates tab clutter and context switching, bringing real-time observability and GitHub operations directly into your terminal.
 
 ## Table of Contents
 - [Features](#features)
 - [Installation](#installation)
 - [Configuration](#configuration)
-  - [Authentication Methods](#authentication-methods)
-  - [Configuration File Options](#configuration-file-options)
 - [Usage & Keybindings](#usage--keybindings)
   - [Global Keys](#global-keys)
+  - [Dashboard View](#dashboard-view)
   - [Workflow Runs View](#workflow-runs-view)
+  - [Pull Requests View](#pull-requests-view)
+  - [Pull Request Details View](#pull-request-details-view)
+  - [PR Merging & Closing Overlays](#pr-merging--closing-overlays)
   - [Workflow Jobs View](#workflow-jobs-view)
   - [Logs Viewer](#logs-viewer)
   - [Context Switcher](#context-switcher)
@@ -27,12 +35,14 @@
 ---
 
 ## Features
-- **Real-Time Polling**: Active background status updates for runs, jobs, and log tails.
-- **Cross-Platform Links**: Native browser integration (via keypresses and clickable terminal OSC 8 hyperlinks).
-- **Historical Attempts**: Easily browse and cycle through previous attempts of multi-run workflows.
-- **Actor Filtering**: Filter runs by your own account or a specific GitHub username with instant matching.
-- **Context Switcher**: Swap between user accounts and different organization scopes on the fly.
-- **Keyboard-First Interface**: Complete and responsive shortcut navigation with a dedicated overlay help guide.
+- **Unified GitHub Operations Dashboard**: A single, clean terminal interface to manage both CI/CD workflow runs and pull requests.
+- **Aggregated Scopes**: View combined workflows and pull requests aggregated across a user account or an entire organization.
+- **Real-Time Polling**: Active background status updates for runs, jobs, logs, and pull requests.
+- **Workflow & Log Viewer**: Cycle through historical attempts of multi-run workflows and tail active jobs in real-time.
+- **Keyboard-Driven PR Management**: Read PR descriptions, inspect Action checks/comments, and merge (Squash, Normal, Rebase) or close PRs directly.
+- **Actor Filtering**: Quick text filtering to isolate workflow runs or PRs by specific users.
+- **Context Switcher**: Swap between user profiles and organization scopes on the fly.
+- **Terminal Hyperlinks**: Support for clickable OSC 8 links and quick keys to open runs, jobs, and PRs in your default browser.
 
 ---
 
