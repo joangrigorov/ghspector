@@ -54,7 +54,7 @@
 The application resolves your GitHub credentials using the following hierarchy:
 
 1. **Environment Variables**:
-   * Sets `GH_TOKEN` or `GITHUB_TOKEN` to your personal access token (PAT).
+   * Checks if `GH_TOKEN` or `GITHUB_TOKEN` is set in your environment:
      ```bash
      export GH_TOKEN="ghp_yourpersonalaccesstokenhere"
      ```
