@@ -621,6 +621,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selectedPull != nil {
 					m.state = viewPRDiff
 					m.selectedFileIdx = 0
+					m.prFileStartIndex = 0
 					m.updateDiffViewport()
 				}
 			case "r", "ctrl+r":
@@ -668,11 +669,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "j", "down":
 				if m.selectedCommitFileIdx < len(m.commitFiles)-1 {
 					m.selectedCommitFileIdx++
+					m.scrollCommitFiles()
 					m.updateCommitDiffViewport()
 				}
 			case "k", "up":
 				if m.selectedCommitFileIdx > 0 {
 					m.selectedCommitFileIdx--
+					m.scrollCommitFiles()
 					m.updateCommitDiffViewport()
 				}
 			case "u":
@@ -692,11 +695,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "j", "down":
 				if m.selectedFileIdx < len(m.prFiles)-1 {
 					m.selectedFileIdx++
+					m.scrollPRFiles()
 					m.updateDiffViewport()
 				}
 			case "k", "up":
 				if m.selectedFileIdx > 0 {
 					m.selectedFileIdx--
+					m.scrollPRFiles()
 					m.updateDiffViewport()
 				}
 			case "u":
@@ -1024,6 +1029,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		
 		m.activePRTab = prTabInfo
 		m.selectedFileIdx = 0
+		m.prFileStartIndex = 0
 		m.updateDiffViewport()
 		m.selectedCommitIdx = 0
 		m.selectedCheckIdx = 0
@@ -1058,6 +1064,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewingCommit = msg.commit
 		m.commitFiles = msg.files
 		m.selectedCommitFileIdx = 0
+		m.commitFileStartIndex = 0
 		m.updateCommitDiffViewport()
 		m.state = viewCommitDetails
 
@@ -1635,6 +1642,46 @@ func (m *Model) scrollPulls() {
 	}
 	if m.pullStartIndex < 0 {
 		m.pullStartIndex = 0
+	}
+}
+
+func (m *Model) scrollPRFiles() {
+	visibleRows := m.height - 13
+	if visibleRows < 5 {
+		visibleRows = 5
+	}
+	totalRows := len(m.prFiles)
+	if m.selectedFileIdx < m.prFileStartIndex {
+		m.prFileStartIndex = m.selectedFileIdx
+	}
+	if m.selectedFileIdx >= m.prFileStartIndex+visibleRows {
+		m.prFileStartIndex = m.selectedFileIdx - visibleRows + 1
+	}
+	if m.prFileStartIndex > totalRows-visibleRows {
+		m.prFileStartIndex = totalRows - visibleRows
+	}
+	if m.prFileStartIndex < 0 {
+		m.prFileStartIndex = 0
+	}
+}
+
+func (m *Model) scrollCommitFiles() {
+	visibleRows := m.height - 13
+	if visibleRows < 5 {
+		visibleRows = 5
+	}
+	totalRows := len(m.commitFiles)
+	if m.selectedCommitFileIdx < m.commitFileStartIndex {
+		m.commitFileStartIndex = m.selectedCommitFileIdx
+	}
+	if m.selectedCommitFileIdx >= m.commitFileStartIndex+visibleRows {
+		m.commitFileStartIndex = m.selectedCommitFileIdx - visibleRows + 1
+	}
+	if m.commitFileStartIndex > totalRows-visibleRows {
+		m.commitFileStartIndex = totalRows - visibleRows
+	}
+	if m.commitFileStartIndex < 0 {
+		m.commitFileStartIndex = 0
 	}
 }
 

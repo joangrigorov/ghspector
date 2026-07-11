@@ -1101,6 +1101,53 @@ func TestTUI_PRDiffViewAndMergePermissions(t *testing.T) {
 	if m.mergeState != 0 {
 		t.Errorf("expected mergeState to remain 0, got %d", m.mergeState)
 	}
+
+	// 3. Test scrolling behavior with multiple files
+	m.state = viewPRDiff
+	m.height = 20 // visibleRows = 20 - 13 = 7 files visible
+	m.prFiles = make([]gh.CommitFile, 15)
+	for i := 0; i < 15; i++ {
+		m.prFiles[i] = gh.CommitFile{Filename: fmt.Sprintf("file%d.go", i)}
+	}
+	m.selectedFileIdx = 0
+	m.prFileStartIndex = 0
+
+	// Scroll down 8 times (selectedFileIdx goes to 8, which is >= 0 + 7)
+	for i := 0; i < 8; i++ {
+		rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		m = rawModel.(Model)
+	}
+
+	if m.selectedFileIdx != 8 {
+		t.Errorf("expected selectedFileIdx to be 8, got %d", m.selectedFileIdx)
+	}
+	if m.prFileStartIndex != 2 {
+		t.Errorf("expected prFileStartIndex to be 2 (8 - 7 + 1), got %d", m.prFileStartIndex)
+	}
+
+	// Scroll back up 3 times (index goes to 5, which is > prFileStartIndex (2), so start index shouldn't change)
+	for i := 0; i < 3; i++ {
+		rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+		m = rawModel.(Model)
+	}
+	if m.selectedFileIdx != 5 {
+		t.Errorf("expected selectedFileIdx to be 5, got %d", m.selectedFileIdx)
+	}
+	if m.prFileStartIndex != 2 {
+		t.Errorf("expected prFileStartIndex to remain 2, got %d", m.prFileStartIndex)
+	}
+
+	// Scroll back up to index 1 (which is < prFileStartIndex (2), so start index should become 1)
+	for i := 0; i < 4; i++ {
+		rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+		m = rawModel.(Model)
+	}
+	if m.selectedFileIdx != 1 {
+		t.Errorf("expected selectedFileIdx to be 1, got %d", m.selectedFileIdx)
+	}
+	if m.prFileStartIndex != 1 {
+		t.Errorf("expected prFileStartIndex to become 1, got %d", m.prFileStartIndex)
+	}
 }
 
 func TestTUI_RunningJobLogsAndPRDetailsRefresh(t *testing.T) {

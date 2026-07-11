@@ -1464,7 +1464,17 @@ func (m Model) renderCommitDetailsView() string {
 	headerRendered := m.theme.TableHeader.Render(headerText)
 	fileLines = append(fileLines, strings.Split(headerRendered, "\n")...)
 
-	for idx, file := range m.commitFiles {
+	visibleRowsFiles := m.height - 13
+	if visibleRowsFiles < 5 {
+		visibleRowsFiles = 5
+	}
+	endIdxFiles := m.commitFileStartIndex + visibleRowsFiles
+	if endIdxFiles > len(m.commitFiles) {
+		endIdxFiles = len(m.commitFiles)
+	}
+
+	for idx := m.commitFileStartIndex; idx < endIdxFiles; idx++ {
+		file := m.commitFiles[idx]
 		var statusIndicator string
 		switch file.Status {
 		case "added":
@@ -1572,7 +1582,17 @@ func (m Model) renderPRDiffView() string {
 	headerRendered := m.theme.TableHeader.Render(headerText)
 	fileLines = append(fileLines, strings.Split(headerRendered, "\n")...)
 
-	for idx, file := range m.prFiles {
+	visibleRowsFiles := m.height - 13
+	if visibleRowsFiles < 5 {
+		visibleRowsFiles = 5
+	}
+	endIdxFiles := m.prFileStartIndex + visibleRowsFiles
+	if endIdxFiles > len(m.prFiles) {
+		endIdxFiles = len(m.prFiles)
+	}
+
+	for idx := m.prFileStartIndex; idx < endIdxFiles; idx++ {
+		file := m.prFiles[idx]
 		var statusIndicator string
 		switch file.Status {
 		case "added":
