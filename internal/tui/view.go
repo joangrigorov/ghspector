@@ -1523,7 +1523,7 @@ func (m Model) renderCommitDetailsView() string {
 		maxLines = len(rightLines)
 	}
 
-	visibleRows := m.height - 15
+	visibleRows := m.height - 14
 	if visibleRows < 5 {
 		visibleRows = 5
 	}
@@ -1546,7 +1546,7 @@ func (m Model) renderCommitDetailsView() string {
 		sb.WriteString("  " + leftPart + " │ " + rightPart + "\n")
 	}
 
-	for i := 0; i < (m.height - 15 - maxLines); i++ {
+	for i := 0; i < (m.height - 14 - maxLines); i++ {
 		sb.WriteString("\n")
 	}
 
@@ -1641,7 +1641,7 @@ func (m Model) renderPRDiffView() string {
 		maxLines = len(rightLines)
 	}
 
-	visibleRows := m.height - 15
+	visibleRows := m.height - 14
 	if visibleRows < 5 {
 		visibleRows = 5
 	}
@@ -1664,7 +1664,7 @@ func (m Model) renderPRDiffView() string {
 		sb.WriteString("  " + leftPart + " │ " + rightPart + "\n")
 	}
 
-	for i := 0; i < (m.height - 15 - maxLines); i++ {
+	for i := 0; i < (m.height - 14 - maxLines); i++ {
 		sb.WriteString("\n")
 	}
 
