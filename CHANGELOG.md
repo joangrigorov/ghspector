@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0](https://github.com/joangrigorov/ghspector/compare/v0.0.1...v0.1.0) (2026-07-11)
+
+
+### Features
+
+* add PR diff view, details refresh, and handle running job logs gracefully ([#5](https://github.com/joangrigorov/ghspector/issues/5)) ([f31464f](https://github.com/joangrigorov/ghspector/commit/f31464f0df5bbf727741066e38bede852901533b))
+
 ## 0.0.1 (2026-07-10)
 
 
