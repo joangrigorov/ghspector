@@ -52,6 +52,8 @@ func (m Model) View() string {
 		return m.renderPRCommentsView()
 	case viewPRCommits:
 		return m.renderPRCommitsView()
+	case viewPRDiff:
+		return m.renderPRDiffView()
 	case viewCommitDetails:
 		return m.renderCommitDetailsView()
 	default:
@@ -924,9 +926,9 @@ func (m Model) renderPRDetailsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"Esc:Back to PRs", "Tab:Toggle Focus", "j/k:Navigate", "Enter:Run/Browser", "c:Comments", "v:Commits", "q:Quit"}
+	keys := []string{"Esc:Back to PRs", "Tab:Toggle Focus", "j/k:Navigate", "Enter:Run/Browser", "D:Diff", "r:Refresh", "c:Comments", "v:Commits", "q:Quit"}
 	if m.viewerCanMerge() {
-		keys = []string{"Esc:Back", "Tab:Focus", "m:Merge", "c:Comments", "v:Commits", "Shift+C:Close PR", "q:Quit"}
+		keys = []string{"Esc:Back", "Tab:Focus", "D:Diff", "r:Refresh", "m:Merge", "c:Comments", "v:Commits", "C:Close PR", "q:Quit"}
 	}
 	sb.WriteString(m.renderFooter(keys))
 
@@ -1462,7 +1464,17 @@ func (m Model) renderCommitDetailsView() string {
 	headerRendered := m.theme.TableHeader.Render(headerText)
 	fileLines = append(fileLines, strings.Split(headerRendered, "\n")...)
 
-	for idx, file := range m.commitFiles {
+	visibleRowsFiles := m.height - 16
+	if visibleRowsFiles < 5 {
+		visibleRowsFiles = 5
+	}
+	endIdxFiles := m.commitFileStartIndex + visibleRowsFiles
+	if endIdxFiles > len(m.commitFiles) {
+		endIdxFiles = len(m.commitFiles)
+	}
+
+	for idx := m.commitFileStartIndex; idx < endIdxFiles; idx++ {
+		file := m.commitFiles[idx]
 		var statusIndicator string
 		switch file.Status {
 		case "added":
@@ -1491,14 +1503,27 @@ func (m Model) renderCommitDetailsView() string {
 		}
 	}
 
-	viewportLines := strings.Split(m.commitDiffViewport.View(), "\n")
-
-	maxLines := len(fileLines)
-	if len(viewportLines) > maxLines {
-		maxLines = len(viewportLines)
+	var selectedPath string
+	if m.selectedCommitFileIdx < len(m.commitFiles) {
+		selectedPath = m.commitFiles[m.selectedCommitFileIdx].Filename
 	}
 
-	visibleRows := m.height - 12
+	diffHeader := fmt.Sprintf(" DIFF: %s", selectedPath)
+	diffHeaderRendered := m.theme.TableHeader.Render(fmt.Sprintf("%-*s", m.commitDiffViewport.Width, diffHeader))
+	diffHeaderLines := strings.Split(diffHeaderRendered, "\n")
+
+	viewportLines := strings.Split(m.commitDiffViewport.View(), "\n")
+
+	var rightLines []string
+	rightLines = append(rightLines, diffHeaderLines...)
+	rightLines = append(rightLines, viewportLines...)
+
+	maxLines := len(fileLines)
+	if len(rightLines) > maxLines {
+		maxLines = len(rightLines)
+	}
+
+	visibleRows := m.height - 14
 	if visibleRows < 5 {
 		visibleRows = 5
 	}
@@ -1515,13 +1540,13 @@ func (m Model) renderCommitDetailsView() string {
 		}
 
 		rightPart := ""
-		if i < len(viewportLines) {
-			rightPart = viewportLines[i]
+		if i < len(rightLines) {
+			rightPart = rightLines[i]
 		}
 		sb.WriteString("  " + leftPart + " │ " + rightPart + "\n")
 	}
 
-	for i := 0; i < (m.height - 12 - maxLines); i++ {
+	for i := 0; i < (m.height - 14 - maxLines); i++ {
 		sb.WriteString("\n")
 	}
 
@@ -1530,6 +1555,125 @@ func (m Model) renderCommitDetailsView() string {
 
 	return sb.String()
 }
+
+func (m Model) renderPRDiffView() string {
+	var sb strings.Builder
+	sb.WriteString(m.renderHeader())
+	sb.WriteString("\n")
+
+	pr := m.selectedPull
+	if pr == nil {
+		return "No PR selected."
+	}
+
+	titleText := fmt.Sprintf("PR #%d Diff: %s", pr.Number, pr.Title)
+	sb.WriteString("  " + m.theme.LogoText.Render(titleText) + "\n")
+	authorLogin := "unknown"
+	if pr.User != nil {
+		authorLogin = pr.User.Login
+	}
+	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Author: @%s | Source: %s → Base: %s", pr.Repository.FullName, authorLogin, pr.Head.Ref, pr.Base.Ref)) + "\n\n")
+
+	leftWidth := 40
+	var fileLines []string
+
+	// Pad header to leftWidth and split by newline to correctly format the bottom border
+	headerText := fmt.Sprintf(" %-*s", leftWidth-1, "FILES CHANGED")
+	headerRendered := m.theme.TableHeader.Render(headerText)
+	fileLines = append(fileLines, strings.Split(headerRendered, "\n")...)
+
+	visibleRowsFiles := m.height - 16
+	if visibleRowsFiles < 5 {
+		visibleRowsFiles = 5
+	}
+	endIdxFiles := m.prFileStartIndex + visibleRowsFiles
+	if endIdxFiles > len(m.prFiles) {
+		endIdxFiles = len(m.prFiles)
+	}
+
+	for idx := m.prFileStartIndex; idx < endIdxFiles; idx++ {
+		file := m.prFiles[idx]
+		var statusIndicator string
+		switch file.Status {
+		case "added":
+			statusIndicator = m.theme.StatusSuccessful.Render("[A]")
+		case "removed", "deleted":
+			statusIndicator = m.theme.StatusFailed.Render("[D]")
+		default:
+			statusIndicator = m.theme.StatusQueued.Render("[M]")
+		}
+
+		filename := file.Filename
+		if len(filename) > leftWidth-6 {
+			filename = "..." + filename[len(filename)-(leftWidth-9):]
+		}
+		
+		lineText := fmt.Sprintf("  %s %s", statusIndicator, filename)
+		visWidth := lipgloss.Width(lineText)
+		if visWidth < leftWidth {
+			lineText += strings.Repeat(" ", leftWidth-visWidth)
+		}
+
+		if idx == m.selectedFileIdx {
+			fileLines = append(fileLines, m.theme.TableSelected.Render(lineText))
+		} else {
+			fileLines = append(fileLines, m.theme.TableRow.Render(lineText))
+		}
+	}
+
+	var selectedPath string
+	if m.selectedFileIdx < len(m.prFiles) {
+		selectedPath = m.prFiles[m.selectedFileIdx].Filename
+	}
+
+	diffHeader := fmt.Sprintf(" DIFF: %s", selectedPath)
+	diffHeaderRendered := m.theme.TableHeader.Render(fmt.Sprintf("%-*s", m.diffViewport.Width, diffHeader))
+	diffHeaderLines := strings.Split(diffHeaderRendered, "\n")
+
+	viewportLines := strings.Split(m.diffViewport.View(), "\n")
+
+	var rightLines []string
+	rightLines = append(rightLines, diffHeaderLines...)
+	rightLines = append(rightLines, viewportLines...)
+
+	maxLines := len(fileLines)
+	if len(rightLines) > maxLines {
+		maxLines = len(rightLines)
+	}
+
+	visibleRows := m.height - 14
+	if visibleRows < 5 {
+		visibleRows = 5
+	}
+	if maxLines > visibleRows {
+		maxLines = visibleRows
+	}
+
+	for i := 0; i < maxLines; i++ {
+		leftPart := ""
+		if i < len(fileLines) {
+			leftPart = fileLines[i]
+		} else {
+			leftPart = strings.Repeat(" ", leftWidth)
+		}
+
+		rightPart := ""
+		if i < len(rightLines) {
+			rightPart = rightLines[i]
+		}
+		sb.WriteString("  " + leftPart + " │ " + rightPart + "\n")
+	}
+
+	for i := 0; i < (m.height - 14 - maxLines); i++ {
+		sb.WriteString("\n")
+	}
+
+	keys := []string{"Esc:Back to PR", "j/k:Navigate Files", "u/d:Scroll Diff", "w:Browser"}
+	sb.WriteString(m.renderFooter(keys))
+
+	return sb.String()
+}
+
 
 func renderMarkdown(content string, width int) (string, error) {
 	if content == "" {

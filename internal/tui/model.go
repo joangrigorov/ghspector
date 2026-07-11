@@ -27,6 +27,7 @@ const (
 	viewPRFilterTypeSelect
 	viewPRComments
 	viewPRCommits
+	viewPRDiff
 )
 
 type mainTab int
@@ -98,6 +99,7 @@ type Model struct {
 	selectedCommitIdx int
 	prFiles           []gh.CommitFile
 	selectedFileIdx   int
+	prFileStartIndex  int
 	diffViewport      viewport.Model
 	prChecks          []gh.CheckRun
 	selectedCheckIdx  int
@@ -112,6 +114,7 @@ type Model struct {
 	viewingCommit         *gh.RepositoryCommit
 	commitFiles           []gh.CommitFile
 	selectedCommitFileIdx int
+	commitFileStartIndex  int
 	commitDiffViewport    viewport.Model
 
 	// Dashboard state

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -980,4 +981,224 @@ func TestModelPollTick(t *testing.T) {
 		}
 	})
 }
+
+func TestTUI_PRDiffViewAndMergePermissions(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	m := InitModel(client, nil)
+	m.width = 100
+	m.height = 30
+	m.state = viewMain
+	m.activeTab = tabPRs
+
+	// 1. Setup an open PR details
+	prOpen := gh.PullRequest{
+		ID:         101,
+		Number:     101,
+		Title:      "Open PR Title",
+		State:      "open",
+		User:       &gh.User{Login: "coder"},
+		Repository: gh.Repository{Name: "repo-name", Owner: &gh.User{Login: "repo-owner"}},
+	}
+	
+	prDetailsMsg := prDetailsLoadedMsg{
+		pull: &prOpen,
+		commits: []gh.RepositoryCommit{
+			{SHA: "sha1"},
+		},
+		files: []gh.CommitFile{
+			{
+				Filename: "README.md",
+				Status:   "modified",
+				Patch:    "+hello",
+			},
+			{
+				Filename: "main.go",
+				Status:   "added",
+				Patch:    "+func main()",
+			},
+		},
+	}
+
+	rawModel, _ := m.Update(prDetailsMsg)
+	m = rawModel.(Model)
+
+	if m.state != viewPRDetails {
+		t.Fatalf("expected viewPRDetails state, got %d", m.state)
+	}
+
+	// Verify that viewerCanMerge is true (since PR is open)
+	if !m.viewerCanMerge() {
+		t.Error("expected viewerCanMerge to be true for open PR")
+	}
+
+	// Pressing D transitions to viewPRDiff
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("D")})
+	m = rawModel.(Model)
+
+	if m.state != viewPRDiff {
+		t.Errorf("expected viewPRDiff state, got %d", m.state)
+	}
+	if m.selectedFileIdx != 0 {
+		t.Errorf("expected selectedFileIdx to be 0, got %d", m.selectedFileIdx)
+	}
+
+	// Pressing j navigates to the next file
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = rawModel.(Model)
+	if m.selectedFileIdx != 1 {
+		t.Errorf("expected selectedFileIdx to be 1, got %d", m.selectedFileIdx)
+	}
+
+	// Pressing esc goes back to viewPRDetails
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = rawModel.(Model)
+	if m.state != viewPRDetails {
+		t.Errorf("expected state to return to viewPRDetails, got %d", m.state)
+	}
+
+	// 2. Setup a closed PR details
+	prClosed := gh.PullRequest{
+		ID:         102,
+		Number:     102,
+		Title:      "Closed PR Title",
+		State:      "closed",
+		User:       &gh.User{Login: "coder"},
+		Repository: gh.Repository{Name: "repo-name", Owner: &gh.User{Login: "repo-owner"}},
+	}
+	
+	prDetailsMsgClosed := prDetailsLoadedMsg{
+		pull: &prClosed,
+		commits: []gh.RepositoryCommit{
+			{SHA: "sha1"},
+		},
+		files: []gh.CommitFile{
+			{
+				Filename: "README.md",
+				Status:   "modified",
+				Patch:    "+hello",
+			},
+		},
+	}
+
+	rawModel, _ = m.Update(prDetailsMsgClosed)
+	m = rawModel.(Model)
+
+	// Verify that viewerCanMerge is false (since PR is closed/merged)
+	if m.viewerCanMerge() {
+		t.Error("expected viewerCanMerge to be false for closed PR")
+	}
+
+	// Pressing m should not open merge method selection (mergeState should remain 0)
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = rawModel.(Model)
+	if m.mergeState != 0 {
+		t.Errorf("expected mergeState to remain 0, got %d", m.mergeState)
+	}
+
+	// Pressing C should not change mergeState (which represents close PR modal state)
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	m = rawModel.(Model)
+	if m.mergeState != 0 {
+		t.Errorf("expected mergeState to remain 0, got %d", m.mergeState)
+	}
+
+	// 3. Test scrolling behavior with multiple files
+	m.state = viewPRDiff
+	m.height = 20 // visibleRowsFiles = 20 - 16 = 4 files, clamped to 5 min
+	m.prFiles = make([]gh.CommitFile, 15)
+	for i := 0; i < 15; i++ {
+		m.prFiles[i] = gh.CommitFile{Filename: fmt.Sprintf("file%d.go", i)}
+	}
+	m.selectedFileIdx = 0
+	m.prFileStartIndex = 0
+
+	// Scroll down 8 times (selectedFileIdx goes to 8, which is >= 0 + 5)
+	for i := 0; i < 8; i++ {
+		rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		m = rawModel.(Model)
+	}
+
+	if m.selectedFileIdx != 8 {
+		t.Errorf("expected selectedFileIdx to be 8, got %d", m.selectedFileIdx)
+	}
+	if m.prFileStartIndex != 4 {
+		t.Errorf("expected prFileStartIndex to be 4 (8 - 5 + 1), got %d", m.prFileStartIndex)
+	}
+
+	// Scroll back up 3 times (index goes to 5, which is > prFileStartIndex (4), so start index shouldn't change)
+	for i := 0; i < 3; i++ {
+		rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+		m = rawModel.(Model)
+	}
+	if m.selectedFileIdx != 5 {
+		t.Errorf("expected selectedFileIdx to be 5, got %d", m.selectedFileIdx)
+	}
+	if m.prFileStartIndex != 4 {
+		t.Errorf("expected prFileStartIndex to remain 4, got %d", m.prFileStartIndex)
+	}
+
+	// Scroll back up to index 1 (which is < prFileStartIndex (4), so start index should become 1)
+	for i := 0; i < 4; i++ {
+		rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+		m = rawModel.(Model)
+	}
+	if m.selectedFileIdx != 1 {
+		t.Errorf("expected selectedFileIdx to be 1, got %d", m.selectedFileIdx)
+	}
+	if m.prFileStartIndex != 1 {
+		t.Errorf("expected prFileStartIndex to become 1, got %d", m.prFileStartIndex)
+	}
+}
+
+func TestTUI_RunningJobLogsAndPRDetailsRefresh(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	m := InitModel(client, nil)
+	m.state = viewPRDetails
+	m.selectedPull = &gh.PullRequest{
+		Number:     101,
+		Repository: gh.Repository{Name: "repo-name", Owner: &gh.User{Login: "repo-owner"}},
+		Head:       gh.PullRequestRef{SHA: "sha1", Ref: "branch1"},
+	}
+
+	// 1. Verify PR details refresh
+	rawModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = rawModel.(Model)
+	if cmd == nil {
+		t.Error("expected refresh command to be non-nil")
+	}
+
+	// 2. Verify running job logs check
+	m.state = viewJobs
+	m.jobs = []gh.WorkflowJob{
+		{
+			ID:     201,
+			Name:   "running-job",
+			Status: "in_progress",
+		},
+	}
+	m.selectedJobIdx = 0
+	
+	// Pressing Enter on running job should show warning and not fetch logs
+	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = rawModel.(Model)
+	if cmd != nil {
+		t.Error("expected command to be nil when trying to fetch logs of a running job")
+	}
+	if !strings.Contains(m.statusMsg, "not yet available") {
+		t.Errorf("expected statusMsg to contain warning about running job logs, got %q", m.statusMsg)
+	}
+
+	// 3. Verify logsLoadedMsg error handling for 404/BlobNotFound
+	m.state = viewJobs
+	m.statusMsg = ""
+	rawModel, _ = m.Update(logsLoadedMsg{
+		err: fmt.Errorf("github api logs error (status 404): BlobNotFound: The specified blob does not exist"),
+	})
+	m = rawModel.(Model)
+	if !strings.Contains(m.statusMsg, "not yet available") {
+		t.Errorf("expected statusMsg to contain friendly warning on 404 BlobNotFound, got %q", m.statusMsg)
+	}
+}
+
+
 
