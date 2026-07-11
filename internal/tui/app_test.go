@@ -1200,5 +1200,94 @@ func TestTUI_RunningJobLogsAndPRDetailsRefresh(t *testing.T) {
 	}
 }
 
+func TestTUI_IssueViewer(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	m := InitModel(client, nil)
+	m.state = viewMain
+	m.activeTab = tabIssues
+
+	// Test issuesLoadedMsg updates issues list
+	issue := gh.Issue{
+		ID:         202,
+		Number:     202,
+		Title:      "My Issue Title",
+		State:      "open",
+		User:       &gh.User{Login: "coder"},
+		Repository: gh.Repository{Name: "repo-name", Owner: &gh.User{Login: "repo-owner"}},
+	}
+	
+	rawModel, _ := m.Update(issuesLoadedMsg{
+		issues: []gh.Issue{issue},
+	})
+	m = rawModel.(Model)
+
+	if len(m.issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(m.issues))
+	}
+	if m.issues[0].Number != 202 {
+		t.Errorf("expected issue number 202, got %d", m.issues[0].Number)
+	}
+
+	// Test issueDetailsLoadedMsg transitions to viewIssueDetails
+	issueDetailsMsg := issueDetailsLoadedMsg{
+		issue: &issue,
+		comments: []gh.IssueComment{
+			{
+				ID:   1,
+				Body: "nice comment",
+			},
+		},
+		renderedBody: "markdown issue body",
+	}
+
+	rawModel, _ = m.Update(issueDetailsMsg)
+	m = rawModel.(Model)
+
+	if m.state != viewIssueDetails {
+		t.Errorf("expected viewIssueDetails state, got %d", m.state)
+	}
+
+	// Test scrolling description viewport
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = rawModel.(Model)
+	if m.state != viewIssueDetails {
+		t.Errorf("expected state to remain viewIssueDetails, got %d", m.state)
+	}
+}
+
+func TestIssueStateFiltering(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	m := InitModel(client, nil)
+	m.state = viewMain
+	m.activeTab = tabIssues
+
+	// Initial filter state should be open
+	if m.filterIssueState != "open" {
+		t.Errorf("expected default filterIssueState to be open, got %q", m.filterIssueState)
+	}
+
+	// Toggle state once -> closed
+	rawModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = rawModel.(Model)
+	if m.filterIssueState != "closed" {
+		t.Errorf("expected filterIssueState to be closed after one toggle, got %q", m.filterIssueState)
+	}
+
+	// Toggle state twice -> all
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = rawModel.(Model)
+	if m.filterIssueState != "all" {
+		t.Errorf("expected filterIssueState to be all after two toggles, got %q", m.filterIssueState)
+	}
+
+	// Toggle state thrice -> open
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = rawModel.(Model)
+	if m.filterIssueState != "open" {
+		t.Errorf("expected filterIssueState to be open after three toggles, got %q", m.filterIssueState)
+	}
+}
+
+
 
 

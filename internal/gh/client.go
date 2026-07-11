@@ -447,6 +447,42 @@ func (c *Client) GetPullRequestsWithState(ctx context.Context, owner, repo, stat
 	return prs, nil
 }
 
+// GetIssuesWithState fetches issues with a custom state (open, closed, all) for a specific repository.
+func (c *Client) GetIssuesWithState(ctx context.Context, owner, repo, state string, page, perPage int) ([]Issue, error) {
+	var allIssues []Issue
+	q := params{
+		"state":    state,
+		"page":     strconv.Itoa(page),
+		"per_page": strconv.Itoa(perPage),
+	}
+	path := fmt.Sprintf("/repos/%s/%s/issues", owner, repo)
+	err := c.doRequest(ctx, "GET", path, q, &allIssues)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out PRs because the GitHub issues API returns both issues and pull requests.
+	var issues []Issue
+	for _, issue := range allIssues {
+		if issue.PullRequest == nil {
+			issues = append(issues, issue)
+		}
+	}
+	return issues, nil
+}
+
+// GetIssue fetches a single issue by number.
+func (c *Client) GetIssue(ctx context.Context, owner, repo string, number int) (*Issue, error) {
+	var issue Issue
+	path := fmt.Sprintf("/repos/%s/%s/issues/%d", owner, repo, number)
+	err := c.doRequest(ctx, "GET", path, nil, &issue)
+	if err != nil {
+		return nil, err
+	}
+	return &issue, nil
+}
+
+
 // GetPullRequest fetches a single pull request by number.
 func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (*PullRequest, error) {
 	var pr PullRequest

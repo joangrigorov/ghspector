@@ -186,3 +186,24 @@ type IssueComment struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// Issue represents a GitHub issue.
+type Issue struct {
+	ID          int64      `json:"id"`
+	Number      int        `json:"number"`
+	Title       string     `json:"title"`
+	Body        string     `json:"body"`
+	State       string     `json:"state"` // open, closed
+	HTMLURL     string     `json:"html_url"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	ClosedAt    *time.Time `json:"closed_at"`
+	User        *User      `json:"user"` // Issue author
+	Assignees   []User     `json:"assignees"`
+	Labels      []Label    `json:"labels"`
+	Milestone   *Milestone `json:"milestone"`
+	PullRequest *struct {
+		URL string `json:"url"`
+	} `json:"pull_request,omitempty"`
+	Repository Repository `json:"repository"`
+}
+
