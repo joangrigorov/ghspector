@@ -617,6 +617,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = viewPRCommits
 					m.selectedCommitIdx = 0
 				}
+			case "D":
+				if m.selectedPull != nil {
+					m.state = viewPRDiff
+					m.selectedFileIdx = 0
+					m.prFileStartIndex = 0
+					m.updateDiffViewport()
+				}
+			case "r", "ctrl+r":
+				if m.selectedPull != nil {
+					pr := m.selectedPull
+					m.isLoading = true
+					m.loadingMsg = fmt.Sprintf("Refreshing details for PR #%d", pr.Number)
+					return m, m.fetchPRDetailsCmd(pr.Repository.Owner.Login, pr.Repository.Name, pr.Number, pr.Head.SHA, pr.Head.Ref)
+				}
 			}
 
 		case viewPRCommits:
@@ -655,11 +669,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "j", "down":
 				if m.selectedCommitFileIdx < len(m.commitFiles)-1 {
 					m.selectedCommitFileIdx++
+					m.scrollCommitFiles()
 					m.updateCommitDiffViewport()
 				}
 			case "k", "up":
 				if m.selectedCommitFileIdx > 0 {
 					m.selectedCommitFileIdx--
+					m.scrollCommitFiles()
 					m.updateCommitDiffViewport()
 				}
 			case "u":
@@ -669,6 +685,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "w":
 				if m.viewingCommit != nil && m.viewingCommit.HTMLURL != "" {
 					_ = openBrowser(m.viewingCommit.HTMLURL)
+				}
+			}
+
+		case viewPRDiff:
+			switch msg.String() {
+			case "esc", "backspace":
+				m.state = viewPRDetails
+			case "j", "down":
+				if m.selectedFileIdx < len(m.prFiles)-1 {
+					m.selectedFileIdx++
+					m.scrollPRFiles()
+					m.updateDiffViewport()
+				}
+			case "k", "up":
+				if m.selectedFileIdx > 0 {
+					m.selectedFileIdx--
+					m.scrollPRFiles()
+					m.updateDiffViewport()
+				}
+			case "u":
+				m.diffViewport.ScrollUp(3)
+			case "d":
+				m.diffViewport.ScrollDown(3)
+			case "w":
+				if m.selectedPull != nil && m.selectedPull.HTMLURL != "" {
+					_ = openBrowser(m.selectedPull.HTMLURL + "/files")
 				}
 			}
 
@@ -705,6 +747,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				if len(m.jobs) > 0 {
 					job := m.jobs[m.selectedJobIdx]
+					if job.Status == "in_progress" || job.Status == "queued" {
+						m.statusMsg = "Logs are not yet available for running jobs. Please wait for completion."
+						return m, nil
+					}
 					run := m.getRun()
 					m.state = viewLogs
 					m.loadingMsg = "Fetching logs for " + job.Name
@@ -769,6 +815,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = viewJobs
 			case "r", "ctrl+r":
 				job := m.jobs[m.selectedJobIdx]
+				if job.Status == "in_progress" || job.Status == "queued" {
+					m.statusMsg = "Logs are not yet available for running jobs. Please wait for completion."
+					m.logsLoading = false
+					return m, nil
+				}
 				run := m.getRun()
 				m.logs = ""
 				m.logsLoading = true
@@ -841,8 +892,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logsViewport.Height = 5
 		}
 		
-		m.diffViewport.Width = msg.Width - 34
-		m.diffViewport.Height = msg.Height - 10
+		m.diffViewport.Width = msg.Width - 44
+		m.diffViewport.Height = msg.Height - 16
 		if m.diffViewport.Height < 5 {
 			m.diffViewport.Height = 5
 		}
@@ -854,7 +905,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		
 		m.commitDiffViewport.Width = msg.Width - 44
-		m.commitDiffViewport.Height = msg.Height - 10
+		m.commitDiffViewport.Height = msg.Height - 16
 		if m.commitDiffViewport.Height < 5 {
 			m.commitDiffViewport.Height = 5
 		}
@@ -978,6 +1029,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		
 		m.activePRTab = prTabInfo
 		m.selectedFileIdx = 0
+		m.prFileStartIndex = 0
+		m.updateDiffViewport()
 		m.selectedCommitIdx = 0
 		m.selectedCheckIdx = 0
 		m.prDescFocused = true
@@ -1011,6 +1064,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewingCommit = msg.commit
 		m.commitFiles = msg.files
 		m.selectedCommitFileIdx = 0
+		m.commitFileStartIndex = 0
 		m.updateCommitDiffViewport()
 		m.state = viewCommitDetails
 
@@ -1187,7 +1241,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logsLoadedMsg:
 		m.logsLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading logs: " + msg.err.Error()
+			statusMsg := "Error loading logs: " + msg.err.Error()
+			errStr := msg.err.Error()
+			if strings.Contains(errStr, "404") || strings.Contains(errStr, "BlobNotFound") || strings.Contains(errStr, "The specified blob does not exist") {
+				statusMsg = "Logs are not yet available for running jobs. Please wait for the job to complete."
+			}
+			m.statusMsg = statusMsg
 			m.state = viewJobs
 			return m, nil
 		}
@@ -1586,12 +1645,61 @@ func (m *Model) scrollPulls() {
 	}
 }
 
+func (m *Model) scrollPRFiles() {
+	visibleRows := m.height - 16
+	if visibleRows < 5 {
+		visibleRows = 5
+	}
+	totalRows := len(m.prFiles)
+	if m.selectedFileIdx < m.prFileStartIndex {
+		m.prFileStartIndex = m.selectedFileIdx
+	}
+	if m.selectedFileIdx >= m.prFileStartIndex+visibleRows {
+		m.prFileStartIndex = m.selectedFileIdx - visibleRows + 1
+	}
+	if m.prFileStartIndex > totalRows-visibleRows {
+		m.prFileStartIndex = totalRows - visibleRows
+	}
+	if m.prFileStartIndex < 0 {
+		m.prFileStartIndex = 0
+	}
+}
+
+func (m *Model) scrollCommitFiles() {
+	visibleRows := m.height - 16
+	if visibleRows < 5 {
+		visibleRows = 5
+	}
+	totalRows := len(m.commitFiles)
+	if m.selectedCommitFileIdx < m.commitFileStartIndex {
+		m.commitFileStartIndex = m.selectedCommitFileIdx
+	}
+	if m.selectedCommitFileIdx >= m.commitFileStartIndex+visibleRows {
+		m.commitFileStartIndex = m.selectedCommitFileIdx - visibleRows + 1
+	}
+	if m.commitFileStartIndex > totalRows-visibleRows {
+		m.commitFileStartIndex = totalRows - visibleRows
+	}
+	if m.commitFileStartIndex < 0 {
+		m.commitFileStartIndex = 0
+	}
+}
+
 func (m *Model) updateCommitDiffViewport() {
-	m.commitDiffViewport = viewport.New(m.width-44, m.height-10)
+	m.commitDiffViewport = viewport.New(m.width-44, m.height-16)
 	if m.selectedCommitFileIdx < len(m.commitFiles) {
 		m.commitDiffViewport.SetContent(m.formatDiff(m.commitFiles[m.selectedCommitFileIdx].Patch))
 	} else {
 		m.commitDiffViewport.SetContent("")
+	}
+}
+
+func (m *Model) updateDiffViewport() {
+	m.diffViewport = viewport.New(m.width-44, m.height-16)
+	if m.selectedFileIdx < len(m.prFiles) {
+		m.diffViewport.SetContent(m.formatDiff(m.prFiles[m.selectedFileIdx].Patch))
+	} else {
+		m.diffViewport.SetContent("")
 	}
 }
 
@@ -1618,6 +1726,9 @@ func (m Model) formatDiff(patch string) string {
 }
 
 func (m Model) viewerCanMerge() bool {
+	if m.selectedPull == nil || m.selectedPull.State != "open" {
+		return false
+	}
 	scopes := m.client.GetScopes()
 	if len(scopes) == 0 {
 		return true // Default to true if scopes header is missing so user can try (with friendly API error fallback)
@@ -1751,6 +1862,7 @@ func (m Model) fetchPRDetailsCmd(owner, repo string, number int, headSHA, headBr
 		var checks []gh.CheckRun
 		var runs []gh.WorkflowRun
 		var commits []gh.RepositoryCommit
+		var files []gh.CommitFile
 
 		wg.Add(1)
 		go func() {
@@ -1760,6 +1872,15 @@ func (m Model) fetchPRDetailsCmd(owner, repo string, number int, headSHA, headBr
 				pull = p
 			} else {
 				err = e
+			}
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fList, e := m.client.GetPullRequestFiles(m.ctx, owner, repo, number)
+			if e == nil {
+				files = fList
 			}
 		}()
 
@@ -1902,6 +2023,7 @@ func (m Model) fetchPRDetailsCmd(owner, repo string, number int, headSHA, headBr
 			commitChecks: commitChecks,
 			actionsRuns:  runs,
 			renderedBody: renderedDesc,
+			files:        files,
 		}
 	}
 }
