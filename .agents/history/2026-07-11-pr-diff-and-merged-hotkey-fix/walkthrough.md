@@ -13,6 +13,7 @@ I have successfully implemented the PR Diff page feature, added the associated k
 - Updated `fetchPRDetailsCmd` to concurrently fetch PR files using the API client.
 - Populated `m.prFiles` and initialized the diff viewport in `prDetailsLoadedMsg` handling.
 - Implemented `updateDiffViewport()` helper to setup and display the patch content of the selected file.
+- Adjusted diff viewport heights (`Height - 13`) in the resize handler and creation helpers to accommodate the file path header.
 - Added keyboard shortcuts in the main loop:
   - From PR details, pressing `D` (Shift+d) transitions to the PR Diff view.
   - In `viewPRDiff`, navigating with `j/k` shifts the selected file and updates the diff viewport, `u/d` scrolls the viewport, `w` opens the PR files page in the browser, and `esc` / `backspace` goes back to PR details.
@@ -21,7 +22,8 @@ I have successfully implemented the PR Diff page feature, added the associated k
 #### [view.go](internal/tui/view.go)
 - Wired `viewPRDiff` state inside the `View` render switch.
 - Implemented `renderPRDiffView()` displaying files changed on the left and the file patch diff on the right.
-- Included the `D:Diff` hotkey in `renderPRDetailsView` footer key definitions.
+- Added a styled header (`DIFF: <full_file_path>`) at the top of the right column inside both the Commit Details and PR Diff views.
+- Aligned footer key definitions in `renderPRDetailsView` to display `C:Close PR` instead of `Shift+C:Close PR`.
 
 ---
 
@@ -42,5 +44,5 @@ go test ./...
 # ?   	ghspector/cmd/ghspector	[no test files]
 # ok  	ghspector/internal/auth	(cached)
 # ok  	ghspector/internal/gh	(cached)
-# ok  	ghspector/internal/tui	0.021s
+# ok  	ghspector/internal/tui	0.064s
 ```

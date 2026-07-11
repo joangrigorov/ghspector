@@ -1493,11 +1493,24 @@ func (m Model) renderCommitDetailsView() string {
 		}
 	}
 
+	var selectedPath string
+	if m.selectedCommitFileIdx < len(m.commitFiles) {
+		selectedPath = m.commitFiles[m.selectedCommitFileIdx].Filename
+	}
+
+	diffHeader := fmt.Sprintf(" DIFF: %s", selectedPath)
+	diffHeaderRendered := m.theme.TableHeader.Render(fmt.Sprintf("%-*s", m.commitDiffViewport.Width, diffHeader))
+	diffHeaderLines := strings.Split(diffHeaderRendered, "\n")
+
 	viewportLines := strings.Split(m.commitDiffViewport.View(), "\n")
 
+	var rightLines []string
+	rightLines = append(rightLines, diffHeaderLines...)
+	rightLines = append(rightLines, viewportLines...)
+
 	maxLines := len(fileLines)
-	if len(viewportLines) > maxLines {
-		maxLines = len(viewportLines)
+	if len(rightLines) > maxLines {
+		maxLines = len(rightLines)
 	}
 
 	visibleRows := m.height - 12
@@ -1517,8 +1530,8 @@ func (m Model) renderCommitDetailsView() string {
 		}
 
 		rightPart := ""
-		if i < len(viewportLines) {
-			rightPart = viewportLines[i]
+		if i < len(rightLines) {
+			rightPart = rightLines[i]
 		}
 		sb.WriteString("  " + leftPart + " │ " + rightPart + "\n")
 	}
@@ -1588,11 +1601,24 @@ func (m Model) renderPRDiffView() string {
 		}
 	}
 
+	var selectedPath string
+	if m.selectedFileIdx < len(m.prFiles) {
+		selectedPath = m.prFiles[m.selectedFileIdx].Filename
+	}
+
+	diffHeader := fmt.Sprintf(" DIFF: %s", selectedPath)
+	diffHeaderRendered := m.theme.TableHeader.Render(fmt.Sprintf("%-*s", m.diffViewport.Width, diffHeader))
+	diffHeaderLines := strings.Split(diffHeaderRendered, "\n")
+
 	viewportLines := strings.Split(m.diffViewport.View(), "\n")
 
+	var rightLines []string
+	rightLines = append(rightLines, diffHeaderLines...)
+	rightLines = append(rightLines, viewportLines...)
+
 	maxLines := len(fileLines)
-	if len(viewportLines) > maxLines {
-		maxLines = len(viewportLines)
+	if len(rightLines) > maxLines {
+		maxLines = len(rightLines)
 	}
 
 	visibleRows := m.height - 12
@@ -1612,8 +1638,8 @@ func (m Model) renderPRDiffView() string {
 		}
 
 		rightPart := ""
-		if i < len(viewportLines) {
-			rightPart = viewportLines[i]
+		if i < len(rightLines) {
+			rightPart = rightLines[i]
 		}
 		sb.WriteString("  " + leftPart + " │ " + rightPart + "\n")
 	}
