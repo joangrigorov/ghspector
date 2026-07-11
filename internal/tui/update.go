@@ -617,6 +617,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = viewPRCommits
 					m.selectedCommitIdx = 0
 				}
+			case "D":
+				if m.selectedPull != nil {
+					m.state = viewPRDiff
+					m.selectedFileIdx = 0
+					m.updateDiffViewport()
+				}
 			}
 
 		case viewPRCommits:
@@ -669,6 +675,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "w":
 				if m.viewingCommit != nil && m.viewingCommit.HTMLURL != "" {
 					_ = openBrowser(m.viewingCommit.HTMLURL)
+				}
+			}
+
+		case viewPRDiff:
+			switch msg.String() {
+			case "esc", "backspace":
+				m.state = viewPRDetails
+			case "j", "down":
+				if m.selectedFileIdx < len(m.prFiles)-1 {
+					m.selectedFileIdx++
+					m.updateDiffViewport()
+				}
+			case "k", "up":
+				if m.selectedFileIdx > 0 {
+					m.selectedFileIdx--
+					m.updateDiffViewport()
+				}
+			case "u":
+				m.diffViewport.ScrollUp(3)
+			case "d":
+				m.diffViewport.ScrollDown(3)
+			case "w":
+				if m.selectedPull != nil && m.selectedPull.HTMLURL != "" {
+					_ = openBrowser(m.selectedPull.HTMLURL + "/files")
 				}
 			}
 
@@ -841,7 +871,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logsViewport.Height = 5
 		}
 		
-		m.diffViewport.Width = msg.Width - 34
+		m.diffViewport.Width = msg.Width - 44
 		m.diffViewport.Height = msg.Height - 10
 		if m.diffViewport.Height < 5 {
 			m.diffViewport.Height = 5
@@ -978,6 +1008,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		
 		m.activePRTab = prTabInfo
 		m.selectedFileIdx = 0
+		m.updateDiffViewport()
 		m.selectedCommitIdx = 0
 		m.selectedCheckIdx = 0
 		m.prDescFocused = true
@@ -1595,6 +1626,15 @@ func (m *Model) updateCommitDiffViewport() {
 	}
 }
 
+func (m *Model) updateDiffViewport() {
+	m.diffViewport = viewport.New(m.width-44, m.height-10)
+	if m.selectedFileIdx < len(m.prFiles) {
+		m.diffViewport.SetContent(m.formatDiff(m.prFiles[m.selectedFileIdx].Patch))
+	} else {
+		m.diffViewport.SetContent("")
+	}
+}
+
 func (m Model) formatDiff(patch string) string {
 	if patch == "" {
 		return m.theme.HelpDesc.Render("No diff content available (binary file or empty).")
@@ -1618,6 +1658,9 @@ func (m Model) formatDiff(patch string) string {
 }
 
 func (m Model) viewerCanMerge() bool {
+	if m.selectedPull == nil || m.selectedPull.State != "open" {
+		return false
+	}
 	scopes := m.client.GetScopes()
 	if len(scopes) == 0 {
 		return true // Default to true if scopes header is missing so user can try (with friendly API error fallback)
@@ -1751,6 +1794,7 @@ func (m Model) fetchPRDetailsCmd(owner, repo string, number int, headSHA, headBr
 		var checks []gh.CheckRun
 		var runs []gh.WorkflowRun
 		var commits []gh.RepositoryCommit
+		var files []gh.CommitFile
 
 		wg.Add(1)
 		go func() {
@@ -1760,6 +1804,15 @@ func (m Model) fetchPRDetailsCmd(owner, repo string, number int, headSHA, headBr
 				pull = p
 			} else {
 				err = e
+			}
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fList, e := m.client.GetPullRequestFiles(m.ctx, owner, repo, number)
+			if e == nil {
+				files = fList
 			}
 		}()
 
@@ -1902,6 +1955,7 @@ func (m Model) fetchPRDetailsCmd(owner, repo string, number int, headSHA, headBr
 			commitChecks: commitChecks,
 			actionsRuns:  runs,
 			renderedBody: renderedDesc,
+			files:        files,
 		}
 	}
 }

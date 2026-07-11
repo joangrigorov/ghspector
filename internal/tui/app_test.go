@@ -981,3 +981,125 @@ func TestModelPollTick(t *testing.T) {
 	})
 }
 
+func TestTUI_PRDiffViewAndMergePermissions(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	m := InitModel(client, nil)
+	m.width = 100
+	m.height = 30
+	m.state = viewMain
+	m.activeTab = tabPRs
+
+	// 1. Setup an open PR details
+	prOpen := gh.PullRequest{
+		ID:         101,
+		Number:     101,
+		Title:      "Open PR Title",
+		State:      "open",
+		User:       &gh.User{Login: "coder"},
+		Repository: gh.Repository{Name: "repo-name", Owner: &gh.User{Login: "repo-owner"}},
+	}
+	
+	prDetailsMsg := prDetailsLoadedMsg{
+		pull: &prOpen,
+		commits: []gh.RepositoryCommit{
+			{SHA: "sha1"},
+		},
+		files: []gh.CommitFile{
+			{
+				Filename: "README.md",
+				Status:   "modified",
+				Patch:    "+hello",
+			},
+			{
+				Filename: "main.go",
+				Status:   "added",
+				Patch:    "+func main()",
+			},
+		},
+	}
+
+	rawModel, _ := m.Update(prDetailsMsg)
+	m = rawModel.(Model)
+
+	if m.state != viewPRDetails {
+		t.Fatalf("expected viewPRDetails state, got %d", m.state)
+	}
+
+	// Verify that viewerCanMerge is true (since PR is open)
+	if !m.viewerCanMerge() {
+		t.Error("expected viewerCanMerge to be true for open PR")
+	}
+
+	// Pressing D transitions to viewPRDiff
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("D")})
+	m = rawModel.(Model)
+
+	if m.state != viewPRDiff {
+		t.Errorf("expected viewPRDiff state, got %d", m.state)
+	}
+	if m.selectedFileIdx != 0 {
+		t.Errorf("expected selectedFileIdx to be 0, got %d", m.selectedFileIdx)
+	}
+
+	// Pressing j navigates to the next file
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = rawModel.(Model)
+	if m.selectedFileIdx != 1 {
+		t.Errorf("expected selectedFileIdx to be 1, got %d", m.selectedFileIdx)
+	}
+
+	// Pressing esc goes back to viewPRDetails
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = rawModel.(Model)
+	if m.state != viewPRDetails {
+		t.Errorf("expected state to return to viewPRDetails, got %d", m.state)
+	}
+
+	// 2. Setup a closed PR details
+	prClosed := gh.PullRequest{
+		ID:         102,
+		Number:     102,
+		Title:      "Closed PR Title",
+		State:      "closed",
+		User:       &gh.User{Login: "coder"},
+		Repository: gh.Repository{Name: "repo-name", Owner: &gh.User{Login: "repo-owner"}},
+	}
+	
+	prDetailsMsgClosed := prDetailsLoadedMsg{
+		pull: &prClosed,
+		commits: []gh.RepositoryCommit{
+			{SHA: "sha1"},
+		},
+		files: []gh.CommitFile{
+			{
+				Filename: "README.md",
+				Status:   "modified",
+				Patch:    "+hello",
+			},
+		},
+	}
+
+	rawModel, _ = m.Update(prDetailsMsgClosed)
+	m = rawModel.(Model)
+
+	// Verify that viewerCanMerge is false (since PR is closed/merged)
+	if m.viewerCanMerge() {
+		t.Error("expected viewerCanMerge to be false for closed PR")
+	}
+
+	// Pressing m should not open merge method selection (mergeState should remain 0)
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = rawModel.(Model)
+	if m.mergeState != 0 {
+		t.Errorf("expected mergeState to remain 0, got %d", m.mergeState)
+	}
+
+	// Pressing C should not change mergeState (which represents close PR modal state)
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	m = rawModel.(Model)
+	if m.mergeState != 0 {
+		t.Errorf("expected mergeState to remain 0, got %d", m.mergeState)
+	}
+}
+
+

@@ -27,6 +27,7 @@ const (
 	viewPRFilterTypeSelect
 	viewPRComments
 	viewPRCommits
+	viewPRDiff
 )
 
 type mainTab int
