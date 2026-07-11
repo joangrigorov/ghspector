@@ -28,6 +28,10 @@ const (
 	viewPRComments
 	viewPRCommits
 	viewPRDiff
+	viewIssueDetails
+	viewIssueComments
+	viewIssueFilterInput
+	viewIssueFilterTypeSelect
 )
 
 type mainTab int
@@ -35,6 +39,7 @@ type mainTab int
 const (
 	tabPRs mainTab = iota
 	tabWorkflows
+	tabIssues
 )
 
 type prTab int
@@ -109,6 +114,24 @@ type Model struct {
 	prDescViewport    viewport.Model
 	prDescFocused     bool // true: description focused, false: checks sidebar focused
 	targetJobName     string
+
+	// Data Cache - Issues
+	issues             []gh.Issue
+	selectedIssueIdx   int
+	issueStartIndex    int
+	issuePage          int
+	hasMoreIssues      bool
+	selectedIssue      *gh.Issue
+	issueComments      []gh.IssueComment
+	issueDescViewport  viewport.Model
+	issueDescFocused   bool // true: description focused, false: metadata sidebar focused
+
+	// Issue filter fields
+	filterIssueAuthor   string
+	filterIssueAssignee string
+	filterIssueState    string
+	issueFilterUser     string
+
 
 	// Data Cache - Commit Viewer
 	viewingCommit         *gh.RepositoryCommit
@@ -214,6 +237,23 @@ type prCommentsLoadedMsg struct {
 	err      error
 }
 
+type issuesLoadedMsg struct {
+	issues []gh.Issue
+	err    error
+}
+
+type issueDetailsLoadedMsg struct {
+	issue        *gh.Issue
+	comments     []gh.IssueComment
+	renderedBody string
+	err          error
+}
+
+type issueCommentsLoadedMsg struct {
+	comments []gh.IssueComment
+	err      error
+}
+
 type commitDetailsLoadedMsg struct {
 	commit *gh.RepositoryCommit
 	files  []gh.CommitFile
@@ -256,9 +296,12 @@ func InitModel(client *gh.Client, config *auth.Config) Model {
 		commentsViewport: viewport.New(80, 20),
 		prCommitChecks:   make(map[string][]gh.CheckRun),
 		hasMorePulls:     true,
-		pullPage:     1,
-		filterPRState: "open",
-		textInput:    ti,
+		pullPage:         1,
+		filterPRState:    "open",
+		hasMoreIssues:    true,
+		issuePage:        1,
+		filterIssueState: "open",
+		textInput:        ti,
 	}
 }
 

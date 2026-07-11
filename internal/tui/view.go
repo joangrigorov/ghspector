@@ -21,7 +21,7 @@ func (m Model) View() string {
 	switch m.state {
 	case viewSplash:
 		return RenderSplash(m.theme, m.loadingMsg, m.tickCount)
-	case viewMain, viewPRFilterInput, viewPRFilterTypeSelect:
+	case viewMain, viewPRFilterInput, viewPRFilterTypeSelect, viewIssueFilterInput, viewIssueFilterTypeSelect:
 		switch m.activeTab {
 		case tabWorkflows:
 			return m.renderMainView()
@@ -32,6 +32,16 @@ func (m Model) View() string {
 				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
 			} else if m.state == viewPRFilterTypeSelect {
 				modalStr := m.renderPRFilterTypeSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			}
+			return viewStr
+		case tabIssues:
+			viewStr := m.renderIssuesView()
+			if m.state == viewIssueFilterInput {
+				modalStr := m.renderIssueFilterInputModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			} else if m.state == viewIssueFilterTypeSelect {
+				modalStr := m.renderIssueFilterTypeSelectModal()
 				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
 			}
 			return viewStr
@@ -54,6 +64,10 @@ func (m Model) View() string {
 		return m.renderPRCommitsView()
 	case viewPRDiff:
 		return m.renderPRDiffView()
+	case viewIssueDetails:
+		return m.renderIssueDetailsView()
+	case viewIssueComments:
+		return m.renderIssueCommentsView()
 	case viewCommitDetails:
 		return m.renderCommitDetailsView()
 	default:
@@ -142,9 +156,15 @@ func (m Model) renderHeader() string {
 			pageName = "Workflows"
 		} else if m.activeTab == tabPRs {
 			pageName = "Pull Requests"
+		} else if m.activeTab == tabIssues {
+			pageName = "Issues"
 		}
 	} else if m.state == viewPRDetails {
 		pageName = "PR Details"
+	} else if m.state == viewIssueDetails {
+		pageName = "Issue Details"
+	} else if m.state == viewIssueComments {
+		pageName = "Issue Comments"
 	} else if m.state == viewCommitDetails {
 		pageName = "Commit Details"
 	} else if m.state == viewJobs {
@@ -1790,3 +1810,402 @@ func (m Model) formatCheckName(check gh.CheckRun) string {
 
 	return check.Name
 }
+
+func (m Model) renderIssueFilterInputModal() string {
+	var modalText strings.Builder
+	modalText.WriteString("┌──────────────────────────────────────────────┐\n")
+	modalText.WriteString("│                 FILTER USER                  │\n")
+	modalText.WriteString("├──────────────────────────────────────────────┤\n")
+	modalText.WriteString("│                                              │\n")
+	modalText.WriteString("│  Enter GitHub username to filter by:         │\n")
+	modalText.WriteString("│                                              │\n")
+	
+	// Create padded line using Lipgloss
+	lineStyle := lipgloss.NewStyle().Width(46).PaddingLeft(4)
+	inputLine := lineStyle.Render(m.textInput.View())
+	modalText.WriteString("│" + inputLine + "│\n")
+	
+	modalText.WriteString("│                                              │\n")
+	modalText.WriteString("│  Press " + m.theme.HelpKey.Render("Enter") + " to proceed, " + m.theme.HelpDesc.Render("Esc") + " to cancel       │\n")
+	modalText.WriteString("└──────────────────────────────────────────────┘")
+	return modalText.String()
+}
+
+func (m Model) renderIssueFilterTypeSelectModal() string {
+	var modalText strings.Builder
+	username := m.issueFilterUser
+	if len(username) > 18 {
+		username = username[:15] + "..."
+	}
+	
+	modalText.WriteString("┌──────────────────────────────────────────────┐\n")
+	modalText.WriteString("│                 FILTER TYPE                  │\n")
+	modalText.WriteString("├──────────────────────────────────────────────┤\n")
+	modalText.WriteString("│                                              │\n")
+	
+	// User line using Lipgloss
+	userStyle := lipgloss.NewStyle().Width(46).PaddingLeft(4)
+	userText := fmt.Sprintf("Filter user @%s by:", username)
+	userLine := userStyle.Render(userText)
+	modalText.WriteString("│" + userLine + "│\n")
+	
+	modalText.WriteString("│                                              │\n")
+	modalText.WriteString("│    " + m.theme.HelpKey.Render("[A]") + " Author                                │\n")
+	modalText.WriteString("│    " + m.theme.HelpKey.Render("[I]") + " Assignee                              │\n")
+	modalText.WriteString("│                                              │\n")
+	modalText.WriteString("│  Press " + m.theme.HelpDesc.Render("Esc") + " or " + m.theme.HelpDesc.Render("C") + " to cancel                    │\n")
+	modalText.WriteString("└──────────────────────────────────────────────┘")
+	return modalText.String()
+}
+
+func (m Model) renderIssuesView() string {
+	var sb strings.Builder
+	sb.WriteString(m.renderHeader())
+	sb.WriteString("\n")
+
+	// Display active filters
+	var filterTexts []string
+	if m.filterIssueState != "" && m.filterIssueState != "open" {
+		filterTexts = append(filterTexts, fmt.Sprintf("State: %s", strings.ToUpper(m.filterIssueState)))
+	}
+	if m.filterIssueAuthor != "" {
+		filterTexts = append(filterTexts, fmt.Sprintf("Author: @%s", m.filterIssueAuthor))
+	}
+	if m.filterIssueAssignee != "" {
+		filterTexts = append(filterTexts, fmt.Sprintf("Assignee: @%s", m.filterIssueAssignee))
+	}
+	if len(filterTexts) > 0 {
+		sb.WriteString("  " + m.theme.StatusWaiting.Render("Filter active: "+strings.Join(filterTexts, ", ")+" (Press 'x' to clear)") + "\n\n")
+	}
+
+	issueTitleWidth := m.width - 102
+	if issueTitleWidth < 15 {
+		issueTitleWidth = 15
+	}
+
+	header := fmt.Sprintf("  %-3s %-6s %-*s %-24s %-20s %-12s %-16s", "ST", "ISS #", issueTitleWidth, "ISSUE TITLE", "AUTHOR", "REPOSITORY", "ASSIGNEES", "LABELS")
+	sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
+
+	renderedCount := 0
+	hideList := m.state == viewIssueFilterInput || m.state == viewIssueFilterTypeSelect
+	
+	if hideList {
+		visibleRows := m.height - 12
+		if len(filterTexts) > 0 {
+			visibleRows -= 2
+		}
+		if visibleRows < 5 {
+			visibleRows = 5
+		}
+		for i := 0; i < visibleRows; i++ {
+			sb.WriteString("\n")
+		}
+		renderedCount = visibleRows
+	} else if len(m.issues) == 0 {
+		msg := "No open issues found."
+		if m.isLoading {
+			msg = "Loading issues..."
+		}
+		sb.WriteString("\n  " + m.theme.HelpDesc.Render(msg) + "\n\n")
+		renderedCount = 3
+	} else {
+		visibleRows := m.height - 12
+		if len(filterTexts) > 0 {
+			visibleRows -= 2
+		}
+		if visibleRows < 5 {
+			visibleRows = 5
+		}
+
+		endIdx := m.issueStartIndex + visibleRows
+		totalRows := len(m.issues)
+		if m.hasMoreIssues {
+			totalRows++
+		}
+		if endIdx > totalRows {
+			endIdx = totalRows
+		}
+
+		renderedCount = endIdx - m.issueStartIndex
+
+		for i := m.issueStartIndex; i < endIdx; i++ {
+			if i < len(m.issues) {
+				issue := m.issues[i]
+				
+				statusInd := m.theme.StatusSuccessful.Render("●")
+				if issue.State == "closed" {
+					statusInd = m.theme.StatusFailed.Render("○")
+				}
+
+				repoName := issue.Repository.Name
+				if len(repoName) > 20 {
+					repoName = repoName[:17] + "..."
+				}
+
+				issueNumStr := fmt.Sprintf("#%d", issue.Number)
+				
+				issueTitle := issue.Title
+				if len(issueTitle) > issueTitleWidth {
+					issueTitle = issueTitle[:issueTitleWidth-3] + "..."
+				}
+
+				authorName := "unknown"
+				if issue.User != nil && issue.User.Login != "" {
+					authorName = issue.User.Login
+				}
+				if len(authorName) > 24 {
+					authorName = authorName[:21] + "..."
+				}
+
+				assigneesList := "None"
+				if len(issue.Assignees) > 0 {
+					var names []string
+					for _, user := range issue.Assignees {
+						names = append(names, user.Login)
+					}
+					assigneesList = strings.Join(names, ", ")
+				}
+				if len(assigneesList) > 12 {
+					assigneesList = assigneesList[:9] + "..."
+				}
+
+				labelsList := "None"
+				if len(issue.Labels) > 0 {
+					var names []string
+					for _, label := range issue.Labels {
+						names = append(names, label.Name)
+					}
+					labelsList = strings.Join(names, ", ")
+				}
+				if len(labelsList) > 16 {
+					labelsList = labelsList[:13] + "..."
+				}
+
+				paddedIssueTitle := fmt.Sprintf("%-*s", issueTitleWidth, issueTitle)
+
+				rowText := fmt.Sprintf("  %-3s %-6s %s %-24s %-20s %-12s %-16s",
+					statusInd,
+					issueNumStr,
+					paddedIssueTitle,
+					authorName,
+					repoName,
+					assigneesList,
+					labelsList,
+				)
+
+				if i == m.selectedIssueIdx {
+					sb.WriteString(m.theme.TableSelected.Render(rowText) + "\n")
+				} else {
+					sb.WriteString(m.theme.TableRow.Render(rowText) + "\n")
+				}
+			} else if i == len(m.issues) && m.hasMoreIssues {
+				loadText := "  [-- Load More Issues... --]"
+				if m.selectedIssueIdx == len(m.issues) {
+					sb.WriteString(m.theme.TableSelected.Render(loadText) + "\n")
+				} else {
+					sb.WriteString(m.theme.Subtitle.Render(loadText) + "\n")
+				}
+			}
+		}
+	}
+
+	contentHeight := renderedCount + 10
+	if len(filterTexts) > 0 {
+		contentHeight += 2
+	}
+	padding := m.height - contentHeight
+	if padding < 0 {
+		padding = 0
+	}
+	for i := 0; i < padding; i++ {
+		sb.WriteString("\n")
+	}
+
+	keys := []string{"Tab:Tabs", "j/k:Navigate", "Enter:View Issue", "w:Browser", "f:Filter", "s:State", "a:My Issues", "i:My Assigned", "x:Clear Filter"}
+	sb.WriteString(m.renderFooter(keys))
+
+	return sb.String()
+}
+
+func (m Model) renderIssueDetailsView() string {
+	var sb strings.Builder
+	sb.WriteString(m.renderHeader())
+	sb.WriteString("\n")
+
+	issue := m.selectedIssue
+	if issue == nil {
+		return "No Issue selected."
+	}
+
+	issueStateStr := "OPEN"
+	issueStateStyle := m.theme.StatusSuccessful
+	if issue.State == "closed" {
+		issueStateStr = "CLOSED"
+		issueStateStyle = m.theme.StatusFailed
+	}
+
+	authorLogin := "unknown"
+	if issue.User != nil {
+		authorLogin = issue.User.Login
+	}
+
+	sb.WriteString("  " + issueStateStyle.Render(fmt.Sprintf("[%s]", issueStateStr)) + " " + m.theme.LogoText.Render(fmt.Sprintf("Issue #%d: %s", issue.Number, issue.Title)) + "\n")
+	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Author: @%s", issue.Repository.FullName, authorLogin)) + "\n")
+	sb.WriteString("  " + m.theme.Border.Render(strings.Repeat("─", m.width-4)) + "\n\n")
+
+	// Calculate widths dynamically
+	sidebarWidth := m.width / 5
+	if sidebarWidth < 40 {
+		sidebarWidth = 40
+	}
+	h := m.issueDescViewport.Height
+
+	// Render two columns side-by-side: Description on the left, sidebar on the right
+	middleView := m.issueDescViewport.View()
+	rightView := m.renderIssueRightSidebar(sidebarWidth, h)
+
+	sideBySide := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		middleView,
+		"   ", // separator gap
+		rightView,
+	)
+
+	sb.WriteString(sideBySide + "\n")
+
+	// Dynamic padding
+	contentHeight := h + 10
+	padding := m.height - contentHeight
+	if padding < 0 {
+		padding = 0
+	}
+	for i := 0; i < padding; i++ {
+		sb.WriteString("\n")
+	}
+
+	keys := []string{"Esc:Back to Issues", "Tab:Toggle Focus", "j/k:Navigate", "w:Browser", "r:Refresh", "c:Comments", "q:Quit"}
+	sb.WriteString(m.renderFooter(keys))
+
+	return sb.String()
+}
+
+func (m Model) renderIssueRightSidebar(width, height int) string {
+	var sb strings.Builder
+	issue := m.selectedIssue
+	if issue == nil {
+		return ""
+	}
+
+	styleVal := m.theme.LogoText
+	styleLabel := m.theme.Subtitle
+
+	sb.WriteString(m.theme.TableHeader.Render(fmt.Sprintf(" %-*s", width-2, "METADATA")) + "\n")
+
+	// State
+	stateText := "Open"
+	if issue.State == "closed" {
+		stateText = "Closed"
+	}
+	fmt.Fprintf(&sb, " %-12s %s\n", styleLabel.Render("State:"), styleVal.Render(stateText))
+
+	// Milestone
+	milestoneText := "None"
+	if issue.Milestone != nil {
+		milestoneText = issue.Milestone.Title
+	}
+	if len(milestoneText) > width-15 {
+		milestoneText = milestoneText[:width-18] + "..."
+	}
+	fmt.Fprintf(&sb, " %-12s %s\n", styleLabel.Render("Milestone:"), styleVal.Render(milestoneText))
+
+	// Assignees
+	assigneesText := "None"
+	if len(issue.Assignees) > 0 {
+		var names []string
+		for _, u := range issue.Assignees {
+			names = append(names, "@"+u.Login)
+		}
+		assigneesText = strings.Join(names, ", ")
+	}
+	if len(assigneesText) > width-15 {
+		assigneesText = assigneesText[:width-18] + "..."
+	}
+	fmt.Fprintf(&sb, " %-12s %s\n", styleLabel.Render("Assignees:"), styleVal.Render(assigneesText))
+
+	// Labels
+	labelsText := "None"
+	if len(issue.Labels) > 0 {
+		var names []string
+		for _, l := range issue.Labels {
+			names = append(names, l.Name)
+		}
+		labelsText = strings.Join(names, ", ")
+	}
+	if len(labelsText) > width-15 {
+		labelsText = labelsText[:width-18] + "..."
+	}
+	fmt.Fprintf(&sb, " %-12s %s\n", styleLabel.Render("Labels:"), styleVal.Render(labelsText))
+
+	// Separator
+	sb.WriteString("\n" + m.theme.Border.Render(strings.Repeat("─", width-2)) + "\n\n")
+
+	// Comments count info
+	commentsCount := fmt.Sprintf("%d comments", len(m.issueComments))
+	sb.WriteString("  " + m.theme.HelpKey.Render("Press 'c' to view comments") + "\n")
+	sb.WriteString("  " + m.theme.HelpDesc.Render("("+commentsCount+")") + "\n")
+
+	// Pad to height
+	lines := strings.Split(sb.String(), "\n")
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderIssueCommentsView() string {
+	var sb strings.Builder
+	sb.WriteString(m.renderHeader())
+	sb.WriteString("\n")
+
+	titleText := " Issue Comments "
+	if m.selectedIssue != nil {
+		titleText = fmt.Sprintf(" Issue #%d Comments ", m.selectedIssue.Number)
+	}
+	sb.WriteString("  " + m.theme.LogoText.Render(titleText) + "\n\n")
+
+	// Render the viewport with borders
+	vpContent := m.commentsViewport.View()
+	lines := strings.Split(vpContent, "\n")
+	boxWidth := m.commentsViewport.Width + 4
+
+	sb.WriteString("  " + m.theme.Border.Render("┌" + strings.Repeat("─", boxWidth-2) + "┐") + "\n")
+	for _, line := range lines {
+		lineLen := lipgloss.Width(line)
+		pad := m.commentsViewport.Width - lineLen
+		if pad < 0 {
+			pad = 0
+		}
+		sb.WriteString("  " + m.theme.Border.Render("│ ") + line + strings.Repeat(" ", pad) + m.theme.Border.Render(" │") + "\n")
+	}
+	sb.WriteString("  " + m.theme.Border.Render("└" + strings.Repeat("─", boxWidth-2) + "┘") + "\n")
+
+	// Dynamic padding
+	contentHeight := m.commentsViewport.Height + 8
+	padding := m.height - contentHeight
+	if padding < 0 {
+		padding = 0
+	}
+	for i := 0; i < padding; i++ {
+		sb.WriteString("\n")
+	}
+
+	keys := []string{"Esc:Back to Issue", "j/k:Scroll Comments", "r:Refresh", "q:Quit"}
+	sb.WriteString(m.renderFooter(keys))
+
+	return sb.String()
+}
+

@@ -132,6 +132,64 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Intercept keys for Issue user filter input
+	if m.state == viewIssueFilterInput {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "enter":
+				m.issueFilterUser = m.textInput.Value()
+				m.state = viewIssueFilterTypeSelect
+				return m, nil
+			case "esc":
+				m.state = viewMain
+				return m, nil
+			case "ctrl+c":
+				if m.cancel != nil {
+					m.cancel()
+				}
+				return m, tea.Quit
+			}
+		}
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
+	}
+
+	// Intercept keys for Issue filter type selection
+	if m.state == viewIssueFilterTypeSelect {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "a", "A":
+				m.filterIssueAuthor = m.issueFilterUser
+				m.filterIssueAssignee = ""
+				m.state = viewMain
+				m.isLoading = true
+				m.loadingMsg = "Filtering issues by author..."
+				m.issuePage = 1
+				m.hasMoreIssues = true
+				m.selectedIssueIdx = 0
+				m.issueStartIndex = 0
+				m.issues = nil
+				return m, m.fetchIssuesCmd()
+			case "i", "I":
+				m.filterIssueAuthor = ""
+				m.filterIssueAssignee = m.issueFilterUser
+				m.state = viewMain
+				m.isLoading = true
+				m.loadingMsg = "Filtering issues by assignee..."
+				m.issuePage = 1
+				m.hasMoreIssues = true
+				m.selectedIssueIdx = 0
+				m.issueStartIndex = 0
+				m.issues = nil
+				return m, m.fetchIssuesCmd()
+			case "esc", "c", "C":
+				m.state = viewMain
+				return m, nil
+			}
+		}
+		return m, nil
+	}
+
 	// Intercept keys for merge confirmation
 	if m.state == viewPRDetails && m.mergeState > 0 {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
@@ -233,14 +291,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewMain:
 			switch msg.String() {
 			case "tab":
-				m.activeTab = (m.activeTab + 1) % 2
+				m.activeTab = (m.activeTab + 1) % 3
 				m.selectedRunIdx = 0
 				m.selectedPullIdx = 0
+				m.selectedIssueIdx = 0
 				return m, m.fetchActiveTabCmd()
 			case "shift+tab":
-				m.activeTab = (m.activeTab - 1 + 2) % 2
+				m.activeTab = (m.activeTab - 1 + 3) % 3
 				m.selectedRunIdx = 0
 				m.selectedPullIdx = 0
+				m.selectedIssueIdx = 0
 				return m, m.fetchActiveTabCmd()
 			case "j", "down":
 				if m.activeTab == tabWorkflows {
@@ -261,6 +321,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selectedPullIdx++
 						m.scrollPulls()
 					}
+				} else if m.activeTab == tabIssues {
+					maxIdx := len(m.issues)
+					if !m.hasMoreIssues {
+						maxIdx = len(m.issues) - 1
+					}
+					if m.selectedIssueIdx < maxIdx {
+						m.selectedIssueIdx++
+						m.scrollIssues()
+					}
 				}
 			case "k", "up":
 				if m.activeTab == tabWorkflows {
@@ -272,6 +341,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selectedPullIdx > 0 {
 						m.selectedPullIdx--
 						m.scrollPulls()
+					}
+				} else if m.activeTab == tabIssues {
+					if m.selectedIssueIdx > 0 {
+						m.selectedIssueIdx--
+						m.scrollIssues()
 					}
 				}
 			case "enter":
@@ -322,6 +396,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.runs = nil
 						return m, m.fetchPRDetailsCmd(pr.Repository.Owner.Login, pr.Repository.Name, pr.Number, pr.Head.SHA, pr.Head.Ref)
 					}
+				} else if m.activeTab == tabIssues {
+					// Load more Issues
+					if m.hasMoreIssues && m.selectedIssueIdx == len(m.issues) {
+						m.issuePage++
+						m.isLoading = true
+						m.statusMsg = "Loading more Issues..."
+						return m, m.fetchIssuesCmd()
+					}
+
+					// Go into Issue details
+					if len(m.issues) > 0 && m.selectedIssueIdx < len(m.issues) {
+						issue := m.issues[m.selectedIssueIdx]
+						m.selectedIssue = &issue
+						m.state = viewIssueDetails
+						m.isLoading = true
+						m.loadingMsg = fmt.Sprintf("Fetching details for Issue #%d", issue.Number)
+						m.issueDescFocused = true
+						return m, m.fetchIssueDetailsCmd(issue.Repository.Owner.Login, issue.Repository.Name, issue.Number)
+					}
 				}
 			case "r", "ctrl+r":
 				m.isLoading = true
@@ -341,6 +434,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.pullStartIndex = 0
 					m.pulls = nil
 					return m, m.fetchPullsCmd()
+				} else if m.activeTab == tabIssues {
+					m.loadingMsg = "Refreshing issues"
+					m.issuePage = 1
+					m.hasMoreIssues = true
+					m.selectedIssueIdx = 0
+					m.issueStartIndex = 0
+					m.issues = nil
+					return m, m.fetchIssuesCmd()
 				}
 			case "m":
 				if m.activeTab == tabWorkflows {
@@ -371,6 +472,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.pullStartIndex = 0
 					m.pulls = nil
 					return m, m.fetchPullsCmd()
+				} else if m.activeTab == tabIssues {
+					m.filterIssueAuthor = m.currentUser
+					m.filterIssueAssignee = ""
+					m.isLoading = true
+					m.loadingMsg = "Filtering issues by author..."
+					m.issuePage = 1
+					m.hasMoreIssues = true
+					m.selectedIssueIdx = 0
+					m.issueStartIndex = 0
+					m.issues = nil
+					return m, m.fetchIssuesCmd()
 				}
 			case "i":
 				if m.activeTab == tabPRs {
@@ -385,6 +497,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.pullStartIndex = 0
 					m.pulls = nil
 					return m, m.fetchPullsCmd()
+				} else if m.activeTab == tabIssues {
+					m.filterIssueAuthor = ""
+					m.filterIssueAssignee = m.currentUser
+					m.isLoading = true
+					m.loadingMsg = "Filtering issues by assignee..."
+					m.issuePage = 1
+					m.hasMoreIssues = true
+					m.selectedIssueIdx = 0
+					m.issueStartIndex = 0
+					m.issues = nil
+					return m, m.fetchIssuesCmd()
 				}
 			case "v":
 				if m.activeTab == tabPRs {
@@ -424,6 +547,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.runStartIndex = 0
 					m.runs = nil
 					return m, m.fetchRunsCmd()
+				} else if m.activeTab == tabIssues {
+					m.filterIssueAuthor = ""
+					m.filterIssueAssignee = ""
+					m.filterIssueState = "open"
+					m.isLoading = true
+					m.loadingMsg = "Clearing issue filters..."
+					m.issuePage = 1
+					m.hasMoreIssues = true
+					m.selectedIssueIdx = 0
+					m.issueStartIndex = 0
+					m.issues = nil
+					return m, m.fetchIssuesCmd()
 				}
 			case "s":
 				if m.activeTab == tabPRs {
@@ -442,6 +577,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.pullStartIndex = 0
 					m.pulls = nil
 					return m, m.fetchPullsCmd()
+				} else if m.activeTab == tabIssues {
+					if m.filterIssueState == "open" {
+						m.filterIssueState = "closed"
+					} else if m.filterIssueState == "closed" {
+						m.filterIssueState = "all"
+					} else {
+						m.filterIssueState = "open"
+					}
+					m.isLoading = true
+					m.loadingMsg = "Toggling issue state filter..."
+					m.issuePage = 1
+					m.hasMoreIssues = true
+					m.selectedIssueIdx = 0
+					m.issueStartIndex = 0
+					m.issues = nil
+					return m, m.fetchIssuesCmd()
 				}
 			case "f":
 				if m.activeTab == tabWorkflows {
@@ -451,6 +602,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, textinput.Blink
 				} else if m.activeTab == tabPRs {
 					m.state = viewPRFilterInput
+					m.textInput.SetValue("")
+					m.textInput.Focus()
+					return m, textinput.Blink
+				} else if m.activeTab == tabIssues {
+					m.state = viewIssueFilterInput
 					m.textInput.SetValue("")
 					m.textInput.Focus()
 					return m, textinput.Blink
@@ -465,6 +621,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					pr := m.pulls[m.selectedPullIdx]
 					if pr.HTMLURL != "" {
 						_ = openBrowser(pr.HTMLURL)
+					}
+				} else if m.activeTab == tabIssues && len(m.issues) > 0 && m.selectedIssueIdx < len(m.issues) {
+					issue := m.issues[m.selectedIssueIdx]
+					if issue.HTMLURL != "" {
+						_ = openBrowser(issue.HTMLURL)
 					}
 				}
 			}
@@ -732,6 +893,70 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 
+		case viewIssueDetails:
+			switch msg.String() {
+			case "esc", "backspace":
+				m.state = viewMain
+				m.activeTab = tabIssues
+			case "tab", "shift+tab":
+				m.issueDescFocused = !m.issueDescFocused
+			case "j", "down":
+				if m.issueDescFocused {
+					m.issueDescViewport.ScrollDown(1)
+				}
+			case "k", "up":
+				if m.issueDescFocused {
+					m.issueDescViewport.ScrollUp(1)
+				}
+			case "u":
+				if m.issueDescFocused {
+					m.issueDescViewport.ScrollUp(6)
+				}
+			case "d":
+				if m.issueDescFocused {
+					m.issueDescViewport.ScrollDown(6)
+				}
+			case "w":
+				if m.selectedIssue != nil && m.selectedIssue.HTMLURL != "" {
+					_ = openBrowser(m.selectedIssue.HTMLURL)
+				}
+			case "c":
+				if m.selectedIssue != nil {
+					m.state = viewIssueComments
+					m.isLoading = true
+					m.commentsViewport.SetContent("Loading comments...")
+					owner := m.selectedIssue.Repository.Owner.Login
+					repo := m.selectedIssue.Repository.Name
+					num := m.selectedIssue.Number
+					return m, m.fetchIssueCommentsCmd(owner, repo, num)
+				}
+			case "r", "ctrl+r":
+				if m.selectedIssue != nil {
+					issue := m.selectedIssue
+					m.isLoading = true
+					m.loadingMsg = fmt.Sprintf("Refreshing details for Issue #%d", issue.Number)
+					return m, m.fetchIssueDetailsCmd(issue.Repository.Owner.Login, issue.Repository.Name, issue.Number)
+				}
+			}
+
+		case viewIssueComments:
+			switch msg.String() {
+			case "esc", "backspace":
+				m.state = viewIssueDetails
+			case "r", "ctrl+r":
+				if m.selectedIssue != nil {
+					m.isLoading = true
+					m.commentsViewport.SetContent("Refreshing comments...")
+					owner := m.selectedIssue.Repository.Owner.Login
+					repo := m.selectedIssue.Repository.Name
+					num := m.selectedIssue.Number
+					return m, m.fetchIssueCommentsCmd(owner, repo, num)
+				}
+			default:
+				m.commentsViewport, cmd = m.commentsViewport.Update(msg)
+				cmds = append(cmds, cmd)
+			}
+
 		case viewJobs:
 			switch msg.String() {
 			case "j", "down":
@@ -928,12 +1153,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		m.issueDescViewport.Width = msg.Width - sidebarWidth - 4
+		if m.issueDescViewport.Width < 20 {
+			m.issueDescViewport.Width = 20
+		}
+		m.issueDescViewport.Height = msg.Height - 10
+		if m.issueDescViewport.Height < 5 {
+			m.issueDescViewport.Height = 5
+		}
+		if m.selectedIssue != nil && m.selectedIssue.Body != "" {
+			if md, err := renderMarkdown(m.selectedIssue.Body, m.issueDescViewport.Width); err == nil {
+				m.issueDescViewport.SetContent(md)
+			}
+		}
+
 	case pollMsg:
 		var pollCmd tea.Cmd
 		if m.state == viewMain && m.activeTab == tabWorkflows {
 			pollCmd = m.pollRunsCmd()
 		} else if m.state == viewMain && m.activeTab == tabPRs {
 			pollCmd = m.fetchPullsCmd()
+		} else if m.state == viewMain && m.activeTab == tabIssues {
+			pollCmd = m.fetchIssuesCmd()
 		} else if m.state == viewJobs {
 			pollCmd = m.pollActiveJobsCmd()
 		} else if m.state == viewLogs {
@@ -1011,6 +1252,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = viewMain
 		m.statusMsg = "Successfully loaded Pull Requests"
 
+	case issuesLoadedMsg:
+		if (m.state != viewMain && m.state != viewSplash) || m.activeTab != tabIssues {
+			return m, nil
+		}
+		m.isLoading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading issues: " + msg.err.Error()
+			m.state = viewMain
+			return m, nil
+		}
+
+		if m.issuePage == 1 {
+			m.issues = msg.issues
+		} else {
+			m.issues = append(m.issues, msg.issues...)
+		}
+
+		if len(msg.issues) == 0 {
+			m.hasMoreIssues = false
+		}
+		m.scrollIssues()
+		m.state = viewMain
+		m.statusMsg = "Successfully loaded Issues"
+
+
 	case prDetailsLoadedMsg:
 		m.isLoading = false
 		if msg.err != nil {
@@ -1053,6 +1319,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		
 		m.state = viewPRDetails
 		m.statusMsg = ""
+
+	case issueDetailsLoadedMsg:
+		m.isLoading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading issue details: " + msg.err.Error()
+			m.state = viewMain
+			return m, nil
+		}
+
+		m.selectedIssue = msg.issue
+		m.issueComments = msg.comments
+
+		m.issueDescFocused = true
+
+		sidebarWidth := m.width / 5
+		if sidebarWidth < 40 {
+			sidebarWidth = 40
+		}
+		w := m.width - sidebarWidth - 4
+		if w < 20 {
+			w = 20
+		}
+		h := m.height - 10
+		if h < 5 {
+			h = 15
+		}
+		m.issueDescViewport = viewport.New(w, h)
+		m.issueDescViewport.SetContent(msg.renderedBody)
+		m.issueDescViewport.YOffset = 0
+
+		m.state = viewIssueDetails
+		m.statusMsg = ""
+
 
 	case commitDetailsLoadedMsg:
 		m.isLoading = false
@@ -1109,6 +1408,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		
 		m.commentsViewport.SetContent(sb.String())
 		m.commentsViewport.GotoBottom()
+		m.state = viewPRComments
+		m.statusMsg = ""
+
+	case issueCommentsLoadedMsg:
+		m.isLoading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading comments: " + msg.err.Error()
+			m.state = viewIssueDetails
+			return m, nil
+		}
+		m.issueComments = msg.comments
+
+		sort.Slice(m.issueComments, func(i, j int) bool {
+			return m.issueComments[i].CreatedAt.Before(m.issueComments[j].CreatedAt)
+		})
+
+		var sb strings.Builder
+		for idx, c := range m.issueComments {
+			author := "unknown"
+			if c.User != nil {
+				author = c.User.Login
+			}
+			dateStr := c.CreatedAt.Format("2006-01-02 15:04:05")
+			sb.WriteString(m.theme.LogoText.Render(fmt.Sprintf("@%s", author)) + " " + m.theme.Subtitle.Render("commented at "+dateStr) + "\n")
+
+			body := c.Body
+			if md, err := renderMarkdown(body, m.commentsViewport.Width-4); err == nil {
+				sb.WriteString(md)
+			} else {
+				sb.WriteString(body + "\n")
+			}
+			if idx < len(m.issueComments)-1 {
+				sb.WriteString(m.theme.Border.Render(strings.Repeat("─", m.commentsViewport.Width-2)) + "\n\n")
+			}
+		}
+
+		if len(m.issueComments) == 0 {
+			sb.WriteString("No comments found for this Issue.")
+		}
+
+		m.commentsViewport.SetContent(sb.String())
+		m.commentsViewport.GotoBottom()
+		m.state = viewIssueComments
+		m.statusMsg = ""
 
 	case prMergedMsg:
 		m.isLoading = false
@@ -1755,6 +2098,12 @@ func (m Model) fetchActiveTabCmd() tea.Cmd {
 			m.loadingMsg = "Loading pull requests"
 			return m.fetchPullsCmd()
 		}
+	case tabIssues:
+		if len(m.issues) == 0 {
+			m.isLoading = true
+			m.loadingMsg = "Loading issues"
+			return m.fetchIssuesCmd()
+		}
 	}
 	return nil
 }
@@ -2079,3 +2428,195 @@ func extractRunIDFromURL(url string) int64 {
 	}
 	return runID
 }
+
+// scrollIssues adjusts issueStartIndex to keep the selectedIssueIdx visible in the viewport.
+func (m *Model) scrollIssues() {
+	visibleRows := m.height - 12
+	var filterTexts []string
+	if m.filterIssueState != "" && m.filterIssueState != "open" {
+		filterTexts = append(filterTexts, m.filterIssueState)
+	}
+	if m.filterIssueAuthor != "" {
+		filterTexts = append(filterTexts, m.filterIssueAuthor)
+	}
+	if m.filterIssueAssignee != "" {
+		filterTexts = append(filterTexts, m.filterIssueAssignee)
+	}
+	if len(filterTexts) > 0 {
+		visibleRows -= 2
+	}
+	if visibleRows < 5 {
+		visibleRows = 5
+	}
+	totalRows := len(m.issues)
+	if m.hasMoreIssues {
+		totalRows++
+	}
+	if m.selectedIssueIdx < m.issueStartIndex {
+		m.issueStartIndex = m.selectedIssueIdx
+	}
+	if m.selectedIssueIdx >= m.issueStartIndex+visibleRows {
+		m.issueStartIndex = m.selectedIssueIdx - visibleRows + 1
+	}
+	if m.issueStartIndex > totalRows-visibleRows {
+		m.issueStartIndex = totalRows - visibleRows
+	}
+	if m.issueStartIndex < 0 {
+		m.issueStartIndex = 0
+	}
+}
+
+func (m Model) fetchIssuesCmd() tea.Cmd {
+	return func() tea.Msg {
+		if len(m.targets) == 0 {
+			return issuesLoadedMsg{err: auth.ErrUnauthenticated}
+		}
+		target := m.targets[m.selectedTargetIdx]
+
+		var repos []gh.Repository
+		var err error
+		if target.IsOrg {
+			repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 15)
+		} else {
+			repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 15)
+		}
+		if err != nil {
+			return issuesLoadedMsg{err: err}
+		}
+
+		if len(repos) == 0 {
+			return issuesLoadedMsg{issues: nil}
+		}
+
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		var allIssues []gh.Issue
+
+		limit := len(repos)
+		if limit > 8 {
+			limit = 8
+		}
+
+		for i := 0; i < limit; i++ {
+			repo := repos[i]
+			wg.Add(1)
+			go func(r gh.Repository) {
+				defer wg.Done()
+				state := m.filterIssueState
+				if state == "" {
+					state = "open"
+				}
+				issues, err := m.client.GetIssuesWithState(m.ctx, r.Owner.Login, r.Name, state, m.issuePage, 8)
+				if err == nil {
+					for j := range issues {
+						issues[j].Repository = r
+					}
+					mu.Lock()
+					allIssues = append(allIssues, issues...)
+					mu.Unlock()
+				}
+			}(repo)
+		}
+		wg.Wait()
+		var filtered []gh.Issue
+		for _, issue := range allIssues {
+			if m.filterIssueAuthor != "" {
+				if issue.User == nil || !strings.EqualFold(issue.User.Login, m.filterIssueAuthor) {
+					continue
+				}
+			}
+			if m.filterIssueAssignee != "" {
+				assigned := false
+				for _, u := range issue.Assignees {
+					if strings.EqualFold(u.Login, m.filterIssueAssignee) {
+						assigned = true
+						break
+					}
+				}
+				if !assigned {
+					continue
+				}
+			}
+			filtered = append(filtered, issue)
+		}
+
+		sort.SliceStable(filtered, func(i, j int) bool {
+			return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
+		})
+
+		return issuesLoadedMsg{issues: filtered}
+	}
+}
+
+func (m Model) fetchIssueDetailsCmd(owner, repo string, number int) tea.Cmd {
+	return func() tea.Msg {
+		var wg sync.WaitGroup
+		var err error
+
+		var issue *gh.Issue
+		var comments []gh.IssueComment
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			i, e := m.client.GetIssue(m.ctx, owner, repo, number)
+			if e == nil {
+				issue = i
+			} else {
+				err = e
+			}
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cList, e := m.client.GetPullRequestComments(m.ctx, owner, repo, number)
+			if e == nil {
+				comments = cList
+			}
+		}()
+
+		wg.Wait()
+
+		if err != nil {
+			return issueDetailsLoadedMsg{err: err}
+		}
+
+		if issue != nil {
+			issue.Repository.Name = repo
+			issue.Repository.FullName = owner + "/" + repo
+			issue.Repository.Owner = &gh.User{Login: owner}
+		}
+
+		sidebarWidth := m.width / 5
+		if sidebarWidth < 40 {
+			sidebarWidth = 40
+		}
+		w := m.width - sidebarWidth - 4
+		if w < 20 {
+			w = 20
+		}
+		renderedDesc := "No description provided."
+		if issue != nil && issue.Body != "" {
+			if md, err := renderMarkdown(issue.Body, w); err == nil {
+				renderedDesc = md
+			} else {
+				renderedDesc = issue.Body
+			}
+		}
+
+		return issueDetailsLoadedMsg{
+			issue:        issue,
+			comments:     comments,
+			renderedBody: renderedDesc,
+		}
+	}
+}
+
+func (m Model) fetchIssueCommentsCmd(owner, repo string, number int) tea.Cmd {
+	return func() tea.Msg {
+		comments, err := m.client.GetPullRequestComments(m.ctx, owner, repo, number)
+		return issueCommentsLoadedMsg{comments: comments, err: err}
+	}
+}
+
