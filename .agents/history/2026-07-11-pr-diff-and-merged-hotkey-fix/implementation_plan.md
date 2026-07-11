@@ -57,8 +57,8 @@ go test ./...
    go run ./cmd/ghspector
    ```
 2. Navigate to an **open** PR.
-   - Verify the footer displays both `D:Diff` and actions `m:Merge` / `Shift+C:Close PR`.
-   - Press `D` to open the PR Diff view. Verify you can navigate the list of files (`j/k`), scroll the diff content (`u/d`), open the files diff page in the browser (`w`), and return to PR details (`Esc`).
+    - Verify the footer displays both `D:Diff` and actions `m:Merge` / `C:Close PR`.
+    - Press `D` to open the PR Diff view. Verify you can navigate the list of files (`j/k`), scroll the diff content (`u/d`), open the files diff page in the browser (`w`), and return to PR details (`Esc`).
 3. Navigate to a **merged** or **closed** PR.
-   - Verify the footer displays `D:Diff` but does **not** show `m:Merge` or `Shift+C:Close PR`.
-   - Verify pressing `m` or `Shift+C` has no effect.
+    - Verify the footer displays `D:Diff` but does **not** show `m:Merge` or `C:Close PR`.
+    - Verify pressing `m` or `Shift+C` has no effect.
