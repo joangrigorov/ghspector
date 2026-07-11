@@ -926,9 +926,9 @@ func (m Model) renderPRDetailsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"Esc:Back to PRs", "Tab:Toggle Focus", "j/k:Navigate", "Enter:Run/Browser", "D:Diff", "c:Comments", "v:Commits", "q:Quit"}
+	keys := []string{"Esc:Back to PRs", "Tab:Toggle Focus", "j/k:Navigate", "Enter:Run/Browser", "D:Diff", "r:Refresh", "c:Comments", "v:Commits", "q:Quit"}
 	if m.viewerCanMerge() {
-		keys = []string{"Esc:Back", "Tab:Focus", "D:Diff", "m:Merge", "c:Comments", "v:Commits", "C:Close PR", "q:Quit"}
+		keys = []string{"Esc:Back", "Tab:Focus", "D:Diff", "r:Refresh", "m:Merge", "c:Comments", "v:Commits", "C:Close PR", "q:Quit"}
 	}
 	sb.WriteString(m.renderFooter(keys))
 

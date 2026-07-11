@@ -623,6 +623,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedFileIdx = 0
 					m.updateDiffViewport()
 				}
+			case "r", "ctrl+r":
+				if m.selectedPull != nil {
+					pr := m.selectedPull
+					m.isLoading = true
+					m.loadingMsg = fmt.Sprintf("Refreshing details for PR #%d", pr.Number)
+					return m, m.fetchPRDetailsCmd(pr.Repository.Owner.Login, pr.Repository.Name, pr.Number, pr.Head.SHA, pr.Head.Ref)
+				}
 			}
 
 		case viewPRCommits:
@@ -735,6 +742,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				if len(m.jobs) > 0 {
 					job := m.jobs[m.selectedJobIdx]
+					if job.Status == "in_progress" || job.Status == "queued" {
+						m.statusMsg = "Logs are not yet available for running jobs. Please wait for completion."
+						return m, nil
+					}
 					run := m.getRun()
 					m.state = viewLogs
 					m.loadingMsg = "Fetching logs for " + job.Name
@@ -799,6 +810,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = viewJobs
 			case "r", "ctrl+r":
 				job := m.jobs[m.selectedJobIdx]
+				if job.Status == "in_progress" || job.Status == "queued" {
+					m.statusMsg = "Logs are not yet available for running jobs. Please wait for completion."
+					m.logsLoading = false
+					return m, nil
+				}
 				run := m.getRun()
 				m.logs = ""
 				m.logsLoading = true
@@ -1218,7 +1234,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logsLoadedMsg:
 		m.logsLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading logs: " + msg.err.Error()
+			statusMsg := "Error loading logs: " + msg.err.Error()
+			errStr := msg.err.Error()
+			if strings.Contains(errStr, "404") || strings.Contains(errStr, "BlobNotFound") || strings.Contains(errStr, "The specified blob does not exist") {
+				statusMsg = "Logs are not yet available for running jobs. Please wait for the job to complete."
+			}
+			m.statusMsg = statusMsg
 			m.state = viewJobs
 			return m, nil
 		}

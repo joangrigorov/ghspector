@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1101,5 +1102,56 @@ func TestTUI_PRDiffViewAndMergePermissions(t *testing.T) {
 		t.Errorf("expected mergeState to remain 0, got %d", m.mergeState)
 	}
 }
+
+func TestTUI_RunningJobLogsAndPRDetailsRefresh(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	m := InitModel(client, nil)
+	m.state = viewPRDetails
+	m.selectedPull = &gh.PullRequest{
+		Number:     101,
+		Repository: gh.Repository{Name: "repo-name", Owner: &gh.User{Login: "repo-owner"}},
+		Head:       gh.PullRequestRef{SHA: "sha1", Ref: "branch1"},
+	}
+
+	// 1. Verify PR details refresh
+	rawModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = rawModel.(Model)
+	if cmd == nil {
+		t.Error("expected refresh command to be non-nil")
+	}
+
+	// 2. Verify running job logs check
+	m.state = viewJobs
+	m.jobs = []gh.WorkflowJob{
+		{
+			ID:     201,
+			Name:   "running-job",
+			Status: "in_progress",
+		},
+	}
+	m.selectedJobIdx = 0
+	
+	// Pressing Enter on running job should show warning and not fetch logs
+	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = rawModel.(Model)
+	if cmd != nil {
+		t.Error("expected command to be nil when trying to fetch logs of a running job")
+	}
+	if !strings.Contains(m.statusMsg, "not yet available") {
+		t.Errorf("expected statusMsg to contain warning about running job logs, got %q", m.statusMsg)
+	}
+
+	// 3. Verify logsLoadedMsg error handling for 404/BlobNotFound
+	m.state = viewJobs
+	m.statusMsg = ""
+	rawModel, _ = m.Update(logsLoadedMsg{
+		err: fmt.Errorf("github api logs error (status 404): BlobNotFound: The specified blob does not exist"),
+	})
+	m = rawModel.(Model)
+	if !strings.Contains(m.statusMsg, "not yet available") {
+		t.Errorf("expected statusMsg to contain friendly warning on 404 BlobNotFound, got %q", m.statusMsg)
+	}
+}
+
 
 
