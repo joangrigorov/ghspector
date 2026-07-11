@@ -1464,7 +1464,7 @@ func (m Model) renderCommitDetailsView() string {
 	headerRendered := m.theme.TableHeader.Render(headerText)
 	fileLines = append(fileLines, strings.Split(headerRendered, "\n")...)
 
-	visibleRowsFiles := m.height - 13
+	visibleRowsFiles := m.height - 14
 	if visibleRowsFiles < 5 {
 		visibleRowsFiles = 5
 	}
@@ -1523,7 +1523,7 @@ func (m Model) renderCommitDetailsView() string {
 		maxLines = len(rightLines)
 	}
 
-	visibleRows := m.height - 12
+	visibleRows := m.height - 13
 	if visibleRows < 5 {
 		visibleRows = 5
 	}
@@ -1546,7 +1546,7 @@ func (m Model) renderCommitDetailsView() string {
 		sb.WriteString("  " + leftPart + " │ " + rightPart + "\n")
 	}
 
-	for i := 0; i < (m.height - 12 - maxLines); i++ {
+	for i := 0; i < (m.height - 13 - maxLines); i++ {
 		sb.WriteString("\n")
 	}
 
@@ -1582,7 +1582,7 @@ func (m Model) renderPRDiffView() string {
 	headerRendered := m.theme.TableHeader.Render(headerText)
 	fileLines = append(fileLines, strings.Split(headerRendered, "\n")...)
 
-	visibleRowsFiles := m.height - 13
+	visibleRowsFiles := m.height - 14
 	if visibleRowsFiles < 5 {
 		visibleRowsFiles = 5
 	}
@@ -1641,7 +1641,7 @@ func (m Model) renderPRDiffView() string {
 		maxLines = len(rightLines)
 	}
 
-	visibleRows := m.height - 12
+	visibleRows := m.height - 13
 	if visibleRows < 5 {
 		visibleRows = 5
 	}
@@ -1664,7 +1664,7 @@ func (m Model) renderPRDiffView() string {
 		sb.WriteString("  " + leftPart + " │ " + rightPart + "\n")
 	}
 
-	for i := 0; i < (m.height - 12 - maxLines); i++ {
+	for i := 0; i < (m.height - 13 - maxLines); i++ {
 		sb.WriteString("\n")
 	}
 

@@ -1104,7 +1104,7 @@ func TestTUI_PRDiffViewAndMergePermissions(t *testing.T) {
 
 	// 3. Test scrolling behavior with multiple files
 	m.state = viewPRDiff
-	m.height = 20 // visibleRows = 20 - 13 = 7 files visible
+	m.height = 20 // visibleRowsFiles = 20 - 14 = 6 files visible
 	m.prFiles = make([]gh.CommitFile, 15)
 	for i := 0; i < 15; i++ {
 		m.prFiles[i] = gh.CommitFile{Filename: fmt.Sprintf("file%d.go", i)}
@@ -1112,7 +1112,7 @@ func TestTUI_PRDiffViewAndMergePermissions(t *testing.T) {
 	m.selectedFileIdx = 0
 	m.prFileStartIndex = 0
 
-	// Scroll down 8 times (selectedFileIdx goes to 8, which is >= 0 + 7)
+	// Scroll down 8 times (selectedFileIdx goes to 8, which is >= 0 + 6)
 	for i := 0; i < 8; i++ {
 		rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 		m = rawModel.(Model)
@@ -1121,11 +1121,11 @@ func TestTUI_PRDiffViewAndMergePermissions(t *testing.T) {
 	if m.selectedFileIdx != 8 {
 		t.Errorf("expected selectedFileIdx to be 8, got %d", m.selectedFileIdx)
 	}
-	if m.prFileStartIndex != 2 {
-		t.Errorf("expected prFileStartIndex to be 2 (8 - 7 + 1), got %d", m.prFileStartIndex)
+	if m.prFileStartIndex != 3 {
+		t.Errorf("expected prFileStartIndex to be 3 (8 - 6 + 1), got %d", m.prFileStartIndex)
 	}
 
-	// Scroll back up 3 times (index goes to 5, which is > prFileStartIndex (2), so start index shouldn't change)
+	// Scroll back up 3 times (index goes to 5, which is > prFileStartIndex (3), so start index shouldn't change)
 	for i := 0; i < 3; i++ {
 		rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
 		m = rawModel.(Model)
@@ -1133,11 +1133,11 @@ func TestTUI_PRDiffViewAndMergePermissions(t *testing.T) {
 	if m.selectedFileIdx != 5 {
 		t.Errorf("expected selectedFileIdx to be 5, got %d", m.selectedFileIdx)
 	}
-	if m.prFileStartIndex != 2 {
-		t.Errorf("expected prFileStartIndex to remain 2, got %d", m.prFileStartIndex)
+	if m.prFileStartIndex != 3 {
+		t.Errorf("expected prFileStartIndex to remain 3, got %d", m.prFileStartIndex)
 	}
 
-	// Scroll back up to index 1 (which is < prFileStartIndex (2), so start index should become 1)
+	// Scroll back up to index 1 (which is < prFileStartIndex (3), so start index should become 1)
 	for i := 0; i < 4; i++ {
 		rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
 		m = rawModel.(Model)
