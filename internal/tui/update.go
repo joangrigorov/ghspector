@@ -893,7 +893,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		
 		m.diffViewport.Width = msg.Width - 44
-		m.diffViewport.Height = msg.Height - 14
+		m.diffViewport.Height = msg.Height - 16
 		if m.diffViewport.Height < 5 {
 			m.diffViewport.Height = 5
 		}
@@ -905,7 +905,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		
 		m.commitDiffViewport.Width = msg.Width - 44
-		m.commitDiffViewport.Height = msg.Height - 14
+		m.commitDiffViewport.Height = msg.Height - 16
 		if m.commitDiffViewport.Height < 5 {
 			m.commitDiffViewport.Height = 5
 		}
@@ -1646,7 +1646,7 @@ func (m *Model) scrollPulls() {
 }
 
 func (m *Model) scrollPRFiles() {
-	visibleRows := m.height - 14
+	visibleRows := m.height - 16
 	if visibleRows < 5 {
 		visibleRows = 5
 	}
@@ -1666,7 +1666,7 @@ func (m *Model) scrollPRFiles() {
 }
 
 func (m *Model) scrollCommitFiles() {
-	visibleRows := m.height - 14
+	visibleRows := m.height - 16
 	if visibleRows < 5 {
 		visibleRows = 5
 	}
@@ -1686,7 +1686,7 @@ func (m *Model) scrollCommitFiles() {
 }
 
 func (m *Model) updateCommitDiffViewport() {
-	m.commitDiffViewport = viewport.New(m.width-44, m.height-14)
+	m.commitDiffViewport = viewport.New(m.width-44, m.height-16)
 	if m.selectedCommitFileIdx < len(m.commitFiles) {
 		m.commitDiffViewport.SetContent(m.formatDiff(m.commitFiles[m.selectedCommitFileIdx].Patch))
 	} else {
@@ -1695,7 +1695,7 @@ func (m *Model) updateCommitDiffViewport() {
 }
 
 func (m *Model) updateDiffViewport() {
-	m.diffViewport = viewport.New(m.width-44, m.height-14)
+	m.diffViewport = viewport.New(m.width-44, m.height-16)
 	if m.selectedFileIdx < len(m.prFiles) {
 		m.diffViewport.SetContent(m.formatDiff(m.prFiles[m.selectedFileIdx].Patch))
 	} else {
