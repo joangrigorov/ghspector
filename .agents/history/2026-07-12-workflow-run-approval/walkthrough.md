@@ -12,6 +12,7 @@ We have successfully implemented the workflow run and environment deployment app
   - `ApproveWorkflowRun`: Approves waiting runs from fork pull requests.
   - `ApprovePendingDeployments`: Approves environment deployments using a list of target environments.
   - `HasRequiredScopes`: Parses the cached token scopes and validates that `repo` and `workflow` permissions are present.
+  - Improved error handling in `doRequest` and `doRequestWithBody` to parse the JSON error body from GitHub when receiving HTTP 403 Forbidden or 401 Unauthorized errors and append it to the error description so the user knows *exactly* why they lack access.
 
 ### 2. TUI States and Key Interceptors
 - **[`internal/tui/model.go`](internal/tui/model.go)**: Added `approvalPermissions` cache and `runApprovalState` to handle the modal overlay. Defined `approvalPermissionLoadedMsg`, `workflowRunApprovedMsg` message types, and the `selectedRunCanApprove()` helper.
@@ -38,7 +39,7 @@ We have successfully implemented the workflow run and environment deployment app
 ## Verification Results
 
 ### 1. Automated Tests
- We added coverage for both client and TUI updates:
+We added coverage for both client and TUI updates:
 - **`TestClient_GetRepoPermission`**, **`TestClient_GetPendingDeployments`**, **`TestClient_ApproveWorkflowRun`**, and **`TestClient_ApprovePendingDeployments`** in `internal/gh/client_test.go` were added and validated against HTTP mocks.
 - **`TestWorkflowApprovalFlow`** in `internal/tui/app_test.go` was added to verify state transitions and event logic in the TUI loop.
 
@@ -49,8 +50,8 @@ go test ./...
 Result:
 ```
 ok      ghspector/internal/auth   0.002s
-ok      ghspector/internal/gh     (cached)
-ok      ghspector/internal/tui    0.025s
+ok      ghspector/internal/gh     0.008s
+ok      ghspector/internal/tui    0.026s
 ```
 
 ### 2. Style and Quality Checks

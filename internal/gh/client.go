@@ -175,11 +175,10 @@ func (c *Client) doRequest(ctx context.Context, method, apiPath string, query pa
 		return ErrRateLimited
 	}
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
-		return ErrForbidden
+		return parseError(resp, ErrForbidden)
 	}
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, string(body))
+		return parseError(resp, nil)
 	}
 
 	if responseVal != nil {
@@ -187,6 +186,29 @@ func (c *Client) doRequest(ctx context.Context, method, apiPath string, query pa
 		return dec.Decode(responseVal)
 	}
 	return nil
+}
+
+func parseError(resp *http.Response, baseErr error) error {
+	body, _ := io.ReadAll(resp.Body)
+	if len(body) > 0 {
+		var errResp struct {
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(body, &errResp) == nil && errResp.Message != "" {
+			if baseErr != nil {
+				return fmt.Errorf("%w: %s", baseErr, errResp.Message)
+			}
+			return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, errResp.Message)
+		}
+		if baseErr != nil {
+			return fmt.Errorf("%w: %s", baseErr, strings.TrimSpace(string(body)))
+		}
+		return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if baseErr != nil {
+		return baseErr
+	}
+	return fmt.Errorf("github api error (status %d)", resp.StatusCode)
 }
 
 type params map[string]string
@@ -412,11 +434,10 @@ func (c *Client) doRequestWithBody(ctx context.Context, method, apiPath string, 
 		return ErrRateLimited
 	}
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
-		return ErrForbidden
+		return parseError(resp, ErrForbidden)
 	}
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, string(body))
+		return parseError(resp, nil)
 	}
 
 	if responseVal != nil {
