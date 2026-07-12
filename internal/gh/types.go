@@ -207,3 +207,18 @@ type Issue struct {
 	Repository Repository `json:"repository"`
 }
 
+// RepoPermissionResponse represents the response from the collaborator permission endpoint.
+type RepoPermissionResponse struct {
+	Permission string `json:"permission"`
+}
+
+// PendingDeployment represents a pending deployment for a workflow run.
+type PendingDeployment struct {
+	Environment struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	} `json:"environment"`
+	CurrentUserCanApprove bool `json:"current_user_can_approve"`
+}
+
+

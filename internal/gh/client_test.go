@@ -254,3 +254,104 @@ func TestClient_GetCheckRunsDuplicateFiltering(t *testing.T) {
 		t.Errorf("expected latest run-tests failure, got: %+v", runs[1])
 	}
 }
+
+func TestClient_GetRepoPermission(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/owner/repo/collaborators/test-user/permission" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		resp := RepoPermissionResponse{Permission: "write"}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	perm, err := client.GetRepoPermission(context.Background(), "owner", "repo", "test-user")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if perm != "write" {
+		t.Errorf("expected write, got: %s", perm)
+	}
+}
+
+func TestClient_GetPendingDeployments(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/owner/repo/actions/runs/123/pending_deployments" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		resp := []PendingDeployment{
+			{
+				CurrentUserCanApprove: true,
+			},
+		}
+		resp[0].Environment.ID = 456
+		resp[0].Environment.Name = "production"
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	deployments, err := client.GetPendingDeployments(context.Background(), "owner", "repo", 123)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(deployments) != 1 || deployments[0].Environment.ID != 456 || !deployments[0].CurrentUserCanApprove {
+		t.Errorf("unexpected deployments: %+v", deployments)
+	}
+}
+
+func TestClient_ApproveWorkflowRun(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/repos/owner/repo/actions/runs/123/approve" {
+			called = true
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	err := client.ApproveWorkflowRun(context.Background(), "owner", "repo", 123)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("expected endpoint to be called")
+	}
+}
+
+func TestClient_ApprovePendingDeployments(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/repos/owner/repo/actions/runs/123/pending_deployments" {
+			var body environmentApprovalRequest
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if len(body.EnvironmentIDs) == 1 && body.EnvironmentIDs[0] == 456 && body.State == "approved" {
+				called = true
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	err := client.ApprovePendingDeployments(context.Background(), "owner", "repo", 123, []int64{456}, "Approved via ghspector")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("expected endpoint to be called with correct body")
+	}
+}

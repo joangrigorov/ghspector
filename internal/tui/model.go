@@ -177,6 +177,10 @@ type Model struct {
 
 	// Attempt browsing
 	selectedAttempt int
+
+	// Approval confirmation state
+	approvalPermissions map[int64]bool // caches runID -> canApprove
+	runApprovalState    int            // 0: none, 1: confirm approval
 }
 
 // Message types
@@ -274,6 +278,17 @@ type dashboardStatsLoadedMsg struct {
 	err            error
 }
 
+type approvalPermissionLoadedMsg struct {
+	runID      int64
+	canApprove bool
+	err        error
+}
+
+type workflowRunApprovedMsg struct {
+	runID int64
+	err   error
+}
+
 // InitModel initializes the model.
 func InitModel(client *gh.Client, config *auth.Config) Model {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -302,6 +317,8 @@ func InitModel(client *gh.Client, config *auth.Config) Model {
 		issuePage:        1,
 		filterIssueState: "open",
 		textInput:        ti,
+		approvalPermissions: make(map[int64]bool),
+		runApprovalState:    0,
 	}
 }
 
@@ -389,4 +406,27 @@ func (m Model) getRun() gh.WorkflowRun {
 		run.Actor = &gh.User{}
 	}
 	return run
+}
+
+// selectedRunCanApprove returns true if the selected workflow run requires approval and the user has permission to do so.
+func (m Model) selectedRunCanApprove() bool {
+	var run gh.WorkflowRun
+	if m.state == viewMain && m.activeTab == tabWorkflows {
+		if m.selectedRunIdx >= 0 && m.selectedRunIdx < len(m.runs) {
+			run = m.runs[m.selectedRunIdx]
+		} else {
+			return false
+		}
+	} else if m.state == viewJobs {
+		run = m.getRun()
+	} else {
+		return false
+	}
+
+	if run.ID == 0 {
+		return false
+	}
+	
+	needsApproval := (run.Status == "waiting" || run.Conclusion == "action_required")
+	return needsApproval && m.approvalPermissions[run.ID]
 }

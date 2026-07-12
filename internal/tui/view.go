@@ -400,9 +400,18 @@ func (m Model) renderMainView() string {
 	}
 
 	keys := []string{"?:Help", "Tab:Tabs", "j/k:Navigate", "Enter:Jobs", "w:Browser", "f:Filter", "m:My Runs", "x:Clear Filter", "r:Refresh"}
+	if m.selectedRunCanApprove() {
+		keys = append(keys[:5], append([]string{"a:Approve"}, keys[5:]...)...)
+	}
 	sb.WriteString(m.renderFooter(keys))
 
-	return sb.String()
+	viewStr := sb.String()
+	if m.runApprovalState > 0 {
+		modalStr := m.renderApprovalModal()
+		viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+	}
+
+	return viewStr
 }
 
 // renderJobsView renders the list of jobs in a workflow run with a scrolling window.
@@ -506,9 +515,18 @@ func (m Model) renderJobsView() string {
 	}
 
 	keys := []string{"?:Help", "j/k:Navigate", "Enter:Logs", "Esc:Back", "w/v:Browser", "[/]:Attempts"}
+	if m.selectedRunCanApprove() {
+		keys = append(keys[:5], append([]string{"a:Approve"}, keys[5:]...)...)
+	}
 	sb.WriteString(m.renderFooter(keys))
 
-	return sb.String()
+	viewStr := sb.String()
+	if m.runApprovalState > 0 {
+		modalStr := m.renderApprovalModal()
+		viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+	}
+
+	return viewStr
 }
 
 // renderLogsView renders the logs viewer and steps list.
@@ -1449,6 +1467,32 @@ func (m Model) renderMergeModal() string {
 		modalText.WriteString("└──────────────────────────────────────────────┘")
 	}
 
+	return modalText.String()
+}
+
+func (m Model) renderApprovalModal() string {
+	var modalText strings.Builder
+	lineStyle := lipgloss.NewStyle().Width(46)
+	
+	modalText.WriteString("┌──────────────────────────────────────────────┐\n")
+	modalText.WriteString("│              APPROVE WORKFLOW RUN            │\n")
+	modalText.WriteString("├──────────────────────────────────────────────┤\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("  Are you sure you want to approve this run?") + "│\n")
+	run := m.getRun()
+	runName := run.Name
+	if runName == "" && run.DisplayTitle != "" {
+		runName = run.DisplayTitle
+	}
+	if len(runName) > 40 {
+		runName = runName[:37] + "..."
+	}
+	modalText.WriteString("│" + lineStyle.Render(fmt.Sprintf("  Run: %s", runName)) + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusSuccessful.Render("[Y]")+" Yes, approve run") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusFailed.Render("[n]")+" No, cancel") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("└──────────────────────────────────────────────┘")
 	return modalText.String()
 }
 

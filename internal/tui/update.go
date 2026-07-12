@@ -190,6 +190,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Intercept keys for workflow run approval confirmation
+	if m.runApprovalState > 0 {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch m.runApprovalState {
+			case 1: // confirm approval
+				switch keyMsg.String() {
+				case "y", "Y":
+					m.isLoading = true
+					m.loadingMsg = "Approving workflow run..."
+					m.runApprovalState = 0 // reset
+					run := m.getRun()
+					return m, m.approveWorkflowRunCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, run.Status, run.Conclusion)
+				case "n", "N", "esc":
+					m.runApprovalState = 0
+					return m, nil
+				}
+			}
+		}
+		return m, nil
+	}
+
 	// Intercept keys for merge confirmation
 	if m.state == viewPRDetails && m.mergeState > 0 {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
@@ -312,6 +333,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selectedRunIdx++
 						m.scrollRuns()
 					}
+					return m, m.checkApprovalPermissionCmd()
 				} else if m.activeTab == tabPRs {
 					maxIdx := len(m.pulls)
 					if !m.hasMorePulls {
@@ -337,6 +359,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selectedRunIdx--
 						m.scrollRuns()
 					}
+					return m, m.checkApprovalPermissionCmd()
 				} else if m.activeTab == tabPRs {
 					if m.selectedPullIdx > 0 {
 						m.selectedPullIdx--
@@ -460,7 +483,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.fetchRunsCmd()
 				}
 			case "a":
-				if m.activeTab == tabPRs {
+				if m.activeTab == tabWorkflows {
+					if m.selectedRunCanApprove() {
+						m.runApprovalState = 1
+						return m, nil
+					}
+				} else if m.activeTab == tabPRs {
 					m.filterPRAuthor = m.currentUser
 					m.filterPRAssignee = ""
 					m.filterPRReviewer = ""
@@ -1020,6 +1048,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.jobs = nil
 					return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
 				}
+			case "a":
+				if m.selectedRunCanApprove() {
+					m.runApprovalState = 1
+					return m, nil
+				}
 			case "w":
 				run := m.getRun()
 				if run.HTMLURL != "" {
@@ -1453,6 +1486,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = viewIssueComments
 		m.statusMsg = ""
 
+	case approvalPermissionLoadedMsg:
+		if msg.err != nil {
+			m.approvalPermissions[msg.runID] = false
+			return m, nil
+		}
+		m.approvalPermissions[msg.runID] = msg.canApprove
+		return m, nil
+
+	case workflowRunApprovedMsg:
+		m.isLoading = false
+		if msg.err != nil {
+			m.statusMsg = "Approval failed: " + msg.err.Error()
+			return m, nil
+		}
+		
+		m.statusMsg = "Workflow run successfully approved!"
+		delete(m.approvalPermissions, msg.runID)
+		
+		if m.state == viewMain {
+			m.isLoading = true
+			m.loadingMsg = "Refreshing workflow runs"
+			m.runPage = 1
+			m.hasMoreRuns = true
+			m.selectedRunIdx = 0
+			m.runStartIndex = 0
+			m.runs = nil
+			return m, m.fetchRunsCmd()
+		} else if m.state == viewJobs {
+			run := m.getRun()
+			m.isLoading = true
+			m.loadingMsg = "Refreshing jobs"
+			m.jobs = nil
+			m.selectedJobIdx = 0
+			m.jobStartIndex = 0
+			return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
+		}
+		return m, nil
+
 	case prMergedMsg:
 		m.isLoading = false
 		if msg.err != nil {
@@ -1527,6 +1598,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scrollRuns()
 		m.state = viewMain
 		m.statusMsg = "Successfully loaded runs"
+		return m, m.checkApprovalPermissionCmd()
 
 	case runsPolledMsg:
 		if m.state != viewMain || m.activeTab != tabWorkflows {
@@ -1545,6 +1617,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runs = mergeRuns(m.runs, filtered)
 			m.scrollRuns()
 		}
+		return m, m.checkApprovalPermissionCmd()
 
 	case jobsLoadedMsg:
 		m.isLoading = false
@@ -1580,6 +1653,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scrollJobs()
 		m.state = viewJobs
 		m.statusMsg = ""
+		return m, m.checkApprovalPermissionCmd()
 
 	case logsLoadedMsg:
 		m.logsLoading = false
@@ -2617,6 +2691,112 @@ func (m Model) fetchIssueCommentsCmd(owner, repo string, number int) tea.Cmd {
 	return func() tea.Msg {
 		comments, err := m.client.GetPullRequestComments(m.ctx, owner, repo, number)
 		return issueCommentsLoadedMsg{comments: comments, err: err}
+	}
+}
+
+func (m Model) checkApprovalPermissionCmd() tea.Cmd {
+	var run gh.WorkflowRun
+	if m.state == viewMain && m.activeTab == tabWorkflows {
+		if m.selectedRunIdx >= 0 && m.selectedRunIdx < len(m.runs) {
+			run = m.runs[m.selectedRunIdx]
+		} else {
+			return nil
+		}
+	} else if m.state == viewJobs {
+		run = m.getRun()
+	} else {
+		return nil
+	}
+
+	if run.ID == 0 {
+		return nil
+	}
+
+	status := run.Status
+	conclusion := run.Conclusion
+	needsApproval := (status == "waiting" || conclusion == "action_required")
+	if !needsApproval {
+		return nil
+	}
+
+	if _, cached := m.approvalPermissions[run.ID]; cached {
+		return nil
+	}
+
+	owner := run.Repository.Owner.Login
+	repo := run.Repository.Name
+	if owner == "" || repo == "" {
+		return nil
+	}
+
+	return func() tea.Msg {
+		if conclusion == "action_required" {
+			// Fork PR approval: verify repo write permission
+			if m.currentUser != "" && strings.EqualFold(owner, m.currentUser) {
+				return approvalPermissionLoadedMsg{runID: run.ID, canApprove: true}
+			}
+			perm, err := m.client.GetRepoPermission(m.ctx, owner, repo, m.currentUser)
+			if err != nil {
+				return approvalPermissionLoadedMsg{runID: run.ID, canApprove: false, err: err}
+			}
+			canApprove := (perm == "admin" || perm == "write" || perm == "maintain")
+			return approvalPermissionLoadedMsg{runID: run.ID, canApprove: canApprove}
+		}
+
+		if status == "waiting" {
+			// Environment deployment approval: check deployment permissions
+			deployments, err := m.client.GetPendingDeployments(m.ctx, owner, repo, run.ID)
+			if err != nil {
+				// Fallback to collaborator permission
+				perm, permErr := m.client.GetRepoPermission(m.ctx, owner, repo, m.currentUser)
+				if permErr == nil && (perm == "admin" || perm == "write" || perm == "maintain") {
+					return approvalPermissionLoadedMsg{runID: run.ID, canApprove: true}
+				}
+				return approvalPermissionLoadedMsg{runID: run.ID, canApprove: false, err: err}
+			}
+			canApprove := false
+			for _, d := range deployments {
+				if d.CurrentUserCanApprove {
+					canApprove = true
+					break
+				}
+			}
+			return approvalPermissionLoadedMsg{runID: run.ID, canApprove: canApprove}
+		}
+
+		return approvalPermissionLoadedMsg{runID: run.ID, canApprove: false}
+	}
+}
+
+func (m Model) approveWorkflowRunCmd(owner, repo string, runID int64, status, conclusion string) tea.Cmd {
+	return func() tea.Msg {
+		if conclusion == "action_required" {
+			err := m.client.ApproveWorkflowRun(m.ctx, owner, repo, runID)
+			return workflowRunApprovedMsg{runID: runID, err: err}
+		}
+		if status == "waiting" {
+			deployments, err := m.client.GetPendingDeployments(m.ctx, owner, repo, runID)
+			if err != nil {
+				return workflowRunApprovedMsg{runID: runID, err: err}
+			}
+			var envIDs []int64
+			for _, d := range deployments {
+				if d.CurrentUserCanApprove {
+					envIDs = append(envIDs, d.Environment.ID)
+				}
+			}
+			if len(envIDs) == 0 {
+				for _, d := range deployments {
+					envIDs = append(envIDs, d.Environment.ID)
+				}
+			}
+			if len(envIDs) == 0 {
+				return workflowRunApprovedMsg{runID: runID, err: fmt.Errorf("no pending environments found to approve")}
+			}
+			err = m.client.ApprovePendingDeployments(m.ctx, owner, repo, runID, envIDs, "Approved via ghspector")
+			return workflowRunApprovedMsg{runID: runID, err: err}
+		}
+		return workflowRunApprovedMsg{runID: runID, err: fmt.Errorf("workflow run does not require approval")}
 	}
 }
 

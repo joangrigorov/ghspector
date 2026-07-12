@@ -610,3 +610,49 @@ func (c *Client) ClosePullRequest(ctx context.Context, owner, repo string, numbe
 	return c.doRequestWithBody(ctx, "PATCH", path, nil, body, &response)
 }
 
+// GetRepoPermission checks a user's permission for a repository.
+func (c *Client) GetRepoPermission(ctx context.Context, owner, repo, username string) (string, error) {
+	var resp RepoPermissionResponse
+	path := fmt.Sprintf("/repos/%s/%s/collaborators/%s/permission", owner, repo, username)
+	err := c.doRequest(ctx, "GET", path, nil, &resp)
+	if err != nil {
+		return "", err
+	}
+	return resp.Permission, nil
+}
+
+// GetPendingDeployments fetches pending deployments for a workflow run.
+func (c *Client) GetPendingDeployments(ctx context.Context, owner, repo string, runID int64) ([]PendingDeployment, error) {
+	var resp []PendingDeployment
+	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/pending_deployments", owner, repo, runID)
+	err := c.doRequest(ctx, "GET", path, nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// ApproveWorkflowRun approves a workflow run from a fork.
+func (c *Client) ApproveWorkflowRun(ctx context.Context, owner, repo string, runID int64) error {
+	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/approve", owner, repo, runID)
+	return c.doRequestWithBody(ctx, "POST", path, nil, nil, nil)
+}
+
+type environmentApprovalRequest struct {
+	EnvironmentIDs []int64 `json:"environment_ids"`
+	State          string  `json:"state"` // approved or rejected
+	Comment        string  `json:"comment"`
+}
+
+// ApprovePendingDeployments approves pending deployments for a workflow run.
+func (c *Client) ApprovePendingDeployments(ctx context.Context, owner, repo string, runID int64, envIDs []int64, comment string) error {
+	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/pending_deployments", owner, repo, runID)
+	body := environmentApprovalRequest{
+		EnvironmentIDs: envIDs,
+		State:          "approved",
+		Comment:        comment,
+	}
+	return c.doRequestWithBody(ctx, "POST", path, nil, body, nil)
+}
+
+
