@@ -24,6 +24,7 @@ We have successfully implemented the workflow run and environment deployment app
 ### 3. Rendering and UI Overlay
 - **[`internal/tui/view.go`](internal/tui/view.go)**:
   - Appended the `"a:Approve"` shortcut dynamically to the bottom footer when the selected run can be approved.
+  - Implemented a custom stylized Lipgloss box banner inside the jobs view (`viewJobs`) that warns when a run is awaiting approval and prompts the user on how to approve it.
   - Implemented `renderApprovalModal()` using the existing `lipgloss` styles to display an overlay in the center of the terminal.
   - Center-placed the modal using `overlayModal` if the approval state is active.
 

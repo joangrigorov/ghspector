@@ -436,71 +436,106 @@ func (m Model) renderJobsView() string {
 	}
 	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Branch: %s | SHA: %s%s", run.Repository.FullName, run.HeadBranch, shaText, attemptText)) + "\n\n")
 
-	header := fmt.Sprintf("  %-3s %-40s %-15s %-12s", "ST", "JOB NAME", "STARTED", "DURATION")
-	sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
-
+	needsApproval := (run.Status == "waiting" || run.Conclusion == "action_required")
 	renderedCount := 0
-	if len(m.jobs) == 0 {
-		msg := "No jobs found for this workflow run."
-		if m.isLoading {
-			msg = "Loading jobs..."
+
+	if needsApproval {
+		var banner strings.Builder
+		bannerStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(m.theme.StatusWaiting.GetForeground()).
+			Padding(1, 4).
+			MarginLeft(4).
+			Width(60)
+
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(m.theme.StatusWaiting.GetForeground())
+
+		banner.WriteString(titleStyle.Render(" Awaiting Approval Required ") + "\n\n")
+		if run.Conclusion == "action_required" {
+			banner.WriteString("This workflow run was triggered by a pull request from a fork\n")
+			banner.WriteString("and requires a maintainer's approval to execute.\n")
+		} else {
+			banner.WriteString("This workflow run has completed initial checks but is waiting\n")
+			banner.WriteString("for manual approval to deploy to a protected environment.\n")
 		}
-		sb.WriteString("\n  " + m.theme.HelpDesc.Render(msg) + "\n\n")
-		renderedCount = 3
+		
+		banner.WriteString("\n")
+		if m.selectedRunCanApprove() {
+			banner.WriteString("Press " + m.theme.StatusSuccessful.Render("[a]") + " to approve and trigger this run now.\n")
+		} else {
+			banner.WriteString(m.theme.StatusFailed.Render("Your current access token does not have permissions to approve.\n"))
+		}
+		
+		sb.WriteString("\n" + bannerStyle.Render(banner.String()) + "\n")
+		renderedCount = 9
 	} else {
-		visibleRows := m.height - 15
-		if visibleRows < 5 {
-			visibleRows = 5
-		}
+		header := fmt.Sprintf("  %-3s %-40s %-15s %-12s", "ST", "JOB NAME", "STARTED", "DURATION")
+		sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
 
-		endIdx := m.jobStartIndex + visibleRows
-		if endIdx > len(m.jobs) {
-			endIdx = len(m.jobs)
-		}
-
-		renderedCount = endIdx - m.jobStartIndex
-
-		for i := m.jobStartIndex; i < endIdx; i++ {
-			job := m.jobs[i]
-			statusInd := m.getStatusIndicator(job.Status, job.Conclusion)
-
-			startedStr := job.StartedAt.Format("15:04:05")
-			if job.StartedAt.IsZero() {
-				startedStr = "N/A"
+		if len(m.jobs) == 0 {
+			msg := "No jobs found for this workflow run."
+			if m.isLoading {
+				msg = "Loading jobs..."
+			}
+			sb.WriteString("\n  " + m.theme.HelpDesc.Render(msg) + "\n\n")
+			renderedCount = 3
+		} else {
+			visibleRows := m.height - 15
+			if visibleRows < 5 {
+				visibleRows = 5
 			}
 
-			durStr := ""
-			if job.Status == "in_progress" {
-				durStr = formatDuration(m.client.Now().Sub(job.StartedAt))
-				durStr = m.theme.StatusRunning.Render(durStr)
-			} else if job.Status == "queued" {
-				durStr = "queued"
-				durStr = m.theme.StatusQueued.Render(durStr)
-			} else if !job.CompletedAt.IsZero() && !job.StartedAt.IsZero() {
-				durStr = formatDuration(job.CompletedAt.Sub(job.StartedAt))
-			} else {
-				durStr = "N/A"
+			endIdx := m.jobStartIndex + visibleRows
+			if endIdx > len(m.jobs) {
+				endIdx = len(m.jobs)
 			}
 
-			jobName := job.Name
-			if len(jobName) > 38 {
-				jobName = jobName[:35] + "..."
-			}
+			renderedCount = endIdx - m.jobStartIndex
 
-			paddedJobName := fmt.Sprintf("%-40s", jobName)
-			hyperlinkedJobName := renderHyperlink(paddedJobName, job.HTMLURL)
+			for i := m.jobStartIndex; i < endIdx; i++ {
+				job := m.jobs[i]
+				statusInd := m.getStatusIndicator(job.Status, job.Conclusion)
 
-			rowText := fmt.Sprintf("  %-3s %s %-15s %-12s",
-				statusInd,
-				hyperlinkedJobName,
-				startedStr,
-				durStr,
-			)
+				startedStr := job.StartedAt.Format("15:04:05")
+				if job.StartedAt.IsZero() {
+					startedStr = "N/A"
+				}
 
-			if i == m.selectedJobIdx {
-				sb.WriteString(m.theme.TableSelected.Render(rowText) + "\n")
-			} else {
-				sb.WriteString(m.theme.TableRow.Render(rowText) + "\n")
+				durStr := ""
+				if job.Status == "in_progress" {
+					durStr = formatDuration(m.client.Now().Sub(job.StartedAt))
+					durStr = m.theme.StatusRunning.Render(durStr)
+				} else if job.Status == "queued" {
+					durStr = "queued"
+					durStr = m.theme.StatusQueued.Render(durStr)
+				} else if !job.CompletedAt.IsZero() && !job.StartedAt.IsZero() {
+					durStr = formatDuration(job.CompletedAt.Sub(job.StartedAt))
+				} else {
+					durStr = "N/A"
+				}
+
+				jobName := job.Name
+				if len(jobName) > 38 {
+					jobName = jobName[:35] + "..."
+				}
+
+				paddedJobName := fmt.Sprintf("%-40s", jobName)
+				hyperlinkedJobName := renderHyperlink(paddedJobName, job.HTMLURL)
+
+				rowText := fmt.Sprintf("  %-3s %s %-15s %-12s",
+					statusInd,
+					hyperlinkedJobName,
+					startedStr,
+					durStr,
+				)
+
+				if i == m.selectedJobIdx {
+					sb.WriteString(m.theme.TableSelected.Render(rowText) + "\n")
+				} else {
+					sb.WriteString(m.theme.TableRow.Render(rowText) + "\n")
+				}
 			}
 		}
 	}
