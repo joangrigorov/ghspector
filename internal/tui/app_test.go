@@ -1288,6 +1288,87 @@ func TestIssueStateFiltering(t *testing.T) {
 	}
 }
 
+func TestWorkflowApprovalFlow(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	m := InitModel(client, nil)
+	m.state = viewMain
+	m.activeTab = tabWorkflows
+	m.currentUser = "test-owner"
+
+	// Mock runs list with one run needing approval
+	m.runs = []gh.WorkflowRun{
+		{
+			ID:         123,
+			Name:       "Awaiting approval",
+			Status:     "waiting",
+			Conclusion: "",
+		},
+	}
+	m.runs[0].Repository.Owner = &gh.User{Login: "test-owner"}
+	m.runs[0].Repository.Name = "test-repo"
+
+	m.selectedRunIdx = 0
+
+	// Before approval permissions loaded, canApprove should be false
+	if m.selectedRunCanApprove() {
+		t.Error("expected selectedRunCanApprove to be false before loading permission")
+	}
+
+	// Simulating checkApprovalPermissionCmd return message: user can approve
+	rawModel, _ := m.Update(approvalPermissionLoadedMsg{runID: 123, canApprove: true})
+	m = rawModel.(Model)
+
+	if !m.selectedRunCanApprove() {
+		t.Error("expected selectedRunCanApprove to be true after loading permission")
+	}
+
+	// Pressing a should open the approval confirmation modal (state = 1)
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = rawModel.(Model)
+
+	if m.runApprovalState != 1 {
+		t.Errorf("expected runApprovalState to be 1, got %d", m.runApprovalState)
+	}
+
+	// Pressing 'n' or cancel key should reset the approval modal state to 0
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = rawModel.(Model)
+
+	if m.runApprovalState != 0 {
+		t.Errorf("expected runApprovalState to revert to 0 on cancel, got %d", m.runApprovalState)
+	}
+
+	// Re-open approval modal
+	m.runApprovalState = 1
+
+	// Pressing 'y' should confirm approval, start loading, trigger cmd, and reset runApprovalState
+	rawModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = rawModel.(Model)
+
+	if m.runApprovalState != 0 {
+		t.Errorf("expected runApprovalState to reset to 0 after confirming, got %d", m.runApprovalState)
+	}
+	if !m.isLoading {
+		t.Error("expected isLoading to be true during approval execution")
+	}
+	if cmd == nil {
+		t.Error("expected a command to be returned to dispatch API approval")
+	}
+
+	// Triggering workflowRunApprovedMsg should reset loading and set status
+	rawModel, _ = m.Update(workflowRunApprovedMsg{runID: 123, err: nil})
+	m = rawModel.(Model)
+
+	if m.isLoading {
+		if m.loadingMsg != "Refreshing workflow runs" {
+			t.Errorf("expected loadingMsg to be 'Refreshing workflow runs', got %q", m.loadingMsg)
+		}
+	}
+	if m.statusMsg != "Workflow run successfully approved!" {
+		t.Errorf("expected success statusMsg, got %q", m.statusMsg)
+	}
+}
+
 
 
 

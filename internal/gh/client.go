@@ -175,11 +175,10 @@ func (c *Client) doRequest(ctx context.Context, method, apiPath string, query pa
 		return ErrRateLimited
 	}
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
-		return ErrForbidden
+		return parseError(resp, ErrForbidden)
 	}
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, string(body))
+		return parseError(resp, nil)
 	}
 
 	if responseVal != nil {
@@ -187,6 +186,29 @@ func (c *Client) doRequest(ctx context.Context, method, apiPath string, query pa
 		return dec.Decode(responseVal)
 	}
 	return nil
+}
+
+func parseError(resp *http.Response, baseErr error) error {
+	body, _ := io.ReadAll(resp.Body)
+	if len(body) > 0 {
+		var errResp struct {
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(body, &errResp) == nil && errResp.Message != "" {
+			if baseErr != nil {
+				return fmt.Errorf("%w: %s", baseErr, errResp.Message)
+			}
+			return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, errResp.Message)
+		}
+		if baseErr != nil {
+			return fmt.Errorf("%w: %s", baseErr, strings.TrimSpace(string(body)))
+		}
+		return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if baseErr != nil {
+		return baseErr
+	}
+	return fmt.Errorf("github api error (status %d)", resp.StatusCode)
 }
 
 type params map[string]string
@@ -412,11 +434,10 @@ func (c *Client) doRequestWithBody(ctx context.Context, method, apiPath string, 
 		return ErrRateLimited
 	}
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
-		return ErrForbidden
+		return parseError(resp, ErrForbidden)
 	}
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, string(body))
+		return parseError(resp, nil)
 	}
 
 	if responseVal != nil {
@@ -609,4 +630,83 @@ func (c *Client) ClosePullRequest(ctx context.Context, owner, repo string, numbe
 	var response any
 	return c.doRequestWithBody(ctx, "PATCH", path, nil, body, &response)
 }
+
+// GetRepoPermission checks a user's permission for a repository.
+func (c *Client) GetRepoPermission(ctx context.Context, owner, repo, username string) (string, error) {
+	var resp RepoPermissionResponse
+	path := fmt.Sprintf("/repos/%s/%s/collaborators/%s/permission", owner, repo, username)
+	err := c.doRequest(ctx, "GET", path, nil, &resp)
+	if err != nil {
+		return "", err
+	}
+	return resp.Permission, nil
+}
+
+// GetPendingDeployments fetches pending deployments for a workflow run.
+func (c *Client) GetPendingDeployments(ctx context.Context, owner, repo string, runID int64) ([]PendingDeployment, error) {
+	var resp []PendingDeployment
+	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/pending_deployments", owner, repo, runID)
+	err := c.doRequest(ctx, "GET", path, nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// ApproveWorkflowRun approves a workflow run from a fork.
+func (c *Client) ApproveWorkflowRun(ctx context.Context, owner, repo string, runID int64) error {
+	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/approve", owner, repo, runID)
+	return c.doRequestWithBody(ctx, "POST", path, nil, nil, nil)
+}
+
+type environmentApprovalRequest struct {
+	EnvironmentIDs []int64 `json:"environment_ids"`
+	State          string  `json:"state"` // approved or rejected
+	Comment        string  `json:"comment"`
+}
+
+// ApprovePendingDeployments approves pending deployments for a workflow run.
+func (c *Client) ApprovePendingDeployments(ctx context.Context, owner, repo string, runID int64, envIDs []int64, comment string) error {
+	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/pending_deployments", owner, repo, runID)
+	body := environmentApprovalRequest{
+		EnvironmentIDs: envIDs,
+		State:          "approved",
+		Comment:        comment,
+	}
+	return c.doRequestWithBody(ctx, "POST", path, nil, body, nil)
+}
+
+// HasRequiredScopes checks if the current token has the required repo and workflow scopes.
+func (c *Client) HasRequiredScopes() (bool, []string) {
+	c.mu.RLock()
+	scopes := make([]string, len(c.scopes))
+	copy(scopes, c.scopes)
+	c.mu.RUnlock()
+
+	if len(scopes) == 0 {
+		return true, nil
+	}
+
+	hasRepo := false
+	hasWorkflow := false
+	for _, s := range scopes {
+		if s == "repo" {
+			hasRepo = true
+		}
+		if s == "workflow" {
+			hasWorkflow = true
+		}
+	}
+
+	var missing []string
+	if !hasRepo {
+		missing = append(missing, "repo")
+	}
+	if !hasWorkflow {
+		missing = append(missing, "workflow")
+	}
+
+	return len(missing) == 0, missing
+}
+
 

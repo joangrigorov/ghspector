@@ -131,14 +131,14 @@ The application resolves your GitHub credentials using the following hierarchy:
      ```bash
      export GH_TOKEN="ghp_yourpersonalaccesstokenhere"
      ```
-     *Note: To merge Pull Requests, this token must have the `repo` scope.*
+     *Note: To merge Pull Requests and approve workflow runs/deployments, this token must have the `repo` and `workflow` scopes.*
 2. **Configuration File**:
    * Reads from `config.yaml` in your standard user configuration directory (see options below).
 3. **GitHub CLI fallback**:
    * If no token is found in the environment or file, `ghspector` integrates with the official GitHub CLI by querying `gh auth token` automatically.
-   * If you are already logged in but need write permissions (for merging PRs), refresh your scopes:
+   * If you are already logged in but need write permissions (for merging PRs or approving runs), refresh your scopes:
      ```bash
-     gh auth refresh -s repo
+     gh auth refresh -s repo -s workflow
      ```
 
 ### Configuration File Options

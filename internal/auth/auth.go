@@ -25,6 +25,7 @@ type Config struct {
 	DefaultAccount         string        `yaml:"default_account,omitempty"`
 	PollingIntervalSeconds int           `yaml:"polling_interval_seconds,omitempty"`
 	Polling                PollingConfig `yaml:"polling,omitempty"`
+	TokenSource            string        `yaml:"-"`
 }
 
 // ErrUnauthenticated is returned when no GitHub token is found.
@@ -96,16 +97,17 @@ func ResolveToken() (string, *Config, error) {
 func ResolveTokenWithCliGetter(cliGetter func() (string, error)) (string, *Config, error) {
 	// 1. Env variables
 	if token := os.Getenv("GH_TOKEN"); token != "" {
-		return token, &Config{GitHubToken: token}, nil
+		return token, &Config{GitHubToken: token, TokenSource: "GH_TOKEN environment variable"}, nil
 	}
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		return token, &Config{GitHubToken: token}, nil
+		return token, &Config{GitHubToken: token, TokenSource: "GITHUB_TOKEN environment variable"}, nil
 	}
 
 	// 2. Config File
 	var loadedCfg *Config
 	if path, err := ResolveConfigPath(); err == nil {
 		if cfg, err := LoadConfig(path); err == nil && cfg.GitHubToken != "" {
+			cfg.TokenSource = "config file: " + path
 			return cfg.GitHubToken, cfg, nil
 		}
 		loadedCfg = &Config{}
@@ -117,6 +119,7 @@ func ResolveTokenWithCliGetter(cliGetter func() (string, error)) (string, *Confi
 			loadedCfg = &Config{}
 		}
 		loadedCfg.GitHubToken = token
+		loadedCfg.TokenSource = "GitHub CLI (gh)"
 		return token, loadedCfg, nil
 	}
 
@@ -146,13 +149,13 @@ func PrintAuthInstructions() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "1. Authenticate via GitHub CLI (recommended):")
 	fmt.Fprintln(os.Stderr, "   $ gh auth login --scopes \"repo,workflow,read:org\"")
-	fmt.Fprintln(os.Stderr, "   If you are already logged in but need write permissions (for merging PRs), run:")
-	fmt.Fprintln(os.Stderr, "   $ gh auth refresh -s repo")
+	fmt.Fprintln(os.Stderr, "   If you are already logged in but need write permissions (for merging PRs or approving runs), run:")
+	fmt.Fprintln(os.Stderr, "   $ gh auth refresh -s repo -s workflow")
 	fmt.Fprintln(os.Stderr, "   (ghspector will automatically pick up your credentials)")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "2. Set the GH_TOKEN environment variable:")
 	fmt.Fprintln(os.Stderr, "   $ export GH_TOKEN=your_personal_access_token")
-	fmt.Fprintln(os.Stderr, "   Note: To merge pull requests, the token must have the 'repo' scope.")
+	fmt.Fprintln(os.Stderr, "   Note: To merge pull requests and approve runs, the token must have the 'repo' and 'workflow' scopes.")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "3. Create a configuration file at ~/.config/ghspector/config.yaml:")
 	fmt.Fprintln(os.Stderr, "   github_token: \"your_personal_access_token\"")
