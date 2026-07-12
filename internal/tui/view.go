@@ -1536,10 +1536,10 @@ func (m Model) renderApprovalModal() string {
 		modalText.WriteString("│" + lineStyle.Render("  This internal run requires manual approval") + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("  but cannot be approved via the GitHub API.") + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
-		modalText.WriteString("│" + lineStyle.Render("  Do you want to open the run page in your") + "│\n")
-		modalText.WriteString("│" + lineStyle.Render("  web browser to approve it?") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  Please approve it manually on GitHub.") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  Press [w] to open browser to approve.") + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
-		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusSuccessful.Render("[Y]")+" Yes, open browser") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusSuccessful.Render("[Y]")+" or "+m.theme.StatusSuccessful.Render("[w]")+" Yes, open browser") + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusFailed.Render("[n]")+" No, cancel") + "│\n")
 	} else {
 		modalText.WriteString("│" + lineStyle.Render("  Are you sure you want to approve this run?") + "│\n")

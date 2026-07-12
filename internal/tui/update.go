@@ -196,15 +196,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.runApprovalState {
 			case 1: // confirm approval
 				switch keyMsg.String() {
-				case "y", "Y", "enter":
+				case "y", "Y", "enter", "w", "W":
 					m.runApprovalState = 0 // reset
 					run := m.getRun()
 					isForkPR := (run.HeadRepository.FullName != "" && run.HeadRepository.FullName != run.Repository.FullName)
-					if run.Conclusion == "action_required" && !isForkPR {
+					
+					isWPress := (keyMsg.String() == "w" || keyMsg.String() == "W")
+					isLocalPR := (run.Conclusion == "action_required" && !isForkPR)
+					
+					if isWPress || isLocalPR {
 						_ = openBrowser(run.HTMLURL)
 						m.statusMsg = "Opened approval page in browser."
 						return m, nil
 					}
+					
 					m.isLoading = true
 					m.loadingMsg = "Approving workflow run..."
 					return m, m.approveWorkflowRunCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, run.Status, run.Conclusion)
