@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0](https://github.com/joangrigorov/ghspector/compare/v0.1.0...v0.2.0) (2026-07-12)
+
+
+### Features
+
+* **tui:** add read-only issue browser and viewer ([#7](https://github.com/joangrigorov/ghspector/issues/7)) ([d43887b](https://github.com/joangrigorov/ghspector/commit/d43887ba87d207536987c4b0d0dc2447173b6b4a))
+* **tui:** add workflow run and deployment approval flow ([#9](https://github.com/joangrigorov/ghspector/issues/9)) ([6d99114](https://github.com/joangrigorov/ghspector/commit/6d991140f2a3ed4e2180797a2f944248bacf6c67))
+
 ## [0.1.0](https://github.com/joangrigorov/ghspector/compare/v0.0.1...v0.1.0) (2026-07-11)
 
 
