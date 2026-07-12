@@ -35,21 +35,22 @@ type Repository struct {
 
 // WorkflowRun represents a GitHub Actions workflow run.
 type WorkflowRun struct {
-	ID           int64       `json:"id"`
-	Name         string      `json:"name"`
-	RunNumber    int         `json:"run_number"`
-	Event        string      `json:"event"`
-	Status       string      `json:"status"`     // queued, in_progress, completed, etc.
-	Conclusion   string      `json:"conclusion"` // success, failure, cancelled, skipped, etc.
-	HeadBranch   string      `json:"head_branch"`
-	HeadSHA      string      `json:"head_sha"`
-	HTMLURL      string      `json:"html_url"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
-	Repository   Repository  `json:"repository"`
-	DisplayTitle string      `json:"display_title"`
-	Actor        *User       `json:"actor"`
-	RunAttempt   int         `json:"run_attempt"`
+	ID             int64       `json:"id"`
+	Name           string      `json:"name"`
+	RunNumber      int         `json:"run_number"`
+	Event          string      `json:"event"`
+	Status         string      `json:"status"`     // queued, in_progress, completed, etc.
+	Conclusion     string      `json:"conclusion"` // success, failure, cancelled, skipped, etc.
+	HeadBranch     string      `json:"head_branch"`
+	HeadSHA        string      `json:"head_sha"`
+	HTMLURL        string      `json:"html_url"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
+	Repository     Repository  `json:"repository"`
+	HeadRepository Repository  `json:"head_repository"`
+	DisplayTitle   string      `json:"display_title"`
+	Actor          *User       `json:"actor"`
+	RunAttempt     int         `json:"run_attempt"`
 }
 
 // WorkflowJob represents a job in a GitHub Actions workflow run.

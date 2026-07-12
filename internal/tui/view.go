@@ -454,10 +454,17 @@ func (m Model) renderJobsView() string {
 			Bold(true).
 			Foreground(m.theme.StatusWaiting.GetForeground())
 
+		isForkPR := (run.HeadRepository.FullName != "" && run.HeadRepository.FullName != run.Repository.FullName)
+
 		banner.WriteString(titleStyle.Render(" Awaiting Approval Required ") + "\n\n")
 		if run.Conclusion == "action_required" {
-			banner.WriteString("This workflow run was triggered by a pull request from a fork\n")
-			banner.WriteString("and requires a maintainer's approval to execute.\n")
+			if isForkPR {
+				banner.WriteString("This workflow run was triggered by a pull request from a fork\n")
+				banner.WriteString("and requires a maintainer's approval to execute.\n")
+			} else {
+				banner.WriteString("This workflow run was triggered by a local pull request\n")
+				banner.WriteString("and requires approval to execute (due to bot trigger or policy).\n")
+			}
 		} else {
 			banner.WriteString("This workflow run has completed initial checks but is waiting\n")
 			banner.WriteString("for manual approval to deploy to a protected environment.\n")
@@ -467,7 +474,11 @@ func (m Model) renderJobsView() string {
 		if m.selectedRunCanApprove() {
 			banner.WriteString("Press " + m.theme.StatusSuccessful.Render("[a]") + " to approve and trigger this run now.\n")
 		} else {
-			banner.WriteString(m.theme.StatusFailed.Render("Your current access token does not have permissions to approve.\n"))
+			if run.Conclusion == "action_required" && !isForkPR {
+				banner.WriteString(m.theme.StatusFailed.Render("Cannot approve via API. Please approve via the GitHub UI.\n"))
+			} else {
+				banner.WriteString(m.theme.StatusFailed.Render("Your current access token does not have permissions to approve.\n"))
+			}
 		}
 		
 		sb.WriteString("\n" + bannerStyle.Render(banner.String()) + "\n")

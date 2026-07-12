@@ -2744,6 +2744,11 @@ func (m Model) checkApprovalPermissionCmd() tea.Cmd {
 		}
 
 		if conclusion == "action_required" {
+			isForkPR := (run.HeadRepository.FullName != "" && run.HeadRepository.FullName != run.Repository.FullName)
+			if !isForkPR {
+				return approvalPermissionLoadedMsg{runID: run.ID, canApprove: false}
+			}
+
 			// Fork PR approval: verify repo write permission
 			if m.currentUser != "" && strings.EqualFold(owner, m.currentUser) {
 				return approvalPermissionLoadedMsg{runID: run.ID, canApprove: true}
