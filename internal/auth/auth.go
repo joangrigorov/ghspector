@@ -25,6 +25,7 @@ type Config struct {
 	DefaultAccount         string        `yaml:"default_account,omitempty"`
 	PollingIntervalSeconds int           `yaml:"polling_interval_seconds,omitempty"`
 	Polling                PollingConfig `yaml:"polling,omitempty"`
+	TokenSource            string        `yaml:"-"`
 }
 
 // ErrUnauthenticated is returned when no GitHub token is found.
@@ -96,16 +97,17 @@ func ResolveToken() (string, *Config, error) {
 func ResolveTokenWithCliGetter(cliGetter func() (string, error)) (string, *Config, error) {
 	// 1. Env variables
 	if token := os.Getenv("GH_TOKEN"); token != "" {
-		return token, &Config{GitHubToken: token}, nil
+		return token, &Config{GitHubToken: token, TokenSource: "GH_TOKEN environment variable"}, nil
 	}
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		return token, &Config{GitHubToken: token}, nil
+		return token, &Config{GitHubToken: token, TokenSource: "GITHUB_TOKEN environment variable"}, nil
 	}
 
 	// 2. Config File
 	var loadedCfg *Config
 	if path, err := ResolveConfigPath(); err == nil {
 		if cfg, err := LoadConfig(path); err == nil && cfg.GitHubToken != "" {
+			cfg.TokenSource = "config file: " + path
 			return cfg.GitHubToken, cfg, nil
 		}
 		loadedCfg = &Config{}
@@ -117,6 +119,7 @@ func ResolveTokenWithCliGetter(cliGetter func() (string, error)) (string, *Confi
 			loadedCfg = &Config{}
 		}
 		loadedCfg.GitHubToken = token
+		loadedCfg.TokenSource = "GitHub CLI (gh)"
 		return token, loadedCfg, nil
 	}
 

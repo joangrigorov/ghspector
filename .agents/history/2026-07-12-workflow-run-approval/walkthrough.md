@@ -17,7 +17,7 @@ We have successfully implemented the workflow run and environment deployment app
 - **[`internal/tui/model.go`](internal/tui/model.go)**: Added `approvalPermissions` cache and `runApprovalState` to handle the modal overlay. Defined `approvalPermissionLoadedMsg`, `workflowRunApprovedMsg` message types, and the `selectedRunCanApprove()` helper.
 - **[`internal/tui/update.go`](internal/tui/update.go)**: 
   - Added key interception for the approval confirmation modal (`y` / `Y` / `Enter` to confirm, `n` / `N` / `esc` to cancel).
-  - Wired `checkApprovalPermissionCmd()` to trigger dynamically in the background during navigation. It now inspects `HasRequiredScopes()` and returns a status error message indicating what command to run (e.g. `gh auth refresh -s repo -s workflow`) if scopes are missing.
+  - Wired `checkApprovalPermissionCmd()` to trigger dynamically in the background during navigation. It now inspects `HasRequiredScopes()` and returns a status error message indicating what command to run (e.g. `gh auth refresh -s repo -s workflow`) if scopes are missing. It also appends the current `TokenSource` so the user knows if their token source is overridden by an environment variable.
   - Handled `approvalPermissionLoadedMsg` to cache the permission state per workflow run and display scope validation warnings.
   - Handled `workflowRunApprovedMsg` to perform list/job refreshes and render success status messages.
 
@@ -30,7 +30,7 @@ We have successfully implemented the workflow run and environment deployment app
   - Updated `renderHelpView` to display scope details for the `a` keyboard shortcut.
 
 ### 4. Setup & Documentation Updates
-- **[`internal/auth/auth.go`](internal/auth/auth.go)**: Updated login and scope refresh command suggestions to include both `repo` and `workflow` scopes.
+- **[`internal/auth/auth.go`](internal/auth/auth.go)**: Updated login and scope refresh command suggestions to include both `repo` and `workflow` scopes. Also added `TokenSource` tracking to identify the loaded credentials source.
 - **[`README.md`](README.md)**: Updated configuration, merge, and authentication scope instructions to list both `repo` and `workflow` scopes.
 
 ---
@@ -38,7 +38,7 @@ We have successfully implemented the workflow run and environment deployment app
 ## Verification Results
 
 ### 1. Automated Tests
-We added coverage for both client and TUI updates:
+ We added coverage for both client and TUI updates:
 - **`TestClient_GetRepoPermission`**, **`TestClient_GetPendingDeployments`**, **`TestClient_ApproveWorkflowRun`**, and **`TestClient_ApprovePendingDeployments`** in `internal/gh/client_test.go` were added and validated against HTTP mocks.
 - **`TestWorkflowApprovalFlow`** in `internal/tui/app_test.go` was added to verify state transitions and event logic in the TUI loop.
 
@@ -48,8 +48,8 @@ go test ./...
 ```
 Result:
 ```
-ok      ghspector/internal/auth   (cached)
-ok      ghspector/internal/gh     0.009s
+ok      ghspector/internal/auth   0.002s
+ok      ghspector/internal/gh     (cached)
 ok      ghspector/internal/tui    0.025s
 ```
 

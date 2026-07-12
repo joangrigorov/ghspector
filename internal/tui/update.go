@@ -2732,10 +2732,14 @@ func (m Model) checkApprovalPermissionCmd() tea.Cmd {
 
 	return func() tea.Msg {
 		if ok, missing := m.client.HasRequiredScopes(); !ok {
+			var sourceStr string
+			if m.config != nil && m.config.TokenSource != "" {
+				sourceStr = fmt.Sprintf(" (Token source: %s)", m.config.TokenSource)
+			}
 			return approvalPermissionLoadedMsg{
 				runID:      run.ID,
 				canApprove: false,
-				err:        fmt.Errorf("missing scopes: %s. Run: gh auth refresh -s %s", strings.Join(missing, ", "), strings.Join(missing, " -s ")),
+				err:        fmt.Errorf("missing scopes: %s%s. Run: gh auth refresh -s %s", strings.Join(missing, ", "), sourceStr, strings.Join(missing, " -s ")),
 			}
 		}
 
