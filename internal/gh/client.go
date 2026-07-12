@@ -655,4 +655,37 @@ func (c *Client) ApprovePendingDeployments(ctx context.Context, owner, repo stri
 	return c.doRequestWithBody(ctx, "POST", path, nil, body, nil)
 }
 
+// HasRequiredScopes checks if the current token has the required repo and workflow scopes.
+func (c *Client) HasRequiredScopes() (bool, []string) {
+	c.mu.RLock()
+	scopes := make([]string, len(c.scopes))
+	copy(scopes, c.scopes)
+	c.mu.RUnlock()
+
+	if len(scopes) == 0 {
+		return true, nil
+	}
+
+	hasRepo := false
+	hasWorkflow := false
+	for _, s := range scopes {
+		if s == "repo" {
+			hasRepo = true
+		}
+		if s == "workflow" {
+			hasWorkflow = true
+		}
+	}
+
+	var missing []string
+	if !hasRepo {
+		missing = append(missing, "repo")
+	}
+	if !hasWorkflow {
+		missing = append(missing, "workflow")
+	}
+
+	return len(missing) == 0, missing
+}
+
 

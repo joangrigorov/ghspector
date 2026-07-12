@@ -237,11 +237,13 @@ func (m Model) renderFooter(keys []string) string {
 	status := ""
 	if m.statusMsg != "" {
 		lowerMsg := strings.ToLower(m.statusMsg)
-		if strings.HasPrefix(lowerMsg, "error") {
+		if strings.HasPrefix(lowerMsg, "error") || strings.Contains(lowerMsg, "failed") || strings.Contains(lowerMsg, "missing scopes") {
 			cleanErr := m.statusMsg
 			cleanErr = strings.TrimPrefix(cleanErr, "Error: ")
 			cleanErr = strings.TrimPrefix(cleanErr, "error: ")
 			status = " | " + m.theme.StatusFailed.Render("error: "+cleanErr)
+		} else {
+			status = " | " + m.theme.StatusSuccessful.Render(m.statusMsg)
 		}
 	}
 
@@ -676,6 +678,7 @@ func (m Model) renderHelpView() string {
 	sb.WriteString("  " + m.theme.TableHeader.Render("WORKFLOW RUNS (Main View)") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("j / k / Up / Down") + " " + m.theme.HelpDesc.Render("Navigate runs list") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("Enter") + "              " + m.theme.HelpDesc.Render("View Jobs of selected workflow run") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("a") + "                  " + m.theme.HelpDesc.Render("Approve waiting run / deployment (requires 'repo' & 'workflow' scopes)") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("r") + "                  " + m.theme.HelpDesc.Render("Refresh workflow runs list") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("w") + "                  " + m.theme.HelpDesc.Render("Open selected workflow run in browser") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("m") + "                  " + m.theme.HelpDesc.Render("Toggle filtering by your own runs") + "\n")
@@ -706,6 +709,7 @@ func (m Model) renderHelpView() string {
 	sb.WriteString("  " + m.theme.TableHeader.Render("WORKFLOW JOBS") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("j / k / Up / Down") + " " + m.theme.HelpDesc.Render("Navigate jobs list") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("Enter") + "              " + m.theme.HelpDesc.Render("View Logs of selected job") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("a") + "                  " + m.theme.HelpDesc.Render("Approve waiting run / deployment (requires 'repo' & 'workflow' scopes)") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("[ / ]") + "              " + m.theme.HelpDesc.Render("Cycle through previous workflow run attempts") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("w") + "                  " + m.theme.HelpDesc.Render("Open workflow run in browser") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("v") + "                  " + m.theme.HelpDesc.Render("Open selected job in browser") + "\n")

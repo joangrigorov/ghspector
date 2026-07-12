@@ -196,7 +196,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.runApprovalState {
 			case 1: // confirm approval
 				switch keyMsg.String() {
-				case "y", "Y":
+				case "y", "Y", "enter":
 					m.isLoading = true
 					m.loadingMsg = "Approving workflow run..."
 					m.runApprovalState = 0 // reset
@@ -1489,6 +1489,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case approvalPermissionLoadedMsg:
 		if msg.err != nil {
 			m.approvalPermissions[msg.runID] = false
+			m.statusMsg = "error: " + msg.err.Error()
 			return m, nil
 		}
 		m.approvalPermissions[msg.runID] = msg.canApprove
@@ -1497,7 +1498,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case workflowRunApprovedMsg:
 		m.isLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Approval failed: " + msg.err.Error()
+			m.statusMsg = "error: approval failed: " + msg.err.Error()
 			return m, nil
 		}
 		
@@ -2730,6 +2731,14 @@ func (m Model) checkApprovalPermissionCmd() tea.Cmd {
 	}
 
 	return func() tea.Msg {
+		if ok, missing := m.client.HasRequiredScopes(); !ok {
+			return approvalPermissionLoadedMsg{
+				runID:      run.ID,
+				canApprove: false,
+				err:        fmt.Errorf("missing scopes: %s. Run: gh auth refresh -s %s", strings.Join(missing, ", "), strings.Join(missing, " -s ")),
+			}
+		}
+
 		if conclusion == "action_required" {
 			// Fork PR approval: verify repo write permission
 			if m.currentUser != "" && strings.EqualFold(owner, m.currentUser) {
