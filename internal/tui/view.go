@@ -1523,24 +1523,39 @@ func (m Model) renderMergeModal() string {
 func (m Model) renderApprovalModal() string {
 	var modalText strings.Builder
 	lineStyle := lipgloss.NewStyle().Width(46)
+	run := m.getRun()
+	isForkPR := (run.HeadRepository.FullName != "" && run.HeadRepository.FullName != run.Repository.FullName)
+	isLocalPRApproval := (run.Conclusion == "action_required" && !isForkPR)
 	
 	modalText.WriteString("┌──────────────────────────────────────────────┐\n")
 	modalText.WriteString("│              APPROVE WORKFLOW RUN            │\n")
 	modalText.WriteString("├──────────────────────────────────────────────┤\n")
 	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
-	modalText.WriteString("│" + lineStyle.Render("  Are you sure you want to approve this run?") + "│\n")
-	run := m.getRun()
-	runName := run.Name
-	if runName == "" && run.DisplayTitle != "" {
-		runName = run.DisplayTitle
+
+	if isLocalPRApproval {
+		modalText.WriteString("│" + lineStyle.Render("  This internal run requires manual approval") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  but cannot be approved via the GitHub API.") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  Do you want to open the run page in your") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  web browser to approve it?") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusSuccessful.Render("[Y]")+" Yes, open browser") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusFailed.Render("[n]")+" No, cancel") + "│\n")
+	} else {
+		modalText.WriteString("│" + lineStyle.Render("  Are you sure you want to approve this run?") + "│\n")
+		runName := run.Name
+		if runName == "" && run.DisplayTitle != "" {
+			runName = run.DisplayTitle
+		}
+		if len(runName) > 40 {
+			runName = runName[:37] + "..."
+		}
+		modalText.WriteString("│" + lineStyle.Render(fmt.Sprintf("  Run: %s", runName)) + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusSuccessful.Render("[Y]")+" Yes, approve run") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusFailed.Render("[n]")+" No, cancel") + "│\n")
 	}
-	if len(runName) > 40 {
-		runName = runName[:37] + "..."
-	}
-	modalText.WriteString("│" + lineStyle.Render(fmt.Sprintf("  Run: %s", runName)) + "│\n")
-	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
-	modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusSuccessful.Render("[Y]")+" Yes, approve run") + "│\n")
-	modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusFailed.Render("[n]")+" No, cancel") + "│\n")
+
 	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
 	modalText.WriteString("└──────────────────────────────────────────────┘")
 	return modalText.String()

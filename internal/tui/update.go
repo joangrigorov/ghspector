@@ -197,10 +197,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 1: // confirm approval
 				switch keyMsg.String() {
 				case "y", "Y", "enter":
-					m.isLoading = true
-					m.loadingMsg = "Approving workflow run..."
 					m.runApprovalState = 0 // reset
 					run := m.getRun()
+					isForkPR := (run.HeadRepository.FullName != "" && run.HeadRepository.FullName != run.Repository.FullName)
+					if run.Conclusion == "action_required" && !isForkPR {
+						_ = openBrowser(run.HTMLURL)
+						m.statusMsg = "Opened approval page in browser."
+						return m, nil
+					}
+					m.isLoading = true
+					m.loadingMsg = "Approving workflow run..."
 					return m, m.approveWorkflowRunCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, run.Status, run.Conclusion)
 				case "n", "N", "esc":
 					m.runApprovalState = 0
@@ -2731,25 +2737,27 @@ func (m Model) checkApprovalPermissionCmd() tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		if ok, missing := m.client.HasRequiredScopes(); !ok {
-			var sourceStr string
-			if m.config != nil && m.config.TokenSource != "" {
-				sourceStr = fmt.Sprintf(" (Token source: %s)", m.config.TokenSource)
-			}
-			return approvalPermissionLoadedMsg{
-				runID:      run.ID,
-				canApprove: false,
-				err:        fmt.Errorf("missing scopes: %s%s. Run: gh auth refresh -s %s", strings.Join(missing, ", "), sourceStr, strings.Join(missing, " -s ")),
-			}
-		}
-
 		if conclusion == "action_required" {
 			isForkPR := (run.HeadRepository.FullName != "" && run.HeadRepository.FullName != run.Repository.FullName)
 			if !isForkPR {
-				return approvalPermissionLoadedMsg{runID: run.ID, canApprove: false}
+				// Local PR runs can be approved via browser redirection.
+				return approvalPermissionLoadedMsg{runID: run.ID, canApprove: true}
 			}
 
-			// Fork PR approval: verify repo write permission
+			// Fork PR approval: requires repo & workflow scopes
+			if ok, missing := m.client.HasRequiredScopes(); !ok {
+				var sourceStr string
+				if m.config != nil && m.config.TokenSource != "" {
+					sourceStr = fmt.Sprintf(" (Token source: %s)", m.config.TokenSource)
+				}
+				return approvalPermissionLoadedMsg{
+					runID:      run.ID,
+					canApprove: false,
+					err:        fmt.Errorf("missing scopes: %s%s. Run: gh auth refresh -s %s", strings.Join(missing, ", "), sourceStr, strings.Join(missing, " -s ")),
+				}
+			}
+
+			// Verify repo write permission
 			if m.currentUser != "" && strings.EqualFold(owner, m.currentUser) {
 				return approvalPermissionLoadedMsg{runID: run.ID, canApprove: true}
 			}
@@ -2762,7 +2770,20 @@ func (m Model) checkApprovalPermissionCmd() tea.Cmd {
 		}
 
 		if status == "waiting" {
-			// Environment deployment approval: check deployment permissions
+			// Environment deployment approval: requires repo & workflow scopes
+			if ok, missing := m.client.HasRequiredScopes(); !ok {
+				var sourceStr string
+				if m.config != nil && m.config.TokenSource != "" {
+					sourceStr = fmt.Sprintf(" (Token source: %s)", m.config.TokenSource)
+				}
+				return approvalPermissionLoadedMsg{
+					runID:      run.ID,
+					canApprove: false,
+					err:        fmt.Errorf("missing scopes: %s%s. Run: gh auth refresh -s %s", strings.Join(missing, ", "), sourceStr, strings.Join(missing, " -s ")),
+				}
+			}
+
+			// Check deployment permissions
 			deployments, err := m.client.GetPendingDeployments(m.ctx, owner, repo, run.ID)
 			if err != nil {
 				// Fallback to collaborator permission

@@ -19,7 +19,8 @@ We have successfully implemented the workflow run and environment deployment app
 - **[`internal/tui/update.go`](internal/tui/update.go)**: 
   - Added key interception for the approval confirmation modal (`y` / `Y` / `Enter` to confirm, `n` / `N` / `esc` to cancel).
   - Wired `checkApprovalPermissionCmd()` to trigger dynamically in the background during navigation. It now inspects `HasRequiredScopes()` and returns a status error message indicating what command to run (e.g. `gh auth refresh -s repo -s workflow`) if scopes are missing. It also appends the current `TokenSource` so the user knows if their token source is overridden by an environment variable.
-  - Added validation check to `checkApprovalPermissionCmd` to confirm whether a run requiring approval (`conclusion == "action_required"`) is from a fork PR. If it is from a local branch PR (e.g. `release-please` chore PR), it disables approval triggering in the TUI since GitHub Actions REST API does not support approving local workflow runs (it returns `This run is not from a fork pull request`).
+  - Added validation check to `checkApprovalPermissionCmd` to confirm whether a run requiring approval (`conclusion == "action_required"`) is from a fork PR. If it is from a local branch PR (e.g. `release-please` chore PR), it skips scope checking and directly authorizes browser approval.
+  - Intercepted the confirmation inputs in the modal so that if the run is triggered by an internal repository branch (local PR), pressing `y` / `Y` / `Enter` opens the run page directly in the default web browser instead of calling the REST API.
   - Handled `approvalPermissionLoadedMsg` to cache the permission state per workflow run and display scope validation warnings.
   - Handled `workflowRunApprovedMsg` to perform list/job refreshes and render success status messages.
 
@@ -27,8 +28,9 @@ We have successfully implemented the workflow run and environment deployment app
 - **[`internal/tui/view.go`](internal/tui/view.go)**:
   - Appended the `"a:Approve"` shortcut dynamically to the bottom footer when the selected run can be approved.
   - Implemented a custom stylized Lipgloss box banner inside the jobs view (`viewJobs`) that warns when a run is awaiting approval and prompts the user on how to approve it.
-  - Adapted the banner warning to differentiate between fork PR and local branch PR approvals. If it's a local branch PR run, the banner shows: `"Cannot approve via API. Please approve via the GitHub UI."`.
+  - Adapted the banner warning to differentiate between fork PR and local branch PR approvals. If it's a local branch PR run, the banner shows: `"Press [a] to open the run page in your browser."` (or `"Cannot approve via API. Please approve via the GitHub UI."` if missing permissions).
   - Implemented `renderApprovalModal()` using the existing `lipgloss` styles to display an overlay in the center of the terminal.
+  - Updated `renderApprovalModal()` to render the browser redirection prompt for local PR approvals, notifying the user that the run cannot be approved via the REST API and offering to open the page.
   - Updated `renderFooter` to properly display error status messages (in red, prefixed with `"error:"`) and success/info messages (in green).
   - Updated `renderHelpView` to display scope details for the `a` keyboard shortcut.
 
@@ -52,7 +54,7 @@ go test ./...
 Result:
 ```
 ok      ghspector/internal/auth   (cached)
-ok      ghspector/internal/gh     0.010s
+ok      ghspector/internal/gh     (cached)
 ok      ghspector/internal/tui    0.024s
 ```
 
