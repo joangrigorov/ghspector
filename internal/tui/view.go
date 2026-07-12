@@ -237,11 +237,13 @@ func (m Model) renderFooter(keys []string) string {
 	status := ""
 	if m.statusMsg != "" {
 		lowerMsg := strings.ToLower(m.statusMsg)
-		if strings.HasPrefix(lowerMsg, "error") {
+		if strings.HasPrefix(lowerMsg, "error") || strings.Contains(lowerMsg, "failed") || strings.Contains(lowerMsg, "missing scopes") {
 			cleanErr := m.statusMsg
 			cleanErr = strings.TrimPrefix(cleanErr, "Error: ")
 			cleanErr = strings.TrimPrefix(cleanErr, "error: ")
 			status = " | " + m.theme.StatusFailed.Render("error: "+cleanErr)
+		} else {
+			status = " | " + m.theme.StatusSuccessful.Render(m.statusMsg)
 		}
 	}
 
@@ -400,9 +402,18 @@ func (m Model) renderMainView() string {
 	}
 
 	keys := []string{"?:Help", "Tab:Tabs", "j/k:Navigate", "Enter:Jobs", "w:Browser", "f:Filter", "m:My Runs", "x:Clear Filter", "r:Refresh"}
+	if m.selectedRunCanApprove() {
+		keys = append(keys[:5], append([]string{"a:Approve"}, keys[5:]...)...)
+	}
 	sb.WriteString(m.renderFooter(keys))
 
-	return sb.String()
+	viewStr := sb.String()
+	if m.runApprovalState > 0 {
+		modalStr := m.renderApprovalModal()
+		viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+	}
+
+	return viewStr
 }
 
 // renderJobsView renders the list of jobs in a workflow run with a scrolling window.
@@ -427,71 +438,117 @@ func (m Model) renderJobsView() string {
 	}
 	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Branch: %s | SHA: %s%s", run.Repository.FullName, run.HeadBranch, shaText, attemptText)) + "\n\n")
 
-	header := fmt.Sprintf("  %-3s %-40s %-15s %-12s", "ST", "JOB NAME", "STARTED", "DURATION")
-	sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
-
+	needsApproval := (run.Status == "waiting" || run.Conclusion == "action_required")
 	renderedCount := 0
-	if len(m.jobs) == 0 {
-		msg := "No jobs found for this workflow run."
-		if m.isLoading {
-			msg = "Loading jobs..."
+
+	if needsApproval {
+		var banner strings.Builder
+		bannerStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(m.theme.StatusWaiting.GetForeground()).
+			Padding(1, 4).
+			MarginLeft(4).
+			Width(60)
+
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(m.theme.StatusWaiting.GetForeground())
+
+		isForkPR := (run.HeadRepository.FullName != "" && run.HeadRepository.FullName != run.Repository.FullName)
+
+		banner.WriteString(titleStyle.Render(" Awaiting Approval Required ") + "\n\n")
+		if run.Conclusion == "action_required" {
+			if isForkPR {
+				banner.WriteString("This workflow run was triggered by a pull request from a fork\n")
+				banner.WriteString("and requires a maintainer's approval to execute.\n")
+			} else {
+				banner.WriteString("This workflow run was triggered by a local pull request\n")
+				banner.WriteString("and requires approval to execute (due to bot trigger or policy).\n")
+			}
+		} else {
+			banner.WriteString("This workflow run has completed initial checks but is waiting\n")
+			banner.WriteString("for manual approval to deploy to a protected environment.\n")
 		}
-		sb.WriteString("\n  " + m.theme.HelpDesc.Render(msg) + "\n\n")
-		renderedCount = 3
+		
+		banner.WriteString("\n")
+		if m.selectedRunCanApprove() {
+			banner.WriteString("Press " + m.theme.StatusSuccessful.Render("[a]") + " to approve and trigger this run now.\n")
+		} else {
+			if run.Conclusion == "action_required" && !isForkPR {
+				banner.WriteString(m.theme.StatusFailed.Render("Cannot approve via API. Please approve via the GitHub UI.\n"))
+			} else {
+				banner.WriteString(m.theme.StatusFailed.Render("Your current access token does not have permissions to approve.\n"))
+			}
+		}
+		
+		sb.WriteString("\n" + bannerStyle.Render(banner.String()) + "\n")
+		renderedCount = 9
 	} else {
-		visibleRows := m.height - 15
-		if visibleRows < 5 {
-			visibleRows = 5
-		}
+		header := fmt.Sprintf("  %-3s %-40s %-15s %-12s", "ST", "JOB NAME", "STARTED", "DURATION")
+		sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
 
-		endIdx := m.jobStartIndex + visibleRows
-		if endIdx > len(m.jobs) {
-			endIdx = len(m.jobs)
-		}
-
-		renderedCount = endIdx - m.jobStartIndex
-
-		for i := m.jobStartIndex; i < endIdx; i++ {
-			job := m.jobs[i]
-			statusInd := m.getStatusIndicator(job.Status, job.Conclusion)
-
-			startedStr := job.StartedAt.Format("15:04:05")
-			if job.StartedAt.IsZero() {
-				startedStr = "N/A"
+		if len(m.jobs) == 0 {
+			msg := "No jobs found for this workflow run."
+			if m.isLoading {
+				msg = "Loading jobs..."
+			}
+			sb.WriteString("\n  " + m.theme.HelpDesc.Render(msg) + "\n\n")
+			renderedCount = 3
+		} else {
+			visibleRows := m.height - 15
+			if visibleRows < 5 {
+				visibleRows = 5
 			}
 
-			durStr := ""
-			if job.Status == "in_progress" {
-				durStr = formatDuration(m.client.Now().Sub(job.StartedAt))
-				durStr = m.theme.StatusRunning.Render(durStr)
-			} else if job.Status == "queued" {
-				durStr = "queued"
-				durStr = m.theme.StatusQueued.Render(durStr)
-			} else if !job.CompletedAt.IsZero() && !job.StartedAt.IsZero() {
-				durStr = formatDuration(job.CompletedAt.Sub(job.StartedAt))
-			} else {
-				durStr = "N/A"
+			endIdx := m.jobStartIndex + visibleRows
+			if endIdx > len(m.jobs) {
+				endIdx = len(m.jobs)
 			}
 
-			jobName := job.Name
-			if len(jobName) > 38 {
-				jobName = jobName[:35] + "..."
-			}
+			renderedCount = endIdx - m.jobStartIndex
 
-			paddedJobName := fmt.Sprintf("%-40s", jobName)
-			hyperlinkedJobName := renderHyperlink(paddedJobName, job.HTMLURL)
+			for i := m.jobStartIndex; i < endIdx; i++ {
+				job := m.jobs[i]
+				statusInd := m.getStatusIndicator(job.Status, job.Conclusion)
 
-			rowText := fmt.Sprintf("  %-3s %s %-15s %-12s",
-				statusInd,
-				hyperlinkedJobName,
-				startedStr,
-				durStr,
-			)
+				startedStr := job.StartedAt.Format("15:04:05")
+				if job.StartedAt.IsZero() {
+					startedStr = "N/A"
+				}
 
-			if i == m.selectedJobIdx {
-				sb.WriteString(m.theme.TableSelected.Render(rowText) + "\n")
-			} else {
-				sb.WriteString(m.theme.TableRow.Render(rowText) + "\n")
+				durStr := ""
+				if job.Status == "in_progress" {
+					durStr = formatDuration(m.client.Now().Sub(job.StartedAt))
+					durStr = m.theme.StatusRunning.Render(durStr)
+				} else if job.Status == "queued" {
+					durStr = "queued"
+					durStr = m.theme.StatusQueued.Render(durStr)
+				} else if !job.CompletedAt.IsZero() && !job.StartedAt.IsZero() {
+					durStr = formatDuration(job.CompletedAt.Sub(job.StartedAt))
+				} else {
+					durStr = "N/A"
+				}
+
+				jobName := job.Name
+				if len(jobName) > 38 {
+					jobName = jobName[:35] + "..."
+				}
+
+				paddedJobName := fmt.Sprintf("%-40s", jobName)
+				hyperlinkedJobName := renderHyperlink(paddedJobName, job.HTMLURL)
+
+				rowText := fmt.Sprintf("  %-3s %s %-15s %-12s",
+					statusInd,
+					hyperlinkedJobName,
+					startedStr,
+					durStr,
+				)
+
+				if i == m.selectedJobIdx {
+					sb.WriteString(m.theme.TableSelected.Render(rowText) + "\n")
+				} else {
+					sb.WriteString(m.theme.TableRow.Render(rowText) + "\n")
+				}
 			}
 		}
 	}
@@ -506,9 +563,18 @@ func (m Model) renderJobsView() string {
 	}
 
 	keys := []string{"?:Help", "j/k:Navigate", "Enter:Logs", "Esc:Back", "w/v:Browser", "[/]:Attempts"}
+	if m.selectedRunCanApprove() {
+		keys = append(keys[:5], append([]string{"a:Approve"}, keys[5:]...)...)
+	}
 	sb.WriteString(m.renderFooter(keys))
 
-	return sb.String()
+	viewStr := sb.String()
+	if m.runApprovalState > 0 {
+		modalStr := m.renderApprovalModal()
+		viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+	}
+
+	return viewStr
 }
 
 // renderLogsView renders the logs viewer and steps list.
@@ -623,6 +689,7 @@ func (m Model) renderHelpView() string {
 	sb.WriteString("  " + m.theme.TableHeader.Render("WORKFLOW RUNS (Main View)") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("j / k / Up / Down") + " " + m.theme.HelpDesc.Render("Navigate runs list") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("Enter") + "              " + m.theme.HelpDesc.Render("View Jobs of selected workflow run") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("a") + "                  " + m.theme.HelpDesc.Render("Approve waiting run / deployment (requires 'repo' & 'workflow' scopes)") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("r") + "                  " + m.theme.HelpDesc.Render("Refresh workflow runs list") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("w") + "                  " + m.theme.HelpDesc.Render("Open selected workflow run in browser") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("m") + "                  " + m.theme.HelpDesc.Render("Toggle filtering by your own runs") + "\n")
@@ -653,6 +720,7 @@ func (m Model) renderHelpView() string {
 	sb.WriteString("  " + m.theme.TableHeader.Render("WORKFLOW JOBS") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("j / k / Up / Down") + " " + m.theme.HelpDesc.Render("Navigate jobs list") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("Enter") + "              " + m.theme.HelpDesc.Render("View Logs of selected job") + "\n")
+	sb.WriteString("    " + m.theme.HelpKey.Render("a") + "                  " + m.theme.HelpDesc.Render("Approve waiting run / deployment (requires 'repo' & 'workflow' scopes)") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("[ / ]") + "              " + m.theme.HelpDesc.Render("Cycle through previous workflow run attempts") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("w") + "                  " + m.theme.HelpDesc.Render("Open workflow run in browser") + "\n")
 	sb.WriteString("    " + m.theme.HelpKey.Render("v") + "                  " + m.theme.HelpDesc.Render("Open selected job in browser") + "\n")
@@ -1449,6 +1517,47 @@ func (m Model) renderMergeModal() string {
 		modalText.WriteString("└──────────────────────────────────────────────┘")
 	}
 
+	return modalText.String()
+}
+
+func (m Model) renderApprovalModal() string {
+	var modalText strings.Builder
+	lineStyle := lipgloss.NewStyle().Width(46)
+	run := m.getRun()
+	isForkPR := (run.HeadRepository.FullName != "" && run.HeadRepository.FullName != run.Repository.FullName)
+	isLocalPRApproval := (run.Conclusion == "action_required" && !isForkPR)
+	
+	modalText.WriteString("┌──────────────────────────────────────────────┐\n")
+	modalText.WriteString("│              APPROVE WORKFLOW RUN            │\n")
+	modalText.WriteString("├──────────────────────────────────────────────┤\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+
+	if isLocalPRApproval {
+		modalText.WriteString("│" + lineStyle.Render("  This internal run requires manual approval") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  but cannot be approved via the GitHub API.") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  Please approve it manually on GitHub.") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  Press [w] to open browser to approve.") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusSuccessful.Render("[Y]")+" or "+m.theme.StatusSuccessful.Render("[w]")+" Yes, open browser") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusFailed.Render("[n]")+" No, cancel") + "│\n")
+	} else {
+		modalText.WriteString("│" + lineStyle.Render("  Are you sure you want to approve this run?") + "│\n")
+		runName := run.Name
+		if runName == "" && run.DisplayTitle != "" {
+			runName = run.DisplayTitle
+		}
+		if len(runName) > 40 {
+			runName = runName[:37] + "..."
+		}
+		modalText.WriteString("│" + lineStyle.Render(fmt.Sprintf("  Run: %s", runName)) + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusSuccessful.Render("[Y]")+" Yes, approve run") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.StatusFailed.Render("[n]")+" No, cancel") + "│\n")
+	}
+
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("└──────────────────────────────────────────────┘")
 	return modalText.String()
 }
 
