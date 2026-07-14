@@ -96,12 +96,13 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
 
 ---
 
-## Iteration 2: Closed Issues Pagination Bug Fix
+## Iteration 2: Closed Issues Pagination and Page Size Fix
 
 ### Goals
 - Resolve a bug where filtering by closed issues prematurely hid the "Load More" button after loading 3 items.
 - The bug occurred because the GitHub Issues API returns both issues and pull requests in its response, which is then filtered client-side. If a page returned 8 items but they all got filtered out as pull requests, the length of the returned list was `0`. The TUI interpreted this `0` length as "no more issues" and hid the "Load More" button.
 - Fix: Modify the GitHub client to return a `hasMore` boolean along with the filtered list indicating if the raw response count equaled the requested limit. Keep the "Load More" button visible as long as `hasMore` is true.
+- Increase the issue page size from `8` to `50` so that each page fetches enough raw items to show a substantial list of actual issues even after PRs are filtered out.
 
 ### Proposed Changes
 
@@ -116,6 +117,7 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
 
 #### Update Logic
 ##### [MODIFY] [internal/tui/update.go](internal/tui/update.go)
+- Update `fetchIssuesCmd` to request `50` items per page instead of `8`.
 - Update `fetchIssuesCmd` to track `anyHasMore` across repositories and pass it inside `issuesLoadedMsg`.
 - Update `case issuesLoadedMsg:` handler to set `m.hasMoreIssues = msg.hasMore`.
 

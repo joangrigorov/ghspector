@@ -2782,7 +2782,7 @@ func (m Model) fetchIssuesCmd() tea.Cmd {
 				if state == "" {
 					state = "open"
 				}
-				issues, hasMore, err := m.client.GetIssuesWithState(m.ctx, r.Owner.Login, r.Name, state, m.issuePage, 8)
+				issues, hasMore, err := m.client.GetIssuesWithState(m.ctx, r.Owner.Login, r.Name, state, m.issuePage, 50)
 				if err == nil {
 					for j := range issues {
 						issues[j].Repository = r
