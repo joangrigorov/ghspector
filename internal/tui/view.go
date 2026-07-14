@@ -260,7 +260,7 @@ func (m Model) renderHeader() string {
 		headerContent += rlRendered + " "
 	}
 
-	headerLine := m.theme.Header.Render(headerContent)
+	headerLine := m.theme.Header.Copy().Width(width).Render(headerContent)
 	hr := m.theme.Border.Render(strings.Repeat("─", width))
 
 	return "\n" + headerLine + "\n" + hr
