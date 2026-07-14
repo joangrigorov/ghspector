@@ -353,7 +353,7 @@ func TestTUI_Integration(t *testing.T) {
 	// Move scroll up: YOffset should become less than oldY (which was at bottom/max height)
 	// We can manually decrease YOffset to simulate scrolling up
 	model.logsViewport.YOffset = 1
-	rawModel, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("up")})
+	rawModel, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	model = rawModel.(Model)
 
 	if model.followLogs {
@@ -1552,6 +1552,75 @@ func TestTUI_RateLimitErrorRecovery(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Error("expected fetchActiveTabCmd to be returned on recovery")
+	}
+}
+
+func TestTUI_LogsSplitPaneAndSegmentation(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.width = 80
+	m.height = 20
+
+	steps := []gh.JobStep{
+		{Name: "Set up job", Number: 1, Status: "completed", Conclusion: "success"},
+		{Name: "Run actions/checkout@v4", Number: 2, Status: "completed", Conclusion: "success"},
+		{Name: "Run unit tests", Number: 3, Status: "completed", Conclusion: "failure"},
+	}
+	m.jobs = []gh.WorkflowJob{
+		{
+			ID:    7001,
+			Name:  "Build and Test",
+			Steps: steps,
+		},
+	}
+	m.selectedJobIdx = 0
+
+	rawLogs := `2026-07-14T14:32:00.000Z ##[group]Set up job
+Setting up github runner...
+##[endgroup]
+2026-07-14T14:32:01.000Z ##[group]Run actions/checkout@v4
+Checking out code repository...
+##[endgroup]
+2026-07-14T14:32:02.000Z ##[group]Run unit tests
+go test ./...
+Error: Test failed!
+`
+
+	// 1. Simulate loading logs
+	rawModel, _ := m.Update(logsLoadedMsg{
+		logs: rawLogs,
+	})
+	m = rawModel.(Model)
+
+	// selectedStepIdx should default to the failed step (index 2: "Run unit tests")
+	if m.selectedStepIdx != 2 {
+		t.Errorf("expected selectedStepIdx to default to failed step 2, got %d", m.selectedStepIdx)
+	}
+
+	// Logs content should contain the failed test run log output
+	content := m.logsViewport.View()
+	if !strings.Contains(content, "Test failed!") {
+		t.Error("expected logs viewport to display logs for the failed step")
+	}
+
+	// 2. Navigate step list upwards (to step 1: "Run actions/checkout@v4")
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	m = rawModel.(Model)
+
+	if m.selectedStepIdx != 1 {
+		t.Errorf("expected selectedStepIdx to update to 1, got %d", m.selectedStepIdx)
+	}
+
+	content = m.logsViewport.View()
+	if !strings.Contains(content, "Checking out code repository...") {
+		t.Error("expected logs viewport to display logs for actions/checkout step")
+	}
+
+	// 3. Verify side-by-side view renders steps list and logs
+	viewStr := m.View()
+	if !strings.Contains(viewStr, "STEPS") || !strings.Contains(viewStr, "Run unit tests") {
+		t.Error("expected logs view to render steps list sidebar")
 	}
 }
 

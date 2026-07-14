@@ -1266,17 +1266,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logsLoading = true
 				m.loadingMsg = "Refreshing logs"
 				return m, m.fetchLogsCmd(run.Repository.Owner.Login, run.Repository.Name, job.ID)
-			default:
-				// Forward movement keys to viewport and handle log follow status
-				oldY := m.logsViewport.YOffset
-				m.logsViewport, cmd = m.logsViewport.Update(msg)
-				cmds = append(cmds, cmd)
-
-				if m.logsViewport.YOffset < oldY {
-					m.followLogs = false
+			case "j", "down":
+				job := m.jobs[m.selectedJobIdx]
+				if m.selectedStepIdx < len(job.Steps)-1 {
+					m.selectedStepIdx++
+					m.updateLogsViewportContent()
 				}
+			case "k", "up":
+				if m.selectedStepIdx > 0 {
+					m.selectedStepIdx--
+					m.updateLogsViewportContent()
+				}
+			case "u", "pageup":
+				m.logsViewport.LineUp(3)
+				m.followLogs = false
+			case "d", "pagedown":
+				m.logsViewport.LineDown(3)
 				if m.logsViewport.AtBottom() {
 					m.followLogs = true
+				}
+			default:
+				// Only forward key events that are not steps navigation
+				keyStr := msg.String()
+				if keyStr != "j" && keyStr != "k" && keyStr != "up" && keyStr != "down" {
+					oldY := m.logsViewport.YOffset
+					m.logsViewport, cmd = m.logsViewport.Update(msg)
+					cmds = append(cmds, cmd)
+
+					if m.logsViewport.YOffset < oldY {
+						m.followLogs = false
+					}
+					if m.logsViewport.AtBottom() {
+						m.followLogs = true
+					}
 				}
 			}
 
@@ -1332,7 +1354,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		
-		m.logsViewport.Width = msg.Width - 4
+		leftWidth := 32
+		m.logsViewport.Width = msg.Width - leftWidth - 6
+		if m.logsViewport.Width < 10 {
+			m.logsViewport.Width = 10
+		}
 		m.logsViewport.Height = msg.Height - 8
 		if m.logsViewport.Height < 5 {
 			m.logsViewport.Height = 5
@@ -1868,19 +1894,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.logs = msg.logs
 
+		job := m.jobs[m.selectedJobIdx]
+		m.logsSegments = segmentLogs(msg.logs, job.Steps)
+
+		m.selectedStepIdx = 0
+		for i, s := range job.Steps {
+			if s.Conclusion == "failure" {
+				m.selectedStepIdx = i
+				break
+			}
+		}
+
 		// Initialize viewport only if we are entering logs view for the first time
 		if m.state != viewLogs {
 			m.followLogs = true
-			m.logsViewport = viewport.New(m.width-4, m.height-8)
+			leftWidth := 32
+			m.logsViewport = viewport.New(m.width-leftWidth-6, m.height-8)
 			if m.logsViewport.Height < 5 {
 				m.logsViewport.Height = 5
 			}
 		}
 
-		m.logsViewport.SetContent(m.logs)
-		if m.followLogs {
-			m.logsViewport.GotoBottom()
-		}
+		m.updateLogsViewportContent()
 		m.state = viewLogs
 
 	case runUpdateMsg:
@@ -3105,5 +3140,58 @@ func (m Model) fetchReposCmd() tea.Cmd {
 		}
 		return reposLoadedMsg{repos: repos}
 	}
+}
+
+func (m *Model) updateLogsViewportContent() {
+	segment := m.logsSegments[m.selectedStepIdx]
+	if segment == "" {
+		segment = "\n  (No logs available for this step.)"
+	}
+	m.logsViewport.SetContent(segment)
+	if m.followLogs {
+		m.logsViewport.GotoBottom()
+	} else {
+		m.logsViewport.GotoTop()
+	}
+}
+
+func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
+	segments := make(map[int]string)
+	lines := strings.Split(rawLogs, "\n")
+	currentStepIdx := 0 // Default to first step
+	
+	for _, line := range lines {
+		cleanLine := line
+		if idx := strings.Index(line, "Z "); idx != -1 {
+			cleanLine = line[idx+2:]
+		}
+		
+		foundNext := false
+		for i, step := range steps {
+			if strings.Contains(cleanLine, "##[group]") && strings.Contains(cleanLine, step.Name) {
+				currentStepIdx = i
+				foundNext = true
+				break
+			}
+			if strings.Contains(cleanLine, "##[section]") && strings.Contains(cleanLine, step.Name) {
+				currentStepIdx = i
+				foundNext = true
+				break
+			}
+		}
+		
+		if !foundNext {
+			for i, step := range steps {
+				if strings.Contains(cleanLine, "Starting: "+step.Name) {
+					currentStepIdx = i
+					foundNext = true
+					break
+				}
+			}
+		}
+
+		segments[currentStepIdx] = segments[currentStepIdx] + line + "\n"
+	}
+	return segments
 }
 

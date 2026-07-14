@@ -762,30 +762,75 @@ func (m Model) renderLogsView() string {
 	sb.WriteString("\n")
 
 	job := m.jobs[m.selectedJobIdx]
-	sb.WriteString("  " + m.theme.LogoText.Render("Job: "+job.Name) + "\n")
+	sb.WriteString("  " + m.theme.LogoText.Render("Job: "+job.Name) + "\n\n")
 
-	// Render steps summaries
-	var stepsSummary []string
-	for _, step := range job.Steps {
-		indicator := m.getStatusIndicator(step.Status, step.Conclusion)
-		stepsSummary = append(stepsSummary, fmt.Sprintf("%s %s", indicator, step.Name))
-	}
-
-	if len(stepsSummary) > 0 {
-		sb.WriteString("  Steps: " + strings.Join(stepsSummary, " → ") + "\n")
-	}
-	sb.WriteString("\n")
+	leftWidth := 32
+	h := m.logsViewport.Height
 
 	viewContent := m.logsViewport.View()
 	if m.logsLoading {
-		viewContent = m.theme.HelpDesc.Render("  Loading logs...")
+		viewContent = m.theme.HelpDesc.Render("Loading logs...")
 	}
-	sb.WriteString("  " + m.theme.Border.Render(viewContent) + "\n")
 
-	keys := []string{"?:Help", "u/d:Scroll", "Esc:Back", "r:Refresh"}
+	// Render two columns side-by-side: Steps on the left, logs viewport on the right
+	sideBySide := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		m.renderStepsSidebar(leftWidth, h),
+		"   ", // separator gap
+		m.theme.Border.Render(viewContent),
+	)
+	sb.WriteString(sideBySide + "\n")
+
+	// Dynamic padding
+	contentHeight := h + 10
+	padding := m.height - contentHeight
+	if padding < 0 {
+		padding = 0
+	}
+	for i := 0; i < padding; i++ {
+		sb.WriteString("\n")
+	}
+
+	keys := []string{"?:Help", "j/k:Navigate Steps", "u/d:Scroll Logs", "Esc:Back", "r:Refresh"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
+}
+
+func (m Model) renderStepsSidebar(width, height int) string {
+	var lines []string
+	headerStyle := m.theme.TableHeader
+	lines = append(lines, headerStyle.Render(fmt.Sprintf(" %-*s", width-1, "STEPS")))
+
+	job := m.jobs[m.selectedJobIdx]
+	for i, step := range job.Steps {
+		indicator := m.getStatusIndicator(step.Status, step.Conclusion)
+
+		nameLimit := width - 8
+		if nameLimit < 5 {
+			nameLimit = 5
+		}
+		stepName := step.Name
+		if len(stepName) > nameLimit {
+			stepName = stepName[:nameLimit-3] + "..."
+		}
+
+		var rowText string
+		if i == m.selectedStepIdx {
+			rowText = fmt.Sprintf(" > %s %-*s", indicator, nameLimit, stepName)
+			lines = append(lines, m.theme.TableSelected.Render(rowText))
+		} else {
+			rowText = fmt.Sprintf("   %s %-*s", indicator, nameLimit, stepName)
+			lines = append(lines, m.theme.TableRow.Render(rowText))
+		}
+	}
+
+	// Pad remaining height with empty lines so sidebar height matches viewport height
+	for len(lines) < height+1 {
+		lines = append(lines, "")
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // renderSwitcherView renders the context selection dialog overlay.

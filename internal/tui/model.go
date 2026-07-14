@@ -155,10 +155,12 @@ type Model struct {
 	mergeMethod     int    // 0: squash, 1: merge, 2: rebase
 
 	// Logs browser
-	logs          string
-	logsViewport  viewport.Model
-	logsLoading   bool
-	followLogs    bool
+	logs             string
+	logsViewport     viewport.Model
+	logsLoading      bool
+	followLogs       bool
+	selectedStepIdx  int
+	logsSegments     map[int]string
 
 	// Status messages & flags
 	statusMsg   string
