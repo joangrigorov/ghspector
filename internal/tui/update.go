@@ -1453,9 +1453,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.repos = msg.repos
 		}
 
-		if len(msg.issues) == 0 {
-			m.hasMoreIssues = false
-		}
+		m.hasMoreIssues = msg.hasMore
 		m.scrollIssues()
 		m.state = viewMain
 		m.statusMsg = "Successfully loaded Issues"
@@ -2773,6 +2771,8 @@ func (m Model) fetchIssuesCmd() tea.Cmd {
 			limit = 8
 		}
 
+		var anyHasMore bool
+
 		for i := 0; i < limit; i++ {
 			repo := repos[i]
 			wg.Add(1)
@@ -2782,13 +2782,16 @@ func (m Model) fetchIssuesCmd() tea.Cmd {
 				if state == "" {
 					state = "open"
 				}
-				issues, err := m.client.GetIssuesWithState(m.ctx, r.Owner.Login, r.Name, state, m.issuePage, 8)
+				issues, hasMore, err := m.client.GetIssuesWithState(m.ctx, r.Owner.Login, r.Name, state, m.issuePage, 8)
 				if err == nil {
 					for j := range issues {
 						issues[j].Repository = r
 					}
 					mu.Lock()
 					allIssues = append(allIssues, issues...)
+					if hasMore {
+						anyHasMore = true
+					}
 					mu.Unlock()
 				}
 			}(repo)
@@ -2820,7 +2823,7 @@ func (m Model) fetchIssuesCmd() tea.Cmd {
 			return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
 		})
 
-		return issuesLoadedMsg{issues: filtered, repos: repos}
+		return issuesLoadedMsg{issues: filtered, repos: repos, hasMore: anyHasMore}
 	}
 }
 

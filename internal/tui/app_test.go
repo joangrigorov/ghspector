@@ -1472,6 +1472,38 @@ func TestTUI_RepoFilterSelection(t *testing.T) {
 	}
 }
 
+func TestTUI_IssuesPaginationPRFiltering(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.state = viewMain
+	m.activeTab = tabIssues
+
+	// 1. Receive issuesLoadedMsg with 0 issues but hasMore = true
+	rawModel, _ := m.Update(issuesLoadedMsg{
+		issues:  []gh.Issue{},
+		hasMore: true,
+	})
+	m = rawModel.(Model)
+
+	// hasMoreIssues should be true because the message indicated there are more issues on subsequent pages
+	if !m.hasMoreIssues {
+		t.Error("expected hasMoreIssues to be true when msg.hasMore is true")
+	}
+
+	// 2. Receive issuesLoadedMsg with 0 issues and hasMore = false
+	rawModel, _ = m.Update(issuesLoadedMsg{
+		issues:  []gh.Issue{},
+		hasMore: false,
+	})
+	m = rawModel.(Model)
+
+	// hasMoreIssues should be false because the message indicated there are no more pages
+	if m.hasMoreIssues {
+		t.Error("expected hasMoreIssues to be false when msg.hasMore is false")
+	}
+}
+
 
 
 

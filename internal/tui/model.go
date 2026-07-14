@@ -250,9 +250,10 @@ type prCommentsLoadedMsg struct {
 }
 
 type issuesLoadedMsg struct {
-	issues []gh.Issue
-	repos  []gh.Repository
-	err    error
+	issues  []gh.Issue
+	repos   []gh.Repository
+	hasMore bool
+	err     error
 }
 
 type issueDetailsLoadedMsg struct {

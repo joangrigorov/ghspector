@@ -2,7 +2,11 @@
 
 This plan outlines the enhancements to `ghspector` TUI views to maximize screen space utilization, refine visual styles, make shortcut hints dynamic/floating, clarify Shift/uppercase shortcuts, support configurable default merge methods, and implement repository-level filtering via a scrollable selection modal.
 
-## Goals
+---
+
+## Iteration 1: TUI Layout, Styling, Defaults, and Repo Filtering
+
+### Goals
 1. **Maximize Workflow Jobs Table**:
    - Make the `JOB NAME` column scale dynamically relative to screen width (`m.width`).
    - Add a `STEPS` column to show step progress (e.g. `3/5` completed).
@@ -30,13 +34,10 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
    - **Combined Filters**: The repository filter and the user filter can be active simultaneously (combining the search criteria). 
    - Apply the repository filter to the active tab, query only the selected repository, and display the active repo filter alongside the user filter in the filters bar.
 
+### Proposed Changes
 
----
-
-## Proposed Changes
-
-### Configuration Updates
-#### [MODIFY] [internal/auth/auth.go](internal/auth/auth.go)
+#### Configuration Updates
+##### [MODIFY] [internal/auth/auth.go](internal/auth/auth.go)
 - Add `DefaultMergeMethod string` to the `Config` struct (unmarshal/marshal from YAML key `default_merge_method`).
 
 ```diff
@@ -52,17 +53,13 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
  }
 ```
 
----
-
-### Theme Style Additions
-#### [MODIFY] [internal/tui/theme.go](internal/tui/theme.go)
+#### Theme Style Additions
+##### [MODIFY] [internal/tui/theme.go](internal/tui/theme.go)
 - Add `Header`, `HeaderTitle`, `HeaderSubtitle` styles and `HeaderBg` color field to `Theme` struct.
 - Initialize them in `GetTheme()` using an adaptive color matching the terminal theme mode.
 
----
-
-### View State Additions
-#### [MODIFY] [internal/tui/model.go](internal/tui/model.go)
+#### View State Additions
+##### [MODIFY] [internal/tui/model.go](internal/tui/model.go)
 - Add new `viewState` constants: `viewFilterTypeSelect` and `viewRepoFilterSelect`.
 - Add fields to cache repositories and track selection/scrolling:
   - `repos []gh.Repository`
@@ -70,10 +67,8 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
   - `repoStartIndex int`
   - `filterRepo string`
 
----
-
-### View Render Updates
-#### [MODIFY] [internal/tui/view.go](internal/tui/view.go)
+#### View Render Updates
+##### [MODIFY] [internal/tui/view.go](internal/tui/view.go)
 - **`renderHeader`**: Render header content using new backgrounds, and append the border line.
 - **`renderFooter`**: Maximize width, auto-inject missing `?` key, float `Esc` and `?` left (with status), and float other keys right.
 - **`renderJobsView`**: Maximize columns (dynamic width calculation for job name column) and append the `STEPS` column.
@@ -83,10 +78,8 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
 - **`renderRepoFilterSelectModal`** [NEW]: A scrollable modal showing repositories for selection.
 - Update `renderMainView`, `renderPullsView`, and `renderIssuesView` to display the active `Repo: <name>` filter.
 
----
-
-### Update Logic & Background Fetching
-#### [MODIFY] [internal/tui/update.go](internal/tui/update.go)
+#### Update Logic & Background Fetching
+##### [MODIFY] [internal/tui/update.go](internal/tui/update.go)
 - **Background Fetching**:
   - Implement a `fetchReposCmd` to load up to 100 repositories of the active target org/user.
   - Trigger `fetchReposCmd` on initial load and whenever target account context changes.
@@ -103,23 +96,36 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
 
 ---
 
+## Iteration 2: Closed Issues Pagination Bug Fix
+
+### Goals
+- Resolve a bug where filtering by closed issues prematurely hid the "Load More" button after loading 3 items.
+- The bug occurred because the GitHub Issues API returns both issues and pull requests in its response, which is then filtered client-side. If a page returned 8 items but they all got filtered out as pull requests, the length of the returned list was `0`. The TUI interpreted this `0` length as "no more issues" and hid the "Load More" button.
+- Fix: Modify the GitHub client to return a `hasMore` boolean along with the filtered list indicating if the raw response count equaled the requested limit. Keep the "Load More" button visible as long as `hasMore` is true.
+
+### Proposed Changes
+
+#### Client Implementation
+##### [MODIFY] [internal/gh/client.go](internal/gh/client.go)
+- Update `GetIssuesWithState` signature to return `([]Issue, bool, error)`.
+- Determine `hasMore` as `len(allIssues) == perPage` before filtering out pull requests.
+
+#### Message Definitions
+##### [MODIFY] [internal/tui/model.go](internal/tui/model.go)
+- Add `hasMore bool` to `issuesLoadedMsg` struct.
+
+#### Update Logic
+##### [MODIFY] [internal/tui/update.go](internal/tui/update.go)
+- Update `fetchIssuesCmd` to track `anyHasMore` across repositories and pass it inside `issuesLoadedMsg`.
+- Update `case issuesLoadedMsg:` handler to set `m.hasMoreIssues = msg.hasMore`.
+
+---
+
 ## Verification Plan
 
 ### Automated Tests
-- Run `go test ./...` to ensure no compile errors or test regressions.
+- Run `go test ./...` to ensure all tests pass (including new `TestTUI_IssuesPaginationPRFiltering` test verifying the pagination fixes).
 
 ### Manual Verification
-- **Header**: Confirm top header has background, hr border, and looks centered/even.
-- **Footer**: Confirm footer takes 100% width, Esc/? are left aligned, and others are right aligned.
-- **Jobs Table**: Confirm job list has "STEPS" progress column and job name column scales to full terminal width.
-- **Merge Dialog**:
-  1. Open a pull request. Press `m` to merge.
-  2. Confirm default method is indicated (e.g. Squash). Press `d` multiple times and check that the default method cycles.
-  3. Close dialog. Check that `~/.config/ghspector/config.yaml` has the new `default_merge_method` set correctly.
-  4. Press `m` again, hit `Enter` to confirm using the default method.
-- **Repo Filter**:
-  1. Go to any main list (Workflows, PRs, Issues).
-  2. Press `f` to filter. Choose `[R] Filter by Repository`.
-  3. Scroll through repositories using `j`/`k` or arrow keys. Press `Enter` to filter.
-  4. Confirm only items for that repo are loaded, and the filter indicator shows the repo name.
-  5. Press `x` to clear filter.
+- Filter by closed issues on a repository with a large number of issues and pull requests.
+- Verify that pressing `Load More` repeatedly continues loading items, and the button does not disappear prematurely when a page has only pull requests.
