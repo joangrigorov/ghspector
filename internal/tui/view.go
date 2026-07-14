@@ -2012,8 +2012,12 @@ func renderMarkdown(content string, width int) (string, error) {
 	if content == "" {
 		return "No description provided.", nil
 	}
+	style := "dark"
+	if !lipgloss.HasDarkBackground() {
+		style = "light"
+	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStandardStyle(style),
 		glamour.WithWordWrap(width),
 	)
 	if err != nil {
