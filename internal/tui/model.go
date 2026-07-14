@@ -32,6 +32,8 @@ const (
 	viewIssueComments
 	viewIssueFilterInput
 	viewIssueFilterTypeSelect
+	viewFilterTypeSelect
+	viewRepoFilterSelect
 )
 
 type mainTab int
@@ -77,8 +79,12 @@ type Model struct {
 	width, height int
 
 	// Targets (Orgs and User Accounts)
-	targets       []Target
+	targets           []Target
 	selectedTargetIdx int
+	repos             []gh.Repository
+	selectedRepoIdx   int
+	repoStartIndex    int
+	filterRepo        string
 
 	// Data Cache - Workflows
 	runs          []gh.WorkflowRun
@@ -192,8 +198,9 @@ type initDataMsg struct {
 	err     error
 }
 type runsLoadedMsg struct {
-	runs []gh.WorkflowRun
-	err  error
+	runs  []gh.WorkflowRun
+	repos []gh.Repository
+	err   error
 }
 type runsPolledMsg struct {
 	runs []gh.WorkflowRun
@@ -221,6 +228,7 @@ type jobUpdateMsg struct {
 
 type pullsLoadedMsg struct {
 	pulls []gh.PullRequest
+	repos []gh.Repository
 	err   error
 }
 
@@ -243,6 +251,7 @@ type prCommentsLoadedMsg struct {
 
 type issuesLoadedMsg struct {
 	issues []gh.Issue
+	repos  []gh.Repository
 	err    error
 }
 

@@ -21,10 +21,18 @@ func (m Model) View() string {
 	switch m.state {
 	case viewSplash:
 		return RenderSplash(m.theme, m.loadingMsg, m.tickCount)
-	case viewMain, viewPRFilterInput, viewPRFilterTypeSelect, viewIssueFilterInput, viewIssueFilterTypeSelect:
+	case viewMain, viewPRFilterInput, viewPRFilterTypeSelect, viewIssueFilterInput, viewIssueFilterTypeSelect, viewFilterTypeSelect, viewRepoFilterSelect:
 		switch m.activeTab {
 		case tabWorkflows:
-			return m.renderMainView()
+			viewStr := m.renderMainView()
+			if m.state == viewFilterTypeSelect {
+				modalStr := m.renderFilterTypeSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			} else if m.state == viewRepoFilterSelect {
+				modalStr := m.renderRepoFilterSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			}
+			return viewStr
 		case tabPRs:
 			viewStr := m.renderPullsView()
 			if m.state == viewPRFilterInput {
@@ -32,6 +40,12 @@ func (m Model) View() string {
 				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
 			} else if m.state == viewPRFilterTypeSelect {
 				modalStr := m.renderPRFilterTypeSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			} else if m.state == viewFilterTypeSelect {
+				modalStr := m.renderFilterTypeSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			} else if m.state == viewRepoFilterSelect {
+				modalStr := m.renderRepoFilterSelectModal()
 				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
 			}
 			return viewStr
@@ -42,6 +56,12 @@ func (m Model) View() string {
 				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
 			} else if m.state == viewIssueFilterTypeSelect {
 				modalStr := m.renderIssueFilterTypeSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			} else if m.state == viewFilterTypeSelect {
+				modalStr := m.renderFilterTypeSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			} else if m.state == viewRepoFilterSelect {
+				modalStr := m.renderRepoFilterSelectModal()
 				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
 			}
 			return viewStr
@@ -139,14 +159,6 @@ func (m Model) renderHeader() string {
 	rlStr := ""
 	if rl.Limit > 0 {
 		rlStr = fmt.Sprintf("Rate Limit: %d/%d reqs", rl.Remaining, rl.Limit)
-		// Warning color if rate limit is low
-		if rl.Remaining < 200 {
-			rlStr = m.theme.StatusFailed.Render(rlStr)
-		} else if rl.Remaining < 1000 {
-			rlStr = m.theme.StatusQueued.Render(rlStr)
-		} else {
-			rlStr = m.theme.StatusSuccessful.Render(rlStr)
-		}
 	}
 
 	// Dynamic Page Name in Title
@@ -173,14 +185,33 @@ func (m Model) renderHeader() string {
 		pageName = "Job Logs"
 	}
 
+	headerBg := m.theme.HeaderBg
+	titleStyle := m.theme.HeaderTitle
+	contextStyle := m.theme.HeaderSubtitle
+
 	loadingInd := ""
 	if m.isLoading {
 		spinners := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		spinnerChar := spinners[m.tickCount%len(spinners)]
-		loadingInd = " " + m.theme.StatusWaiting.Render(spinnerChar)
+		spinnerStyle := m.theme.StatusWaiting.Copy().Background(headerBg)
+		loadingInd = " " + spinnerStyle.Render(spinnerChar)
 	}
-	title := m.theme.Title.Render("ghspector | "+pageName) + loadingInd
-	contextInfo := m.theme.Subtitle.Render("Account/Org: " + activeTarget)
+
+	title := titleStyle.Render("ghspector | "+pageName) + loadingInd
+	contextInfo := contextStyle.Render("Account/Org: " + activeTarget)
+
+	var rlRendered string
+	if rlStr != "" {
+		var rlStyle lipgloss.Style
+		if rl.Remaining < 200 {
+			rlStyle = m.theme.StatusFailed.Copy().Background(headerBg)
+		} else if rl.Remaining < 1000 {
+			rlStyle = m.theme.StatusQueued.Copy().Background(headerBg)
+		} else {
+			rlStyle = m.theme.StatusSuccessful.Copy().Background(headerBg)
+		}
+		rlRendered = rlStyle.Render(rlStr)
+	}
 
 	// Clamp/protect layout dimensions
 	width := m.width
@@ -190,12 +221,12 @@ func (m Model) renderHeader() string {
 
 	titleWidth := lipgloss.Width(title)
 	ctxWidth := lipgloss.Width(contextInfo)
-	rlWidth := lipgloss.Width(rlStr)
+	rlWidth := lipgloss.Width(rlRendered)
 
 	neededWidth := titleWidth + ctxWidth + rlWidth + 6
 	if width < neededWidth {
 		// Hide rate limit first
-		rlStr = ""
+		rlRendered = ""
 		rlWidth = 0
 		neededWidth = titleWidth + ctxWidth + 6
 		if width < neededWidth {
@@ -205,35 +236,91 @@ func (m Model) renderHeader() string {
 		}
 	}
 
-	rightSpace := width - titleWidth - ctxWidth - rlWidth - 4
+	leftWidth := titleWidth
+	if contextInfo != "" {
+		leftWidth += 2 + ctxWidth // title + "  " + contextInfo
+	}
+	rightWidth := rlWidth
+	if rlRendered != "" {
+		rightWidth += 1 // rlRendered + " "
+	}
+
+	rightSpace := width - leftWidth - rightWidth
 	if rightSpace < 1 {
 		rightSpace = 1
 	}
 	spaces := strings.Repeat(" ", rightSpace)
 
-	res := "\n " + title + "  "
+	headerContent := title
 	if contextInfo != "" {
-		res += contextInfo
+		headerContent += "  " + contextInfo
 	}
-	res += spaces
-	if rlStr != "" {
-		res += rlStr
+	headerContent += spaces
+	if rlRendered != "" {
+		headerContent += rlRendered + " "
 	}
-	return res + "\n"
+
+	headerLine := m.theme.Header.Render(headerContent)
+	hr := m.theme.Border.Render(strings.Repeat("─", width))
+
+	return "\n" + headerLine + "\n" + hr
 }
 
 // renderFooter renders the standard bottom bar.
 func (m Model) renderFooter(keys []string) string {
-	var formatted []string
+	var leftKeys []string
+	var rightKeys []string
+
+	// Check if '?' is already present
+	hasQuestionMark := false
 	for _, k := range keys {
 		parts := strings.SplitN(k, ":", 2)
-		if len(parts) == 2 {
-			formatted = append(formatted, m.theme.HelpKey.Render(parts[0])+m.theme.HelpDesc.Render(":"+parts[1]))
-		} else {
-			formatted = append(formatted, m.theme.HelpDesc.Render(k))
+		if len(parts) > 0 && parts[0] == "?" {
+			hasQuestionMark = true
+			break
 		}
 	}
 
+	// Append '?' key if missing and not in splash
+	actualKeys := keys
+	if !hasQuestionMark && m.state != viewSplash {
+		if m.state == viewHelp {
+			actualKeys = append(actualKeys, "?:Close Help")
+		} else {
+			actualKeys = append(actualKeys, "?:Help")
+		}
+	}
+
+	// Split keys into left-floating (Esc, ?) and right-floating (others)
+	for _, k := range actualKeys {
+		parts := strings.SplitN(k, ":", 2)
+		isLeft := false
+		if len(parts) > 0 {
+			keyStr := parts[0]
+			if keyStr == "Esc" || keyStr == "?" {
+				isLeft = true
+			}
+		}
+		if isLeft {
+			leftKeys = append(leftKeys, k)
+		} else {
+			rightKeys = append(rightKeys, k)
+		}
+	}
+
+	// Format left keys
+	var leftRendered []string
+	for _, k := range leftKeys {
+		parts := strings.SplitN(k, ":", 2)
+		if len(parts) == 2 {
+			leftRendered = append(leftRendered, m.theme.HelpKey.Render(parts[0])+m.theme.HelpDesc.Render(":"+parts[1]))
+		} else {
+			leftRendered = append(leftRendered, m.theme.HelpDesc.Render(k))
+		}
+	}
+	leftStr := strings.Join(leftRendered, "  ")
+
+	// Format status
 	status := ""
 	if m.statusMsg != "" {
 		lowerMsg := strings.ToLower(m.statusMsg)
@@ -247,8 +334,47 @@ func (m Model) renderFooter(keys []string) string {
 		}
 	}
 
-	content := strings.Join(formatted, "  ") + status
-	return "\n" + m.theme.BottomBar.Render(content) + "\n"
+	if status != "" {
+		if leftStr != "" {
+			leftStr += status
+		} else {
+			leftStr = status
+		}
+	}
+
+	// Format right keys
+	var rightRendered []string
+	for _, k := range rightKeys {
+		parts := strings.SplitN(k, ":", 2)
+		if len(parts) == 2 {
+			rightRendered = append(rightRendered, m.theme.HelpKey.Render(parts[0])+m.theme.HelpDesc.Render(":"+parts[1]))
+		} else {
+			rightRendered = append(rightRendered, m.theme.HelpDesc.Render(k))
+		}
+	}
+	rightStr := strings.Join(rightRendered, "  ")
+
+	// Maximize the width of the bottom bar
+	width := m.width
+	if width < 40 {
+		width = 40
+	}
+	contentWidth := width - 2 // accounting for Padding(0, 1)
+
+	leftWidth := lipgloss.Width(leftStr)
+	rightWidth := lipgloss.Width(rightStr)
+
+	var content string
+	spaceWidth := contentWidth - leftWidth - rightWidth
+	if spaceWidth > 0 {
+		content = leftStr + strings.Repeat(" ", spaceWidth) + rightStr
+	} else {
+		// Fallback if terminal is too narrow
+		content = leftStr + "  " + rightStr
+	}
+
+	// Render using bottom bar style with explicit content width
+	return "\n" + m.theme.BottomBar.Copy().Width(contentWidth).Render(content) + "\n"
 }
 
 // renderMainView renders the Workflow Runs list with a scrolling window.
@@ -262,6 +388,9 @@ func (m Model) renderMainView() string {
 	var filterTexts []string
 	if m.filterActor != "" {
 		filterTexts = append(filterTexts, fmt.Sprintf("Actor: @%s", m.filterActor))
+	}
+	if m.filterRepo != "" {
+		filterTexts = append(filterTexts, fmt.Sprintf("Repo: %s", m.filterRepo))
 	}
 	if len(filterTexts) > 0 {
 		sb.WriteString("  " + m.theme.StatusWaiting.Render("Filter active: "+strings.Join(filterTexts, ", ")+" (Press 'x' to clear)") + "\n\n")
@@ -484,7 +613,12 @@ func (m Model) renderJobsView() string {
 		sb.WriteString("\n" + bannerStyle.Render(banner.String()) + "\n")
 		renderedCount = 9
 	} else {
-		header := fmt.Sprintf("  %-3s %-40s %-15s %-12s", "ST", "JOB NAME", "STARTED", "DURATION")
+		jobNameWidth := m.width - 44
+		if jobNameWidth < 10 {
+			jobNameWidth = 10
+		}
+
+		header := fmt.Sprintf("  %-3s %-*s %-8s %-15s %-12s", "ST", jobNameWidth, "JOB NAME", "STEPS", "STARTED", "DURATION")
 		sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
 
 		if len(m.jobs) == 0 {
@@ -530,16 +664,26 @@ func (m Model) renderJobsView() string {
 				}
 
 				jobName := job.Name
-				if len(jobName) > 38 {
-					jobName = jobName[:35] + "..."
+				if len(jobName) > jobNameWidth {
+					jobName = jobName[:jobNameWidth-3] + "..."
 				}
 
-				paddedJobName := fmt.Sprintf("%-40s", jobName)
+				paddedJobName := fmt.Sprintf("%-*s", jobNameWidth, jobName)
 				hyperlinkedJobName := renderHyperlink(paddedJobName, job.HTMLURL)
 
-				rowText := fmt.Sprintf("  %-3s %s %-15s %-12s",
+				// Calculate steps progress
+				completedSteps := 0
+				for _, step := range job.Steps {
+					if step.Status == "completed" {
+						completedSteps++
+					}
+				}
+				stepsStr := fmt.Sprintf("%d/%d", completedSteps, len(job.Steps))
+
+				rowText := fmt.Sprintf("  %-3s %s %-8s %-15s %-12s",
 					statusInd,
 					hyperlinkedJobName,
+					stepsStr,
 					startedStr,
 					durStr,
 				)
@@ -782,6 +926,9 @@ func (m Model) renderPullsView() string {
 	if m.filterPRReviewer != "" {
 		filterTexts = append(filterTexts, fmt.Sprintf("Reviewer: @%s", m.filterPRReviewer))
 	}
+	if m.filterRepo != "" {
+		filterTexts = append(filterTexts, fmt.Sprintf("Repo: %s", m.filterRepo))
+	}
 	if len(filterTexts) > 0 {
 		sb.WriteString("  " + m.theme.StatusWaiting.Render("Filter active: "+strings.Join(filterTexts, ", ")+" (Press 'x' to clear)") + "\n\n")
 	}
@@ -795,7 +942,7 @@ func (m Model) renderPullsView() string {
 	sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
 
 	renderedCount := 0
-	hideList := m.state == viewPRFilterInput || m.state == viewPRFilterTypeSelect
+	hideList := m.state == viewPRFilterInput || m.state == viewPRFilterTypeSelect || m.state == viewFilterTypeSelect || m.state == viewRepoFilterSelect
 	
 	if hideList {
 		visibleRows := m.height - 12
@@ -1014,9 +1161,9 @@ func (m Model) renderPRDetailsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"Esc:Back to PRs", "Tab:Toggle Focus", "j/k:Navigate", "Enter:Run/Browser", "D:Diff", "r:Refresh", "c:Comments", "v:Commits", "q:Quit"}
+	keys := []string{"Esc:Back to PRs", "Tab:Toggle Focus", "j/k:Navigate", "Enter:Run/Browser", "Shift+D:Diff", "r:Refresh", "c:Comments", "v:Commits", "q:Quit"}
 	if m.viewerCanMerge() {
-		keys = []string{"Esc:Back", "Tab:Focus", "D:Diff", "r:Refresh", "m:Merge", "c:Comments", "v:Commits", "C:Close PR", "q:Quit"}
+		keys = []string{"Esc:Back", "Tab:Focus", "Shift+D:Diff", "r:Refresh", "m:Merge", "c:Comments", "v:Commits", "Shift+C:Close PR", "q:Quit"}
 	}
 	sb.WriteString(m.renderFooter(keys))
 
@@ -1472,17 +1619,40 @@ func (m Model) renderMergeModal() string {
 	
 	switch m.mergeState {
 	case 1: // choose method
+		defMethod := "squash"
+		if m.config != nil && m.config.DefaultMergeMethod != "" {
+			defMethod = strings.ToLower(m.config.DefaultMergeMethod)
+		}
+
+		var squashLabel, mergeLabel, rebaseLabel string
+		switch defMethod {
+		case "merge":
+			squashLabel = "Squash Merge"
+			mergeLabel = "Regular Merge (Default)"
+			rebaseLabel = "Rebase Merge"
+		case "rebase":
+			squashLabel = "Squash Merge"
+			mergeLabel = "Regular Merge"
+			rebaseLabel = "Rebase Merge (Default)"
+		default:
+			squashLabel = "Squash Merge (Default)"
+			mergeLabel = "Regular Merge"
+			rebaseLabel = "Rebase Merge"
+		}
+
 		modalText.WriteString("┌──────────────────────────────────────────────┐\n")
 		modalText.WriteString("│                 MERGE METHOD                 │\n")
 		modalText.WriteString("├──────────────────────────────────────────────┤\n")
 		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("  Choose a merge method:") + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
-		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[S]")+" Squash Merge (Default)") + "│\n")
-		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[M]")+" Regular Merge") + "│\n")
-		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[R]")+" Rebase Merge") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[S]")+" "+squashLabel) + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[M]")+" "+mergeLabel) + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[R]")+" "+rebaseLabel) + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
-		modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpDesc.Render("Esc")+" or "+m.theme.HelpDesc.Render("C")+" to cancel") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpKey.Render("Enter")+" to proceed with Default") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpKey.Render("d")+" to cycle/change Default") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpDesc.Render("Esc")+" or "+m.theme.HelpDesc.Render("c")+" to cancel") + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
 		modalText.WriteString("└──────────────────────────────────────────────┘")
 	case 2: // confirm merge
@@ -1983,6 +2153,9 @@ func (m Model) renderIssuesView() string {
 	if m.filterIssueAssignee != "" {
 		filterTexts = append(filterTexts, fmt.Sprintf("Assignee: @%s", m.filterIssueAssignee))
 	}
+	if m.filterRepo != "" {
+		filterTexts = append(filterTexts, fmt.Sprintf("Repo: %s", m.filterRepo))
+	}
 	if len(filterTexts) > 0 {
 		sb.WriteString("  " + m.theme.StatusWaiting.Render("Filter active: "+strings.Join(filterTexts, ", ")+" (Press 'x' to clear)") + "\n\n")
 	}
@@ -1996,7 +2169,7 @@ func (m Model) renderIssuesView() string {
 	sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
 
 	renderedCount := 0
-	hideList := m.state == viewIssueFilterInput || m.state == viewIssueFilterTypeSelect
+	hideList := m.state == viewIssueFilterInput || m.state == viewIssueFilterTypeSelect || m.state == viewFilterTypeSelect || m.state == viewRepoFilterSelect
 	
 	if hideList {
 		visibleRows := m.height - 12
@@ -2316,5 +2489,87 @@ func (m Model) renderIssueCommentsView() string {
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
+}
+
+func (m Model) renderFilterTypeSelectModal() string {
+	var modalText strings.Builder
+	lineStyle := lipgloss.NewStyle().Width(46)
+
+	modalText.WriteString("┌──────────────────────────────────────────────┐\n")
+	modalText.WriteString("│                 FILTER OPTIONS               │\n")
+	modalText.WriteString("├──────────────────────────────────────────────┤\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("  Choose a filter target:") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[U]")+" Filter by User") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[R]")+" Filter by Repository") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpDesc.Render("Esc")+" to cancel") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("└──────────────────────────────────────────────┘")
+	return modalText.String()
+}
+
+func (m Model) renderRepoFilterSelectModal() string {
+	var modalText strings.Builder
+	lineStyle := lipgloss.NewStyle().Width(46)
+
+	modalText.WriteString("┌──────────────────────────────────────────────┐\n")
+	modalText.WriteString("│              SELECT REPOSITORY               │\n")
+	modalText.WriteString("├──────────────────────────────────────────────┤\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+
+	if len(m.repos) == 0 {
+		msg := "  No repositories found."
+		if m.isLoading {
+			msg = "  Loading repositories..."
+		}
+		modalText.WriteString("│" + lineStyle.Render(msg) + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	} else {
+		visibleRows := 8
+		if visibleRows > len(m.repos) {
+			visibleRows = len(m.repos)
+		}
+
+		if m.selectedRepoIdx < 0 {
+			m.selectedRepoIdx = 0
+		}
+		if m.selectedRepoIdx >= len(m.repos) {
+			m.selectedRepoIdx = len(m.repos) - 1
+		}
+		if m.selectedRepoIdx < m.repoStartIndex {
+			m.repoStartIndex = m.selectedRepoIdx
+		}
+		if m.selectedRepoIdx >= m.repoStartIndex+visibleRows {
+			m.repoStartIndex = m.selectedRepoIdx - visibleRows + 1
+		}
+
+		endIdx := m.repoStartIndex + visibleRows
+		for i := m.repoStartIndex; i < endIdx; i++ {
+			repo := m.repos[i]
+			displayName := repo.Name
+			if len(displayName) > 36 {
+				displayName = displayName[:33] + "..."
+			}
+
+			var lineContent string
+			if i == m.selectedRepoIdx {
+				lineContent = "  " + m.theme.TableSelected.Render(" > "+displayName+" ")
+			} else {
+				lineContent = "    " + displayName
+			}
+
+			modalText.WriteString("│" + lineStyle.Render(lineContent) + "│\n")
+		}
+		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+		scrollerText := fmt.Sprintf("  Row %d of %d (j/k or arrows)", m.selectedRepoIdx+1, len(m.repos))
+		modalText.WriteString("│" + lineStyle.Render(m.theme.HelpDesc.Render(scrollerText)) + "│\n")
+	}
+
+	modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpKey.Render("Enter")+" to select, "+m.theme.HelpDesc.Render("Esc")+" to back") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("└──────────────────────────────────────────────┘")
+	return modalText.String()
 }
 

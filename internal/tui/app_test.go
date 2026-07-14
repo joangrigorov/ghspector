@@ -453,6 +453,11 @@ func TestTUI_ActorFilter(t *testing.T) {
 	m.state = viewMain
 	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
 	m = rawModel.(Model)
+	if m.state != viewFilterTypeSelect {
+		t.Error("expected state viewFilterTypeSelect after pressing f")
+	}
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
+	m = rawModel.(Model)
 	if !m.showFilterInput {
 		t.Error("expected showFilterInput to be true")
 	}
@@ -1366,6 +1371,104 @@ func TestWorkflowApprovalFlow(t *testing.T) {
 	}
 	if m.statusMsg != "Workflow run successfully approved!" {
 		t.Errorf("expected success statusMsg, got %q", m.statusMsg)
+	}
+}
+
+func TestTUI_DefaultMergeMethod(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	cfg := &auth.Config{
+		DefaultMergeMethod: "squash",
+	}
+	m := InitModel(client, cfg)
+	m.state = viewPRDetails
+	m.mergeState = 1 // choose merge method modal active
+
+	// 1. Pressing 'd' cycles DefaultMergeMethod: squash -> merge
+	rawModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = rawModel.(Model)
+	if m.config.DefaultMergeMethod != "merge" {
+		t.Errorf("expected default merge method to cycle to 'merge', got %q", m.config.DefaultMergeMethod)
+	}
+
+	// 2. Pressing 'd' cycles DefaultMergeMethod: merge -> rebase
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = rawModel.(Model)
+	if m.config.DefaultMergeMethod != "rebase" {
+		t.Errorf("expected default merge method to cycle to 'rebase', got %q", m.config.DefaultMergeMethod)
+	}
+
+	// 3. Pressing 'd' cycles DefaultMergeMethod: rebase -> squash
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = rawModel.(Model)
+	if m.config.DefaultMergeMethod != "squash" {
+		t.Errorf("expected default merge method to cycle to 'squash', got %q", m.config.DefaultMergeMethod)
+	}
+
+	// 4. Pressing Enter confirms the default (squash) and transitions to confirm screen (mergeState = 2)
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = rawModel.(Model)
+	if m.mergeState != 2 {
+		t.Errorf("expected mergeState to be 2 (confirm screen), got %d", m.mergeState)
+	}
+	if m.mergeMethod != 0 { // 0 is Squash
+		t.Errorf("expected mergeMethod to be 0 (squash), got %d", m.mergeMethod)
+	}
+}
+
+func TestTUI_RepoFilterSelection(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.state = viewMain
+	m.activeTab = tabPRs
+	m.repos = []gh.Repository{
+		{Name: "repo-a"},
+		{Name: "repo-b"},
+		{Name: "repo-c"},
+	}
+
+	// 1. Pressing 'f' enters filter type selection modal
+	rawModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = rawModel.(Model)
+	if m.state != viewFilterTypeSelect {
+		t.Errorf("expected state to be viewFilterTypeSelect, got %d", m.state)
+	}
+
+	// 2. Pressing 'r' enters repository list select modal
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = rawModel.(Model)
+	if m.state != viewRepoFilterSelect {
+		t.Errorf("expected state to be viewRepoFilterSelect, got %d", m.state)
+	}
+	if m.selectedRepoIdx != 0 {
+		t.Errorf("expected default selectedRepoIdx to be 0, got %d", m.selectedRepoIdx)
+	}
+
+	// 3. Pressing 'j' (down) selects the next repository
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = rawModel.(Model)
+	if m.selectedRepoIdx != 1 {
+		t.Errorf("expected selectedRepoIdx to be 1 after down key, got %d", m.selectedRepoIdx)
+	}
+
+	// 4. Pressing Enter selects "repo-b", sets it as active repository filter, returns to main view and triggers pull request fetching
+	rawModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = rawModel.(Model)
+	if m.state != viewMain {
+		t.Errorf("expected state to return to viewMain, got %d", m.state)
+	}
+	if m.filterRepo != "repo-b" {
+		t.Errorf("expected filterRepo to be 'repo-b', got %q", m.filterRepo)
+	}
+	if cmd == nil {
+		t.Error("expected fetchPullsCmd to be returned")
+	}
+
+	// 5. Pressing 'x' clears all active filters (including repo filter)
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = rawModel.(Model)
+	if m.filterRepo != "" {
+		t.Errorf("expected filterRepo to be cleared, got %q", m.filterRepo)
 	}
 }
 

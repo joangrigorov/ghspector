@@ -15,6 +15,10 @@ type Theme struct {
 	HelpKey       lipgloss.Style
 	HelpDesc      lipgloss.Style
 	BottomBar     lipgloss.Style
+	Header         lipgloss.Style
+	HeaderTitle    lipgloss.Style
+	HeaderSubtitle lipgloss.Style
+	HeaderBg       lipgloss.TerminalColor
 
 	// Status Colors
 	StatusRunning    lipgloss.Style
@@ -44,6 +48,7 @@ func GetTheme() *Theme {
 	failedColor := lipgloss.AdaptiveColor{Light: "#af0000", Dark: "#df0000"}     // Red
 	queuedColor := lipgloss.AdaptiveColor{Light: "#af8700", Dark: "#d7af00"}     // Yellow
 	neutralColor := lipgloss.AdaptiveColor{Light: "#626262", Dark: "#bcbcbc"}    // Gray
+	headerBg := lipgloss.AdaptiveColor{Light: "#eaeaea", Dark: "#262626"}
 
 	return &Theme{
 		Title: lipgloss.NewStyle().
@@ -117,5 +122,21 @@ func GetTheme() *Theme {
 		LogoText: lipgloss.NewStyle().
 			Foreground(secondaryColor).
 			Bold(true),
+
+		Header: lipgloss.NewStyle().
+			Background(headerBg),
+
+		HeaderTitle: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(primaryColor).
+			Background(headerBg).
+			Padding(0, 1),
+
+		HeaderSubtitle: lipgloss.NewStyle().
+			Foreground(subduedColor).
+			Background(headerBg).
+			Italic(true),
+
+		HeaderBg: headerBg,
 	}
 }

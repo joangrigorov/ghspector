@@ -30,6 +30,110 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.tick()
 	}
 
+	// Intercept keys for filter type selection
+	if m.state == viewFilterTypeSelect {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "u", "U":
+				if m.activeTab == tabWorkflows {
+					m.state = viewMain
+					m.showFilterInput = true
+					m.textInput.SetValue(m.filterActor)
+					m.textInput.Focus()
+					return m, textinput.Blink
+				} else if m.activeTab == tabPRs {
+					m.state = viewPRFilterInput
+					m.textInput.SetValue("")
+					m.textInput.Focus()
+					return m, textinput.Blink
+				} else if m.activeTab == tabIssues {
+					m.state = viewIssueFilterInput
+					m.textInput.SetValue("")
+					m.textInput.Focus()
+					return m, textinput.Blink
+				}
+			case "r", "R":
+				m.state = viewRepoFilterSelect
+				m.selectedRepoIdx = 0
+				m.repoStartIndex = 0
+				if len(m.repos) == 0 {
+					m.isLoading = true
+					m.loadingMsg = "Loading repositories..."
+					return m, m.fetchReposCmd()
+				}
+				return m, nil
+			case "esc":
+				m.state = viewMain
+				return m, nil
+			case "ctrl+c":
+				if m.cancel != nil {
+					m.cancel()
+				}
+				return m, tea.Quit
+			}
+		}
+		return m, nil
+	}
+
+	// Intercept keys for repository filter selection
+	if m.state == viewRepoFilterSelect {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "j", "down":
+				if m.selectedRepoIdx < len(m.repos)-1 {
+					m.selectedRepoIdx++
+				}
+				return m, nil
+			case "k", "up":
+				if m.selectedRepoIdx > 0 {
+					m.selectedRepoIdx--
+				}
+				return m, nil
+			case "enter":
+				if len(m.repos) > 0 && m.selectedRepoIdx >= 0 && m.selectedRepoIdx < len(m.repos) {
+					m.filterRepo = m.repos[m.selectedRepoIdx].Name
+					m.state = viewMain
+					
+					m.isLoading = true
+					m.loadingMsg = fmt.Sprintf("Filtering by repo %s...", m.filterRepo)
+					
+					if m.activeTab == tabWorkflows {
+						m.runPage = 1
+						m.hasMoreRuns = true
+						m.selectedRunIdx = 0
+						m.runStartIndex = 0
+						m.runs = nil
+						return m, m.fetchRunsCmd()
+					} else if m.activeTab == tabPRs {
+						m.pullPage = 1
+						m.hasMorePulls = true
+						m.selectedPullIdx = 0
+						m.pullStartIndex = 0
+						m.pulls = nil
+						return m, m.fetchPullsCmd()
+					} else if m.activeTab == tabIssues {
+						m.issuePage = 1
+						m.hasMoreIssues = true
+						m.selectedIssueIdx = 0
+						m.issueStartIndex = 0
+						m.issues = nil
+						return m, m.fetchIssuesCmd()
+					}
+				}
+				return m, nil
+			case "esc":
+				m.state = viewFilterTypeSelect
+				return m, nil
+			case "ctrl+c":
+				if m.cancel != nil {
+					m.cancel()
+				}
+				return m, tea.Quit
+			}
+		}
+		return m, nil
+	}
+
 	// If filtering input is active, intercept key messages first
 	if m.showFilterInput {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
@@ -238,6 +342,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				case "r", "R":
 					m.mergeMethod = 2
+					m.mergeState = 2
+					return m, nil
+				case "d", "D":
+					defMethod := "squash"
+					if m.config != nil && m.config.DefaultMergeMethod != "" {
+						defMethod = strings.ToLower(m.config.DefaultMergeMethod)
+					}
+					var nextMethod string
+					switch defMethod {
+					case "squash":
+						nextMethod = "merge"
+					case "merge":
+						nextMethod = "rebase"
+					default:
+						nextMethod = "squash"
+					}
+					if m.config != nil {
+						m.config.DefaultMergeMethod = nextMethod
+						_ = auth.SaveConfig(m.config)
+					}
+					return m, nil
+				case "enter":
+					defMethod := "squash"
+					if m.config != nil && m.config.DefaultMergeMethod != "" {
+						defMethod = strings.ToLower(m.config.DefaultMergeMethod)
+					}
+					switch defMethod {
+					case "merge":
+						m.mergeMethod = 1
+					case "rebase":
+						m.mergeMethod = 2
+					default:
+						m.mergeMethod = 0
+					}
 					m.mergeState = 2
 					return m, nil
 				case "esc", "c", "C":
@@ -568,6 +706,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filterPRAssignee = ""
 					m.filterPRReviewer = ""
 					m.filterPRState = "open"
+					m.filterRepo = ""
 					m.isLoading = true
 					m.loadingMsg = "Clearing PR filters..."
 					m.pullPage = 1
@@ -578,6 +717,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.fetchPullsCmd()
 				} else if m.activeTab == tabWorkflows {
 					m.filterActor = ""
+					m.filterRepo = ""
 					m.isLoading = true
 					m.loadingMsg = "Clearing workflow filters..."
 					m.runPage = 1
@@ -590,6 +730,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filterIssueAuthor = ""
 					m.filterIssueAssignee = ""
 					m.filterIssueState = "open"
+					m.filterRepo = ""
 					m.isLoading = true
 					m.loadingMsg = "Clearing issue filters..."
 					m.issuePage = 1
@@ -634,22 +775,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.fetchIssuesCmd()
 				}
 			case "f":
-				if m.activeTab == tabWorkflows {
-					m.showFilterInput = true
-					m.textInput.SetValue(m.filterActor)
-					m.textInput.Focus()
-					return m, textinput.Blink
-				} else if m.activeTab == tabPRs {
-					m.state = viewPRFilterInput
-					m.textInput.SetValue("")
-					m.textInput.Focus()
-					return m, textinput.Blink
-				} else if m.activeTab == tabIssues {
-					m.state = viewIssueFilterInput
-					m.textInput.SetValue("")
-					m.textInput.Focus()
-					return m, textinput.Blink
-				}
+				m.state = viewFilterTypeSelect
+				return m, nil
 			case "w":
 				if m.activeTab == tabWorkflows && len(m.runs) > 0 && m.selectedRunIdx < len(m.runs) {
 					run := m.getRun()
@@ -1139,6 +1266,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.dashboardPRsCount = 0
 				m.dashboardWorkflowsCount = 0
 				
+				m.repos = nil
+				m.filterRepo = ""
+				m.selectedRepoIdx = 0
+				m.repoStartIndex = 0
+				
 				return m, m.fetchActiveTabCmd()
 			case "esc":
 				m.state = m.prevState
@@ -1289,6 +1421,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pulls = append(m.pulls, msg.pulls...)
 		}
 		
+		if len(m.repos) == 0 && len(msg.repos) > 0 {
+			m.repos = msg.repos
+		}
+
 		if len(msg.pulls) == 0 {
 			m.hasMorePulls = false
 		}
@@ -1311,6 +1447,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.issues = msg.issues
 		} else {
 			m.issues = append(m.issues, msg.issues...)
+		}
+
+		if len(m.repos) == 0 && len(msg.repos) > 0 {
+			m.repos = msg.repos
 		}
 
 		if len(msg.issues) == 0 {
@@ -1601,6 +1741,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runs = append(m.runs, filtered...)
 		}
 
+		if len(m.repos) == 0 && len(msg.repos) > 0 {
+			m.repos = msg.repos
+		}
+
 		sortRuns(m.runs)
 
 		if len(msg.runs) == 0 {
@@ -1756,16 +1900,32 @@ func (m Model) fetchRunsCmd() tea.Cmd {
 		}
 		target := m.targets[m.selectedTargetIdx]
 
-		// 1. Fetch repositories sorted by pushes
+		// 1. Resolve repositories list (use cached m.repos or fetch as fallback)
 		var repos []gh.Repository
-		var err error
-		if target.IsOrg {
-			repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 15)
+		if len(m.repos) > 0 {
+			repos = m.repos
 		} else {
-			repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 15)
+			var err error
+			if target.IsOrg {
+				repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 100)
+			} else {
+				repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 100)
+			}
+			if err != nil {
+				return runsLoadedMsg{err: err}
+			}
 		}
-		if err != nil {
-			return runsLoadedMsg{err: err}
+
+		// Apply repository filter if set
+		if m.filterRepo != "" {
+			var filtered []gh.Repository
+			for _, r := range repos {
+				if r.Name == m.filterRepo {
+					filtered = append(filtered, r)
+					break
+				}
+			}
+			repos = filtered
 		}
 
 		if len(repos) == 0 {
@@ -1805,7 +1965,7 @@ func (m Model) fetchRunsCmd() tea.Cmd {
 		// Sort all runs
 		sortRuns(allRuns)
 
-		return runsLoadedMsg{runs: allRuns}
+		return runsLoadedMsg{runs: allRuns, repos: repos}
 	}
 }
 
@@ -2202,14 +2362,29 @@ func (m Model) fetchPullsCmd() tea.Cmd {
 		target := m.targets[m.selectedTargetIdx]
 
 		var repos []gh.Repository
-		var err error
-		if target.IsOrg {
-			repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 15)
+		if len(m.repos) > 0 {
+			repos = m.repos
 		} else {
-			repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 15)
+			var err error
+			if target.IsOrg {
+				repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 100)
+			} else {
+				repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 100)
+			}
+			if err != nil {
+				return pullsLoadedMsg{err: err}
+			}
 		}
-		if err != nil {
-			return pullsLoadedMsg{err: err}
+
+		if m.filterRepo != "" {
+			var filtered []gh.Repository
+			for _, r := range repos {
+				if r.Name == m.filterRepo {
+					filtered = append(filtered, r)
+					break
+				}
+			}
+			repos = filtered
 		}
 
 		if len(repos) == 0 {
@@ -2284,7 +2459,7 @@ func (m Model) fetchPullsCmd() tea.Cmd {
 			return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
 		})
 
-		return pullsLoadedMsg{pulls: filtered}
+		return pullsLoadedMsg{pulls: filtered, repos: repos}
 	}
 }
 
@@ -2560,14 +2735,29 @@ func (m Model) fetchIssuesCmd() tea.Cmd {
 		target := m.targets[m.selectedTargetIdx]
 
 		var repos []gh.Repository
-		var err error
-		if target.IsOrg {
-			repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 15)
+		if len(m.repos) > 0 {
+			repos = m.repos
 		} else {
-			repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 15)
+			var err error
+			if target.IsOrg {
+				repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 100)
+			} else {
+				repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 100)
+			}
+			if err != nil {
+				return issuesLoadedMsg{err: err}
+			}
 		}
-		if err != nil {
-			return issuesLoadedMsg{err: err}
+
+		if m.filterRepo != "" {
+			var filtered []gh.Repository
+			for _, r := range repos {
+				if r.Name == m.filterRepo {
+					filtered = append(filtered, r)
+					break
+				}
+			}
+			repos = filtered
 		}
 
 		if len(repos) == 0 {
@@ -2630,7 +2820,7 @@ func (m Model) fetchIssuesCmd() tea.Cmd {
 			return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
 		})
 
-		return issuesLoadedMsg{issues: filtered}
+		return issuesLoadedMsg{issues: filtered, repos: repos}
 	}
 }
 
@@ -2841,6 +3031,31 @@ func (m Model) approveWorkflowRunCmd(owner, repo string, runID int64, status, co
 			return workflowRunApprovedMsg{runID: runID, err: err}
 		}
 		return workflowRunApprovedMsg{runID: runID, err: fmt.Errorf("workflow run does not require approval")}
+	}
+}
+
+type reposLoadedMsg struct {
+	repos []gh.Repository
+	err   error
+}
+
+func (m Model) fetchReposCmd() tea.Cmd {
+	return func() tea.Msg {
+		if len(m.targets) == 0 {
+			return reposLoadedMsg{err: auth.ErrUnauthenticated}
+		}
+		target := m.targets[m.selectedTargetIdx]
+		var repos []gh.Repository
+		var err error
+		if target.IsOrg {
+			repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 100)
+		} else {
+			repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 100)
+		}
+		if err != nil {
+			return reposLoadedMsg{repos: nil, err: err}
+		}
+		return reposLoadedMsg{repos: repos}
 	}
 }
 
