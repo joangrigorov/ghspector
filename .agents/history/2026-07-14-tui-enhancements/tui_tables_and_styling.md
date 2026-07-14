@@ -69,8 +69,8 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
 
 #### View Render Updates
 ##### [MODIFY] [internal/tui/view.go](internal/tui/view.go)
-- **`renderHeader`**: Render header content using new backgrounds with explicit width set to fill the terminal width, replace spacer newlines with colored padding lines (using `Copy().Width(width).Render(" ")` to ensure colors apply), add left/right spacer padding to indent text, and append the border line.
-- **`renderFooter`**: Maximize width, auto-inject missing `?` key, float `Esc` and `?` left (with status), and float other keys right.
+- **`renderHeader`**: Render header content using new backgrounds with explicit width set to fill the terminal width, replace spacer newlines with colored padding lines (rendering explicit full-width spaces to guarantee terminal coloring), add left/right spacer padding to indent text, and append the border line.
+- **`renderFooter`**: Maximize width, auto-inject missing `?` key, float `Esc` and `?` left (with status), and float other keys right. Remove the trailing newline character from the bottom bar render to prevent the terminal viewport from scrolling up.
 - **`renderJobsView`**: Maximize columns (dynamic width calculation for job name column) and append the `STEPS` column.
 - **`renderPRDetailsView`**: Rename `D:Diff` -> `Shift+D:Diff` and `C:Close PR` -> `Shift+C:Close PR`.
 - **`renderMergeModal`**: Show the active default method, and instructions on how to cycle it (`[d]`) or merge with it (`[Enter]`).
