@@ -293,8 +293,8 @@ func (m Model) renderHeader() string {
 	headerContent += rightPadding
 
 	headerLine := m.theme.Header.Copy().Width(width).Render(headerContent)
-	topPadding := m.theme.Header.Copy().Width(width).Render(" ")
-	bottomPadding := m.theme.Header.Copy().Width(width).Render(" ")
+	topPadding := m.theme.Header.Render(strings.Repeat(" ", width))
+	bottomPadding := m.theme.Header.Render(strings.Repeat(" ", width))
 	hr := m.theme.Border.Render(strings.Repeat("─", width))
 
 	return topPadding + "\n" + headerLine + "\n" + bottomPadding + "\n" + hr
@@ -408,7 +408,7 @@ func (m Model) renderFooter(keys []string) string {
 	}
 
 	// Render using bottom bar style with explicit content width
-	return "\n" + m.theme.BottomBar.Copy().Width(contentWidth).Render(content) + "\n"
+	return "\n" + m.theme.BottomBar.Copy().Width(contentWidth).Render(content)
 }
 
 // renderMainView renders the Workflow Runs list with a scrolling window.
