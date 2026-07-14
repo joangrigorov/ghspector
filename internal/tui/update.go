@@ -3175,6 +3175,12 @@ func parseLogTimestamp(line string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+type logBlock struct {
+	groupTitle string
+	lines      []string
+	timestamp  time.Time
+}
+
 func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
 	segments := make(map[int]string)
 	lines := strings.Split(rawLogs, "\n")
@@ -3190,37 +3196,198 @@ func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
 		}
 	}
 
-	// Sort activeSteps by start time to guarantee order
+	// Sort activeSteps by start time to guarantee chronological order
 	sort.Slice(activeSteps, func(i, j int) bool {
 		return activeSteps[i].start.Before(activeSteps[j].start)
 	})
 
-	currentStepIdx := 0
-	if len(activeSteps) > 0 {
-		currentStepIdx = activeSteps[0].index
-	}
+	// 1. Group the raw log lines into logical blocks based on ##[group] and ##[endgroup]
+	var blocks []logBlock
+	var currentBlock *logBlock
 
 	for _, line := range lines {
 		if line == "" {
 			continue
 		}
-		t, ok := parseLogTimestamp(line)
-		if ok && len(activeSteps) > 0 {
-			// The active step at time t is the latest step whose start time is <= t
-			matchedIdx := activeSteps[0].index
-			for _, as := range activeSteps {
-				if !t.Before(as.start) {
-					matchedIdx = as.index
-				} else {
-					break
-				}
-			}
-			currentStepIdx = matchedIdx
+
+		t, hasTime := parseLogTimestamp(line)
+		cleanLine := line
+		if idx := strings.Index(line, "Z "); idx != -1 {
+			cleanLine = line[idx+2:]
 		}
 
-		segments[currentStepIdx] = segments[currentStepIdx] + line + "\n"
+		if strings.Contains(cleanLine, "##[group]") || strings.Contains(cleanLine, "##[section]") {
+			title := cleanLine
+			if idx := strings.Index(cleanLine, "##[group]"); idx != -1 {
+				title = cleanLine[idx+9:]
+			} else if idx := strings.Index(cleanLine, "##[section]"); idx != -1 {
+				title = cleanLine[idx+11:]
+			}
+
+			if currentBlock != nil {
+				blocks = append(blocks, *currentBlock)
+			}
+
+			currentBlock = &logBlock{
+				groupTitle: title,
+				timestamp:  t,
+				lines:      []string{line},
+			}
+		} else if strings.Contains(cleanLine, "##[endgroup]") || strings.Contains(cleanLine, "##[endsection]") {
+			if currentBlock != nil {
+				currentBlock.lines = append(currentBlock.lines, line)
+				blocks = append(blocks, *currentBlock)
+				currentBlock = nil
+			}
+		} else {
+			if currentBlock == nil {
+				currentBlock = &logBlock{
+					timestamp: t,
+				}
+			}
+			if currentBlock.timestamp.IsZero() && hasTime {
+				currentBlock.timestamp = t
+			}
+			currentBlock.lines = append(currentBlock.lines, line)
+		}
+	}
+	if currentBlock != nil {
+		blocks = append(blocks, *currentBlock)
+	}
+
+	// 2. Map each log block to the most suitable step
+	type candidate struct {
+		index int
+		score int
+	}
+
+	lastMatchedStepIdx := 0
+	if len(activeSteps) > 0 {
+		lastMatchedStepIdx = activeSteps[0].index
+	}
+
+	for _, block := range blocks {
+		matchedStepIdx := lastMatchedStepIdx
+
+		if block.groupTitle != "" {
+			// Find candidates within a 10s grace window around the block's timestamp
+			var candidates []candidate
+			for i, step := range steps {
+				if step.StartedAt.IsZero() {
+					continue
+				}
+				startLimit := step.StartedAt.Add(-10 * time.Second)
+				var endLimit time.Time
+				if !step.CompletedAt.IsZero() {
+					endLimit = step.CompletedAt.Add(10 * time.Second)
+				}
+
+				inRange := false
+				if !block.timestamp.Before(startLimit) {
+					if endLimit.IsZero() || !block.timestamp.After(endLimit) {
+						inRange = true
+					}
+				}
+				if inRange {
+					score := calculateMatchScore(block.groupTitle, step.Name)
+					candidates = append(candidates, candidate{index: i, score: score})
+				}
+			}
+
+			// If no candidates in window, search all steps
+			if len(candidates) == 0 {
+				for i, step := range steps {
+					if step.StartedAt.IsZero() {
+						continue
+					}
+					score := calculateMatchScore(block.groupTitle, step.Name)
+					candidates = append(candidates, candidate{index: i, score: score})
+				}
+			}
+
+			bestIdx := lastMatchedStepIdx
+			maxScore := -1
+			for _, c := range candidates {
+				if c.score > maxScore {
+					maxScore = c.score
+					bestIdx = c.index
+				}
+			}
+
+			// If no good match was found, fall back to timestamp proximity
+			if maxScore <= 0 {
+				matchedIdx := lastMatchedStepIdx
+				if len(activeSteps) > 0 {
+					matchedIdx = activeSteps[0].index
+					for _, as := range activeSteps {
+						if !block.timestamp.Before(as.start) {
+							matchedIdx = as.index
+						} else {
+							break
+						}
+					}
+				}
+				bestIdx = matchedIdx
+			}
+
+			matchedStepIdx = bestIdx
+			lastMatchedStepIdx = bestIdx
+		} else {
+			// Raw lines outside any group: fallback to timestamp proximity
+			matchedIdx := lastMatchedStepIdx
+			if len(activeSteps) > 0 {
+				matchedIdx = activeSteps[0].index
+				for _, as := range activeSteps {
+					if !block.timestamp.Before(as.start) {
+						matchedIdx = as.index
+					} else {
+						break
+					}
+				}
+			}
+			matchedStepIdx = matchedIdx
+		}
+
+		for _, line := range block.lines {
+			segments[matchedStepIdx] = segments[matchedStepIdx] + line + "\n"
+		}
 	}
 
 	return segments
+}
+
+func calculateMatchScore(groupTitle, stepName string) int {
+	g := strings.ToLower(groupTitle)
+	s := strings.ToLower(stepName)
+
+	if strings.Contains(g, s) || strings.Contains(s, g) {
+		return 100
+	}
+
+	cleanG := cleanLogName(g)
+	cleanS := cleanLogName(s)
+	if strings.Contains(cleanG, cleanS) || strings.Contains(cleanS, cleanG) {
+		return 90
+	}
+
+	wordsS := strings.Fields(cleanS)
+	score := 0
+	for _, w := range wordsS {
+		if len(w) > 2 && w != "run" && w != "post" && w != "set" && w != "code" && w != "job" && w != "action" {
+			if strings.Contains(cleanG, w) {
+				score += 10
+			}
+		}
+	}
+	return score
+}
+
+func cleanLogName(name string) string {
+	name = strings.ReplaceAll(name, "/", " ")
+	name = strings.ReplaceAll(name, "-", " ")
+	name = strings.ReplaceAll(name, "_", " ")
+	name = strings.ReplaceAll(name, "@", " ")
+	name = strings.ReplaceAll(name, ":", " ")
+	return name
 }
 

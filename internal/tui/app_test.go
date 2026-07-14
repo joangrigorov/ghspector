@@ -1666,6 +1666,53 @@ func TestTUI_LogsSegmentRealWorldData(t *testing.T) {
 	}
 }
 
+func TestTUI_LogsSegmentRealWorldOverlap(t *testing.T) {
+	tSetupGo := time.Date(2026, 7, 14, 12, 36, 31, 0, time.UTC)
+	tGovulncheck := time.Date(2026, 7, 14, 12, 36, 41, 0, time.UTC)
+	tRunTests := time.Date(2026, 7, 14, 12, 36, 44, 0, time.UTC)
+
+	steps := []gh.JobStep{
+		{Name: "Set up Go", Number: 4, Status: "completed", Conclusion: "success", StartedAt: tSetupGo},
+		{Name: "Run govulncheck", Number: 5, Status: "completed", Conclusion: "success", StartedAt: tGovulncheck},
+		{Name: "Run Tests", Number: 6, Status: "completed", Conclusion: "success", StartedAt: tRunTests},
+	}
+
+	rawLogs := `2026-07-14T12:36:31.1184254Z ##[group]Run actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+2026-07-14T12:36:42.1107776Z GOROOT='/opt/hostedtoolcache/go/1.26.5/x64'
+2026-07-14T12:36:42.1108127Z GOSUMDB='sum.golang.org'
+2026-07-14T12:36:42.1110541Z GOWORK=''
+2026-07-14T12:36:42.1110736Z PKG_CONFIG='pkg-config'
+2026-07-14T12:36:42.1110885Z 
+2026-07-14T12:36:42.1111185Z ##[endgroup]
+2026-07-14T12:36:42.1213529Z ##[group]Run go install golang.org/x/vuln/cmd/govulncheck@latest
+2026-07-14T12:36:42.1214030Z go install golang.org/x/vuln/cmd/govulncheck@latest
+2026-07-14T12:36:42.1248973Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-14T12:36:42.1250075Z ##[endgroup]
+2026-07-14T12:36:42.7494409Z ##[group]Run govulncheck -C "$WORK_DIR" -format "$OUTPUT_FORMAT" "$GO_PACKAGE"
+2026-07-14T12:36:42.7494945Z govulncheck -C "$WORK_DIR" -format "$OUTPUT_FORMAT" "$GO_PACKAGE"
+`
+
+	segments := segmentLogs(rawLogs, steps)
+
+	// Step 0 ("Set up Go") should contain GOWORK='' and PKG_CONFIG='pkg-config'
+	setupGoLogs := segments[0]
+	if !strings.Contains(setupGoLogs, "GOWORK=''") || !strings.Contains(setupGoLogs, "PKG_CONFIG='pkg-config'") {
+		t.Error("expected Set up Go logs to contain GOWORK and PKG_CONFIG")
+	}
+	if strings.Contains(setupGoLogs, "go install") || strings.Contains(setupGoLogs, "govulncheck") {
+		t.Error("expected Set up Go logs NOT to contain govulncheck command logs")
+	}
+
+	// Step 1 ("Run govulncheck") should contain the go install command and the govulncheck execution
+	govulncheckLogs := segments[1]
+	if !strings.Contains(govulncheckLogs, "go install") || !strings.Contains(govulncheckLogs, "govulncheck -C") {
+		t.Error("expected Run govulncheck logs to contain command logs and execution logs")
+	}
+	if strings.Contains(govulncheckLogs, "GOWORK=''") {
+		t.Error("expected Run govulncheck logs NOT to contain setup step variables")
+	}
+}
+
 
 
 
