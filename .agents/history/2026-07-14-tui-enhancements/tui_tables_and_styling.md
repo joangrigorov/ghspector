@@ -69,7 +69,7 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
 
 #### View Render Updates
 ##### [MODIFY] [internal/tui/view.go](internal/tui/view.go)
-- **`renderHeader`**: Render header content using new backgrounds, and append the border line.
+- **`renderHeader`**: Render header content using new backgrounds with explicit width set to fill the terminal width, and append the border line.
 - **`renderFooter`**: Maximize width, auto-inject missing `?` key, float `Esc` and `?` left (with status), and float other keys right.
 - **`renderJobsView`**: Maximize columns (dynamic width calculation for job name column) and append the `STEPS` column.
 - **`renderPRDetailsView`**: Rename `D:Diff` -> `Shift+D:Diff` and `C:Close PR` -> `Shift+C:Close PR`.
