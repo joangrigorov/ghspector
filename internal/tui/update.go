@@ -27,7 +27,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Always handle tickMsg first to keep the loading spinner animating
 	if _, ok := msg.(tickMsg); ok {
 		m.tickCount++
+
+		// Check if we can recover from rate limit error
+		if m.err != nil && strings.Contains(strings.ToLower(m.err.Error()), "rate limit") {
+			rl := m.client.GetRateLimit()
+			if !rl.Reset.IsZero() && time.Now().After(rl.Reset) {
+				m.err = nil
+				m.isLoading = true
+				m.loadingMsg = "Rate limit reset. Reconnecting..."
+				
+				m.runPage = 1
+				m.hasMoreRuns = true
+				m.selectedRunIdx = 0
+				m.runStartIndex = 0
+				m.runs = nil
+
+				m.pullPage = 1
+				m.hasMorePulls = true
+				m.selectedPullIdx = 0
+				m.pullStartIndex = 0
+				m.pulls = nil
+
+				m.issuePage = 1
+				m.hasMoreIssues = true
+				m.selectedIssueIdx = 0
+				m.issueStartIndex = 0
+				m.issues = nil
+
+				return m, tea.Batch(m.tick(), m.fetchActiveTabCmd())
+			}
+		}
+
 		return m, m.tick()
+	}
+
+	// If there is a fatal error, only allow quitting
+	if m.err != nil {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "q", "ctrl+c":
+				if m.cancel != nil {
+					m.cancel()
+				}
+				return m, tea.Quit
+			}
+		}
+		return m, nil
 	}
 
 	// Intercept keys for filter type selection

@@ -1504,6 +1504,57 @@ func TestTUI_IssuesPaginationPRFiltering(t *testing.T) {
 	}
 }
 
+func TestTUI_RateLimitErrorRecovery(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.width = 80
+
+	// 1. Simulate rate limit error
+	m.err = fmt.Errorf("github api access forbidden: API rate limit exceeded")
+
+	// Verify error view renders and wraps the text
+	viewStr := m.View()
+	if !strings.Contains(viewStr, "FATAL ERROR") || !strings.Contains(viewStr, "rate limit exceeded") {
+		t.Error("expected error view to render rate limit error message")
+	}
+
+	// 2. Set rate limit reset time to 5 seconds in the future
+	resetTime := time.Now().Add(5 * time.Second)
+	client.SetRateLimit(gh.RateLimitInfo{
+		Limit:     5000,
+		Remaining: 0,
+		Reset:     resetTime,
+	})
+
+	// Run tickMsg, should NOT recover yet because resetTime is in the future
+	rawModel, _ := m.Update(tickMsg(time.Now()))
+	m = rawModel.(Model)
+	if m.err == nil {
+		t.Error("expected error to persist while reset time is in the future")
+	}
+
+	// 3. Set rate limit reset time to 1 second in the past
+	client.SetRateLimit(gh.RateLimitInfo{
+		Limit:     5000,
+		Remaining: 1000,
+		Reset:     time.Now().Add(-1 * time.Second),
+	})
+
+	// Run tickMsg, should recover, clear error, set loading, and return fetchActiveTabCmd
+	rawModel, cmd := m.Update(tickMsg(time.Now()))
+	m = rawModel.(Model)
+	if m.err != nil {
+		t.Errorf("expected error to be cleared after reset time passed, got: %v", m.err)
+	}
+	if !m.isLoading {
+		t.Error("expected isLoading to be true during recovery reconnect")
+	}
+	if cmd == nil {
+		t.Error("expected fetchActiveTabCmd to be returned on recovery")
+	}
+}
+
 
 
 

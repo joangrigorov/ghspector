@@ -123,11 +123,39 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
 
 ---
 
+## Iteration 3: Fatal Error Screen Word-Wrapping & Rate Limit Auto-Recovery
+
+### Goals
+- Word-wrap fatal error messages to the terminal width to prevent text from being cut off.
+- Automatically detect rate-limit errors in the fatal error screen. If rate-limited, query and display a live countdown timer showing the remaining duration until rate limit reset.
+- Implement rate limit auto-recovery: when the reset time passes, the application automatically clears the fatal error state, sets a loading state, and reloads the active tab context.
+- Prevent keyboard actions when in the fatal error state, except for pressing `q` or `ctrl+c` to quit the application.
+
+### Proposed Changes
+
+#### Client Implementation
+##### [MODIFY] [internal/gh/client.go](internal/gh/client.go)
+- Add `SetRateLimit` helper method to allow configuring rate limit info during tests.
+
+#### Update Logic
+##### [MODIFY] [internal/tui/update.go](internal/tui/update.go)
+- Update the `tickMsg` handler to verify if a rate limit error is active and check if the current time has passed the reset threshold. If yes, clear `m.err`, set loading, reset page configurations, and execute `fetchActiveTabCmd`.
+- Add a key interceptor at the start of `Update` when `m.err != nil` to restrict keypresses to `q` and `ctrl+c`.
+
+#### View Rendering
+##### [MODIFY] [internal/tui/view.go](internal/tui/view.go)
+- Update `renderErrorView` to wrap the error message to `m.width - 4` using lipgloss.
+- If a rate limit error is active, check `m.client.GetRateLimit()`, calculate the remaining time, and render a live countdown timer.
+
+---
+
 ## Verification Plan
 
 ### Automated Tests
-- Run `go test ./...` to ensure all tests pass (including new `TestTUI_IssuesPaginationPRFiltering` test verifying the pagination fixes).
+- Run `go test ./...` to ensure all tests pass (including new `TestTUI_IssuesPaginationPRFiltering` and `TestTUI_RateLimitErrorRecovery` tests).
 
 ### Manual Verification
-- Filter by closed issues on a repository with a large number of issues and pull requests.
-- Verify that pressing `Load More` repeatedly continues loading items, and the button does not disappear prematurely when a page has only pull requests.
+- Simulate a rate limit error by modifying client rate limit configuration or generating high traffic.
+- Verify that the fatal error screen displays wrapped text, and shows a live counting down timer.
+- Verify that once the timer expires, the app automatically transitions to the loading spinner and successfully refreshes.
+- Verify that keypresses other than `q`/`ctrl+c` are ignored in the fatal error view.

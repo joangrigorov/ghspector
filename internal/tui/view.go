@@ -99,7 +99,33 @@ func (m Model) View() string {
 func (m Model) renderErrorView() string {
 	var sb strings.Builder
 	sb.WriteString("\n  " + m.theme.StatusFailed.Render("FATAL ERROR") + "\n\n")
-	sb.WriteString("  " + m.theme.TableRow.Render(m.err.Error()) + "\n\n")
+
+	// Wrap error text to terminal width - 4
+	w := m.width - 4
+	if w < 20 {
+		w = 20
+	}
+	errText := lipgloss.NewStyle().Width(w).Render(m.err.Error())
+	sb.WriteString("  " + errText + "\n\n")
+
+	// Check if this is a rate limit error
+	if strings.Contains(strings.ToLower(m.err.Error()), "rate limit") {
+		rl := m.client.GetRateLimit()
+		if !rl.Reset.IsZero() {
+			timeRemaining := time.Until(rl.Reset)
+			if timeRemaining > 0 {
+				timerStr := fmt.Sprintf("Rate Limit resets in: %s (at %s)", 
+					formatDuration(timeRemaining), 
+					rl.Reset.Format("15:04:05"),
+				)
+				sb.WriteString("  " + m.theme.StatusWaiting.Render(timerStr) + "\n\n")
+				sb.WriteString("  The app will automatically reconnect once the rate limit resets.\n\n")
+			} else {
+				sb.WriteString("  " + m.theme.StatusSuccessful.Render("Rate limit reset. Reconnecting...") + "\n\n")
+			}
+		}
+	}
+
 	sb.WriteString("  Press q or Ctrl+C to exit.\n")
 	return sb.String()
 }

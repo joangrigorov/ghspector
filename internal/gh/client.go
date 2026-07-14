@@ -59,6 +59,13 @@ func (c *Client) GetRateLimit() RateLimitInfo {
 	return c.rateLimit
 }
 
+// SetRateLimit overrides the rate limit information (primarily for testing).
+func (c *Client) SetRateLimit(rl RateLimitInfo) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.rateLimit = rl
+}
+
 // GetScopes returns the scopes of the API token.
 func (c *Client) GetScopes() []string {
 	c.mu.RLock()
