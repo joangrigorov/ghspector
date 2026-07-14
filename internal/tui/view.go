@@ -289,9 +289,11 @@ func (m Model) renderHeader() string {
 	}
 
 	headerLine := m.theme.Header.Copy().Width(width).Render(headerContent)
+	topPadding := m.theme.Header.Copy().Width(width).Render("")
+	bottomPadding := m.theme.Header.Copy().Width(width).Render("")
 	hr := m.theme.Border.Render(strings.Repeat("─", width))
 
-	return "\n" + headerLine + "\n" + hr
+	return topPadding + "\n" + headerLine + "\n" + bottomPadding + "\n" + hr
 }
 
 // renderFooter renders the standard bottom bar.

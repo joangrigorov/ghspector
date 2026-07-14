@@ -48,7 +48,7 @@ func GetTheme() *Theme {
 	failedColor := lipgloss.AdaptiveColor{Light: "#af0000", Dark: "#df0000"}     // Red
 	queuedColor := lipgloss.AdaptiveColor{Light: "#af8700", Dark: "#d7af00"}     // Yellow
 	neutralColor := lipgloss.AdaptiveColor{Light: "#626262", Dark: "#bcbcbc"}    // Gray
-	headerBg := lipgloss.AdaptiveColor{Light: "#eaeaea", Dark: "#262626"}
+	headerBg := lipgloss.AdaptiveColor{Light: "#eaeaea", Dark: "#303030"}
 
 	return &Theme{
 		Title: lipgloss.NewStyle().
