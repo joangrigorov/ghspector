@@ -215,12 +215,14 @@ func (m Model) renderHeader() string {
 	titleStyle := m.theme.HeaderTitle
 	contextStyle := m.theme.HeaderSubtitle
 
+	bgStyle := m.theme.Header
+
 	loadingInd := ""
 	if m.isLoading {
 		spinners := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		spinnerChar := spinners[m.tickCount%len(spinners)]
 		spinnerStyle := m.theme.StatusWaiting.Copy().Background(headerBg)
-		loadingInd = " " + spinnerStyle.Render(spinnerChar)
+		loadingInd = bgStyle.Render(" ") + spinnerStyle.Render(spinnerChar)
 	}
 
 	title := titleStyle.Render("ghspector | "+pageName) + loadingInd
@@ -279,11 +281,11 @@ func (m Model) renderHeader() string {
 
 	headerContent := title
 	if contextInfo != "" {
-		headerContent += "  " + contextInfo
+		headerContent += bgStyle.Render("  ") + contextInfo
 	}
-	headerContent += spaces
+	headerContent += bgStyle.Render(spaces)
 	if rlRendered != "" {
-		headerContent += rlRendered + " "
+		headerContent += rlRendered + bgStyle.Render(" ")
 	}
 
 	headerLine := m.theme.Header.Copy().Width(width).Render(headerContent)
