@@ -78,6 +78,7 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
 - **`renderRepoFilterSelectModal`** [NEW]: A scrollable modal showing repositories for selection.
 - Update `renderMainView`, `renderPullsView`, and `renderIssuesView` to display the active `Repo: <name>` filter.
 - **`renderMarkdown`**: Detect terminal theme background using `lipgloss.HasDarkBackground()` and apply either `"light"` or `"dark"` glamour styles dynamically to match the user's system theme background.
+- **`renderIssueRightSidebar`**: Renamed the sidebar title header from `"METADATA"` to `"DETAILS"` to remain consistent with the PR details sidebar header styling.
 
 #### Update Logic & Background Fetching
 ##### [MODIFY] [internal/tui/update.go](internal/tui/update.go)
