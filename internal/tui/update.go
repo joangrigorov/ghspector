@@ -3155,67 +3155,38 @@ func (m *Model) updateLogsViewportContent() {
 	}
 }
 
-func parseLogTimestamp(line string) (time.Time, bool) {
-	idx := strings.Index(line, " ")
-	if idx == -1 {
-		return time.Time{}, false
-	}
-	tsStr := line[:idx]
-	if len(tsStr) < 19 {
-		return time.Time{}, false
-	}
-	t, err := time.Parse(time.RFC3339, tsStr)
-	if err == nil {
-		return t, true
-	}
-	t, err = time.Parse(time.RFC3339Nano, tsStr)
-	if err == nil {
-		return t, true
-	}
-	return time.Time{}, false
-}
-
-type logBlock struct {
-	groupTitle string
-	lines      []string
-	timestamp  time.Time
-}
-
 func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
 	segments := make(map[int]string)
 	lines := strings.Split(rawLogs, "\n")
 
 	type activeStep struct {
 		index int
-		start time.Time
+		name  string
 	}
 	var activeSteps []activeStep
 	for i, s := range steps {
-		if !s.StartedAt.IsZero() {
-			activeSteps = append(activeSteps, activeStep{index: i, start: s.StartedAt})
+		if s.Conclusion != "skipped" {
+			activeSteps = append(activeSteps, activeStep{index: i, name: s.Name})
 		}
 	}
 
-	// Sort activeSteps by start time to guarantee chronological order
-	sort.Slice(activeSteps, func(i, j int) bool {
-		return activeSteps[i].start.Before(activeSteps[j].start)
-	})
-
-	// 1. Group the raw log lines into logical blocks based on ##[group] and ##[endgroup]
-	var blocks []logBlock
-	var currentBlock *logBlock
+	currentActiveIdx := 0
+	currentStepIdx := 0
+	if len(activeSteps) > 0 {
+		currentStepIdx = activeSteps[0].index
+	}
 
 	for _, line := range lines {
 		if line == "" {
 			continue
 		}
 
-		t, hasTime := parseLogTimestamp(line)
 		cleanLine := line
 		if idx := strings.Index(line, "Z "); idx != -1 {
 			cleanLine = line[idx+2:]
 		}
 
+		// Detect if this line starts a new step group
 		if strings.Contains(cleanLine, "##[group]") || strings.Contains(cleanLine, "##[section]") {
 			title := cleanLine
 			if idx := strings.Index(cleanLine, "##[group]"); idx != -1 {
@@ -3224,136 +3195,43 @@ func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
 				title = cleanLine[idx+11:]
 			}
 
-			if currentBlock != nil {
-				blocks = append(blocks, *currentBlock)
-			}
+			// Try to find the matching step starting from currentActiveIdx (steps only move forward!)
+			bestActiveIdx := currentActiveIdx
+			maxScore := 0
 
-			currentBlock = &logBlock{
-				groupTitle: title,
-				timestamp:  t,
-				lines:      []string{line},
-			}
-		} else if strings.Contains(cleanLine, "##[endgroup]") || strings.Contains(cleanLine, "##[endsection]") {
-			if currentBlock != nil {
-				currentBlock.lines = append(currentBlock.lines, line)
-				blocks = append(blocks, *currentBlock)
-				currentBlock = nil
-			}
-		} else {
-			if currentBlock == nil {
-				currentBlock = &logBlock{
-					timestamp: t,
-				}
-			}
-			if currentBlock.timestamp.IsZero() && hasTime {
-				currentBlock.timestamp = t
-			}
-			currentBlock.lines = append(currentBlock.lines, line)
-		}
-	}
-	if currentBlock != nil {
-		blocks = append(blocks, *currentBlock)
-	}
-
-	// 2. Map each log block to the most suitable step
-	type candidate struct {
-		index int
-		score int
-	}
-
-	lastMatchedStepIdx := 0
-	if len(activeSteps) > 0 {
-		lastMatchedStepIdx = activeSteps[0].index
-	}
-
-	for _, block := range blocks {
-		matchedStepIdx := lastMatchedStepIdx
-
-		if block.groupTitle != "" {
-			// Find candidates within a 10s grace window around the block's timestamp
-			var candidates []candidate
-			for i, step := range steps {
-				if step.StartedAt.IsZero() {
-					continue
-				}
-				startLimit := step.StartedAt.Add(-10 * time.Second)
-				var endLimit time.Time
-				if !step.CompletedAt.IsZero() {
-					endLimit = step.CompletedAt.Add(10 * time.Second)
-				}
-
-				inRange := false
-				if !block.timestamp.Before(startLimit) {
-					if endLimit.IsZero() || !block.timestamp.After(endLimit) {
-						inRange = true
-					}
-				}
-				if inRange {
-					score := calculateMatchScore(block.groupTitle, step.Name)
-					candidates = append(candidates, candidate{index: i, score: score})
+			for idx := currentActiveIdx; idx < len(activeSteps); idx++ {
+				score := calculateMatchScore(title, activeSteps[idx].name)
+				if score > maxScore {
+					maxScore = score
+					bestActiveIdx = idx
 				}
 			}
 
-			// If no candidates in window, search all steps
-			if len(candidates) == 0 {
-				for i, step := range steps {
-					if step.StartedAt.IsZero() {
-						continue
-					}
-					score := calculateMatchScore(block.groupTitle, step.Name)
-					candidates = append(candidates, candidate{index: i, score: score})
+			// If we found a match, transition to it.
+			// Otherwise, if it looks like a runner top-level group, fallback to the next chronological step.
+			if maxScore > 0 {
+				currentActiveIdx = bestActiveIdx
+				currentStepIdx = activeSteps[currentActiveIdx].index
+			} else if isTopLevelGroup(title) {
+				if currentActiveIdx+1 < len(activeSteps) {
+					currentActiveIdx++
+					currentStepIdx = activeSteps[currentActiveIdx].index
 				}
 			}
-
-			bestIdx := lastMatchedStepIdx
-			maxScore := -1
-			for _, c := range candidates {
-				if c.score > maxScore {
-					maxScore = c.score
-					bestIdx = c.index
-				}
-			}
-
-			// If no good match was found, fall back to timestamp proximity
-			if maxScore <= 0 {
-				matchedIdx := lastMatchedStepIdx
-				if len(activeSteps) > 0 {
-					matchedIdx = activeSteps[0].index
-					for _, as := range activeSteps {
-						if !block.timestamp.Before(as.start) {
-							matchedIdx = as.index
-						} else {
-							break
-						}
-					}
-				}
-				bestIdx = matchedIdx
-			}
-
-			matchedStepIdx = bestIdx
-			lastMatchedStepIdx = bestIdx
-		} else {
-			// Raw lines outside any group: fallback to timestamp proximity
-			matchedIdx := lastMatchedStepIdx
-			if len(activeSteps) > 0 {
-				matchedIdx = activeSteps[0].index
-				for _, as := range activeSteps {
-					if !block.timestamp.Before(as.start) {
-						matchedIdx = as.index
-					} else {
-						break
-					}
-				}
-			}
-			matchedStepIdx = matchedIdx
 		}
 
-		for _, line := range block.lines {
-			segments[matchedStepIdx] = segments[matchedStepIdx] + line + "\n"
-		}
+		segments[currentStepIdx] = segments[currentStepIdx] + line + "\n"
 	}
 
 	return segments
+}
+
+func isTopLevelGroup(title string) bool {
+	t := strings.ToLower(title)
+	return strings.HasPrefix(t, "run ") ||
+		strings.HasPrefix(t, "post ") ||
+		strings.HasPrefix(t, "complete ") ||
+		strings.HasPrefix(t, "set up ")
 }
 
 func calculateMatchScore(groupTitle, stepName string) int {
@@ -3361,25 +3239,39 @@ func calculateMatchScore(groupTitle, stepName string) int {
 	s := strings.ToLower(stepName)
 
 	if strings.Contains(g, s) || strings.Contains(s, g) {
-		return 100
+		return 1000
+	}
+
+	gStripped := stripAll(g)
+	sStripped := stripAll(s)
+	if strings.Contains(gStripped, sStripped) || strings.Contains(sStripped, gStripped) {
+		return 950
 	}
 
 	cleanG := cleanLogName(g)
 	cleanS := cleanLogName(s)
-	if strings.Contains(cleanG, cleanS) || strings.Contains(cleanS, cleanG) {
-		return 90
-	}
 
 	wordsS := strings.Fields(cleanS)
 	score := 0
 	for _, w := range wordsS {
-		if len(w) > 2 && w != "run" && w != "post" && w != "set" && w != "code" && w != "job" && w != "action" {
+		if len(w) >= 2 && w != "run" && w != "post" && w != "code" && w != "job" && w != "action" {
 			if strings.Contains(cleanG, w) {
-				score += 10
+				score += len(w) * 10
 			}
 		}
 	}
 	return score
+}
+
+func stripAll(s string) string {
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.ReplaceAll(s, "-", "")
+	s = strings.ReplaceAll(s, "_", "")
+	s = strings.ReplaceAll(s, "/", "")
+	s = strings.ReplaceAll(s, "@", "")
+	s = strings.ReplaceAll(s, ":", "")
+	s = strings.ReplaceAll(s, ".", "")
+	return s
 }
 
 func cleanLogName(name string) string {

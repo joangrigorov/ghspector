@@ -1713,6 +1713,45 @@ func TestTUI_LogsSegmentRealWorldOverlap(t *testing.T) {
 	}
 }
 
+func TestTUI_LogsSegmentTestsOverlap(t *testing.T) {
+	steps := []gh.JobStep{
+		{Name: "Run govulncheck", Number: 5, Status: "completed", Conclusion: "success"},
+		{Name: "Run Tests", Number: 6, Status: "completed", Conclusion: "success"},
+	}
+
+	rawLogs := `2026-07-14T12:40:12.7528311Z ##[endgroup]
+2026-07-14T12:40:12.7919385Z No vulnerabilities found.
+2026-07-14T12:40:12.8043267Z ##[group]Run go test -v -race ./...
+2026-07-14T12:40:12.8043612Z go test -v -race ./...
+2026-07-14T12:40:12.8077252Z shell: /usr/bin/bash -e {0}
+2026-07-14T12:40:12.8077528Z env:
+2026-07-14T12:40:12.8077732Z   GOTOOLCHAIN: local
+2026-07-14T12:40:12.8077956Z ##[endgroup]
+2026-07-14T12:40:14.5238213Z ?       ghspector/cmd/ghspector    [no test files]
+2026-07-14T12:40:15.5375145Z === RUN   TestResolveTokenWithCliGetter
+`
+
+	segments := segmentLogs(rawLogs, steps)
+
+	// Step 0 ("Run govulncheck") should contain the "No vulnerabilities found." line
+	govulncheckLogs := segments[0]
+	if !strings.Contains(govulncheckLogs, "No vulnerabilities found.") {
+		t.Error("expected Run govulncheck logs to contain 'No vulnerabilities found.' line")
+	}
+	if strings.Contains(govulncheckLogs, "go test -v") {
+		t.Error("expected Run govulncheck logs NOT to contain go test command logs")
+	}
+
+	// Step 1 ("Run Tests") should contain the go test command and outputs
+	testsLogs := segments[1]
+	if !strings.Contains(testsLogs, "go test -v") || !strings.Contains(testsLogs, "TestResolveTokenWithCliGetter") {
+		t.Error("expected Run Tests logs to contain command logs and run outputs")
+	}
+	if strings.Contains(testsLogs, "No vulnerabilities found.") {
+		t.Error("expected Run Tests logs NOT to contain 'No vulnerabilities found.'")
+	}
+}
+
 
 
 
