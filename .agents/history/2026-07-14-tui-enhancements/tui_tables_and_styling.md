@@ -79,6 +79,10 @@ This plan outlines the enhancements to `ghspector` TUI views to maximize screen 
 - Update `renderMainView`, `renderPullsView`, and `renderIssuesView` to display the active `Repo: <name>` filter.
 - **`renderMarkdown`**: Detect terminal theme background using `lipgloss.HasDarkBackground()` and apply either `"light"` or `"dark"` glamour styles dynamically to match the user's system theme background.
 - **`renderIssueRightSidebar`**: Renamed the sidebar title header from `"METADATA"` to `"DETAILS"` to remain consistent with the PR details sidebar header styling.
+- **`renderLogsView`**: Restructured the layout into a split-pane view with `renderStepsSidebar` rendering the vertical, scrollable Steps list on the left, and the logs viewport displaying logs of the currently selected step on the right.
+- **Client-side Log Segmentation**: Added a parser `segmentLogs` that parses the raw downloaded job log file into step boundaries (using `##[group]` and `##[section]` markers).
+- **Failed Step Defaulting**: Automatically defaults the selected step index (`selectedStepIdx`) to the first failed step in the job, so the user instantly sees what failed.
+- **Unified Key Controls**: Configured `j`/`k` (and up/down arrows) to navigate through Steps, and `u`/`d` (and pageup/pagedown) to scroll the logs viewport.
 
 #### Update Logic & Background Fetching
 ##### [MODIFY] [internal/tui/update.go](internal/tui/update.go)
