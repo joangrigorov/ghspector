@@ -293,8 +293,8 @@ func (m Model) renderHeader() string {
 	headerContent += rightPadding
 
 	headerLine := m.theme.Header.Copy().Width(width).Render(headerContent)
-	topPadding := m.theme.Header.Render(strings.Repeat(" ", width))
-	bottomPadding := m.theme.Header.Render(strings.Repeat(" ", width))
+	topPadding := m.theme.Header.Copy().Width(width).Render(" ")
+	bottomPadding := m.theme.Header.Copy().Width(width).Render(" ")
 	hr := m.theme.Border.Render(strings.Repeat("─", width))
 
 	return topPadding + "\n" + headerLine + "\n" + bottomPadding + "\n" + hr
