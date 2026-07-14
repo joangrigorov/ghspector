@@ -2419,7 +2419,7 @@ func (m Model) renderIssueRightSidebar(width, height int) string {
 	styleVal := m.theme.LogoText
 	styleLabel := m.theme.Subtitle
 
-	sb.WriteString(m.theme.TableHeader.Render(fmt.Sprintf(" %-*s", width-2, "METADATA")) + "\n")
+	sb.WriteString(m.theme.TableHeader.Render(fmt.Sprintf(" %-*s", width-2, "DETAILS")) + "\n")
 
 	// State
 	stateText := "Open"
