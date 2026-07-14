@@ -221,7 +221,7 @@ func (m Model) renderHeader() string {
 	if m.isLoading {
 		spinners := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		spinnerChar := spinners[m.tickCount%len(spinners)]
-		spinnerStyle := m.theme.StatusWaiting.Copy().Background(headerBg)
+		spinnerStyle := m.theme.StatusWaiting.Background(headerBg)
 		loadingInd = bgStyle.Render(" ") + spinnerStyle.Render(spinnerChar)
 	}
 
@@ -232,11 +232,11 @@ func (m Model) renderHeader() string {
 	if rlStr != "" {
 		var rlStyle lipgloss.Style
 		if rl.Remaining < 200 {
-			rlStyle = m.theme.StatusFailed.Copy().Background(headerBg)
+			rlStyle = m.theme.StatusFailed.Background(headerBg)
 		} else if rl.Remaining < 1000 {
-			rlStyle = m.theme.StatusQueued.Copy().Background(headerBg)
+			rlStyle = m.theme.StatusQueued.Background(headerBg)
 		} else {
-			rlStyle = m.theme.StatusSuccessful.Copy().Background(headerBg)
+			rlStyle = m.theme.StatusSuccessful.Background(headerBg)
 		}
 		rlRendered = rlStyle.Render(rlStr)
 	}
@@ -292,7 +292,7 @@ func (m Model) renderHeader() string {
 	}
 	headerContent += rightPadding
 
-	headerLine := m.theme.Header.Copy().Width(width).Render(headerContent)
+	headerLine := m.theme.Header.Width(width).Render(headerContent)
 	topPadding := m.theme.Header.Render(strings.Repeat(" ", width))
 	bottomPadding := m.theme.Header.Render(strings.Repeat(" ", width))
 	hr := m.theme.Border.Render(strings.Repeat("─", width))
@@ -408,7 +408,7 @@ func (m Model) renderFooter(keys []string) string {
 	}
 
 	// Render using bottom bar style with explicit content width
-	return "\n" + m.theme.BottomBar.Copy().Width(contentWidth).Render(content)
+	return "\n" + m.theme.BottomBar.Width(contentWidth).Render(content)
 }
 
 // renderMainView renders the Workflow Runs list with a scrolling window.
