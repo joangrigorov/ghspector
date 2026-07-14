@@ -3155,43 +3155,72 @@ func (m *Model) updateLogsViewportContent() {
 	}
 }
 
+func parseLogTimestamp(line string) (time.Time, bool) {
+	idx := strings.Index(line, " ")
+	if idx == -1 {
+		return time.Time{}, false
+	}
+	tsStr := line[:idx]
+	if len(tsStr) < 19 {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, tsStr)
+	if err == nil {
+		return t, true
+	}
+	t, err = time.Parse(time.RFC3339Nano, tsStr)
+	if err == nil {
+		return t, true
+	}
+	return time.Time{}, false
+}
+
 func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
 	segments := make(map[int]string)
 	lines := strings.Split(rawLogs, "\n")
-	currentStepIdx := 0 // Default to first step
-	
+
+	type activeStep struct {
+		index int
+		start time.Time
+	}
+	var activeSteps []activeStep
+	for i, s := range steps {
+		if !s.StartedAt.IsZero() {
+			activeSteps = append(activeSteps, activeStep{index: i, start: s.StartedAt})
+		}
+	}
+
+	// Sort activeSteps by start time to guarantee order
+	sort.Slice(activeSteps, func(i, j int) bool {
+		return activeSteps[i].start.Before(activeSteps[j].start)
+	})
+
+	currentStepIdx := 0
+	if len(activeSteps) > 0 {
+		currentStepIdx = activeSteps[0].index
+	}
+
 	for _, line := range lines {
-		cleanLine := line
-		if idx := strings.Index(line, "Z "); idx != -1 {
-			cleanLine = line[idx+2:]
+		if line == "" {
+			continue
 		}
-		
-		foundNext := false
-		for i, step := range steps {
-			if strings.Contains(cleanLine, "##[group]") && strings.Contains(cleanLine, step.Name) {
-				currentStepIdx = i
-				foundNext = true
-				break
-			}
-			if strings.Contains(cleanLine, "##[section]") && strings.Contains(cleanLine, step.Name) {
-				currentStepIdx = i
-				foundNext = true
-				break
-			}
-		}
-		
-		if !foundNext {
-			for i, step := range steps {
-				if strings.Contains(cleanLine, "Starting: "+step.Name) {
-					currentStepIdx = i
-					foundNext = true
+		t, ok := parseLogTimestamp(line)
+		if ok && len(activeSteps) > 0 {
+			// The active step at time t is the latest step whose start time is <= t
+			matchedIdx := activeSteps[0].index
+			for _, as := range activeSteps {
+				if !t.Before(as.start) {
+					matchedIdx = as.index
+				} else {
 					break
 				}
 			}
+			currentStepIdx = matchedIdx
 		}
 
 		segments[currentStepIdx] = segments[currentStepIdx] + line + "\n"
 	}
+
 	return segments
 }
 

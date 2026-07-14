@@ -1562,10 +1562,14 @@ func TestTUI_LogsSplitPaneAndSegmentation(t *testing.T) {
 	m.width = 80
 	m.height = 20
 
+	t1 := time.Date(2026, 7, 14, 14, 32, 0, 0, time.UTC)
+	t2 := time.Date(2026, 7, 14, 14, 32, 1, 0, time.UTC)
+	t3 := time.Date(2026, 7, 14, 14, 32, 2, 0, time.UTC)
+
 	steps := []gh.JobStep{
-		{Name: "Set up job", Number: 1, Status: "completed", Conclusion: "success"},
-		{Name: "Run actions/checkout@v4", Number: 2, Status: "completed", Conclusion: "success"},
-		{Name: "Run unit tests", Number: 3, Status: "completed", Conclusion: "failure"},
+		{Name: "Set up job", Number: 1, Status: "completed", Conclusion: "success", StartedAt: t1},
+		{Name: "Run actions/checkout@v4", Number: 2, Status: "completed", Conclusion: "success", StartedAt: t2},
+		{Name: "Run unit tests", Number: 3, Status: "completed", Conclusion: "failure", StartedAt: t3},
 	}
 	m.jobs = []gh.WorkflowJob{
 		{
@@ -1621,6 +1625,44 @@ Error: Test failed!
 	viewStr := m.View()
 	if !strings.Contains(viewStr, "STEPS") || !strings.Contains(viewStr, "Run unit tests") {
 		t.Error("expected logs view to render steps list sidebar")
+	}
+}
+
+func TestTUI_LogsSegmentRealWorldData(t *testing.T) {
+	// Timestamps from user report
+	tSetup := time.Date(2026, 7, 14, 12, 29, 2, 967000000, time.UTC)
+	tGovulncheck := time.Date(2026, 7, 14, 12, 29, 2, 979000000, time.UTC)
+
+	steps := []gh.JobStep{
+		{Name: "Set up job", Number: 1, Status: "completed", Conclusion: "success", StartedAt: tSetup},
+		{Name: "Run govulncheck", Number: 2, Status: "completed", Conclusion: "success", StartedAt: tGovulncheck},
+	}
+
+	rawLogs := `2026-07-14T12:29:02.9670914Z GOROOT='/opt/hostedtoolcache/go/1.26.5/x64'
+2026-07-14T12:29:02.9671454Z GOSUMDB='sum.golang.org'
+2026-07-14T12:29:02.9676988Z ##[endgroup]
+2026-07-14T12:29:02.9794750Z ##[group]Run go install golang.org/x/vuln/cmd/govulncheck@latest
+2026-07-14T12:29:02.9795335Z go install golang.org/x/vuln/cmd/govulncheck@latest
+`
+
+	segments := segmentLogs(rawLogs, steps)
+
+	// Step 0 ("Set up job") logs should contain GOROOT and GOSUMDB
+	setupLogs := segments[0]
+	if !strings.Contains(setupLogs, "GOROOT") || !strings.Contains(setupLogs, "GOSUMDB") {
+		t.Error("expected Set up job logs to contain setup step variables")
+	}
+	if strings.Contains(setupLogs, "go install") {
+		t.Error("expected Set up job logs NOT to leak govulncheck step details")
+	}
+
+	// Step 1 ("Run govulncheck") logs should contain the go install details
+	govulncheckLogs := segments[1]
+	if !strings.Contains(govulncheckLogs, "go install") {
+		t.Error("expected Run govulncheck logs to contain command details")
+	}
+	if strings.Contains(govulncheckLogs, "GOROOT") {
+		t.Error("expected Run govulncheck logs NOT to contain setup step variables")
 	}
 }
 
