@@ -3293,6 +3293,18 @@ func calculateMatchScore(groupTitle, stepName string) int {
 	g := strings.ToLower(groupTitle)
 	s := strings.ToLower(stepName)
 
+	gHasPost := strings.Contains(g, "post")
+	sHasPost := strings.Contains(s, "post")
+	if gHasPost != sHasPost {
+		return 0
+	}
+
+	gHasPre := strings.Contains(g, "pre")
+	sHasPre := strings.Contains(s, "pre")
+	if gHasPre != sHasPre {
+		return 0
+	}
+
 	if strings.Contains(g, s) || strings.Contains(s, g) {
 		return 1000
 	}

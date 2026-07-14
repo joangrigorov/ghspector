@@ -1803,6 +1803,15 @@ func TestTUI_LogsSegmentRealWorldComplete(t *testing.T) {
 	if !strings.Contains(testsLogs, "ghspector/internal/tui") {
 		t.Error("expected Run Tests logs to contain test suite execution output")
 	}
+
+	// Step 6 ("Run golangci-lint") should have logs and contain the linter findings (staticcheck SA1019 warnings)
+	linterLogs := segments[6]
+	if len(linterLogs) == 0 {
+		t.Error("expected Run golangci-lint logs to not be empty")
+	}
+	if !strings.Contains(linterLogs, "SA1019") || !strings.Contains(linterLogs, "LineUp is deprecated") {
+		t.Error("expected Run golangci-lint logs to contain linter deprecation issues")
+	}
 }
 
 
