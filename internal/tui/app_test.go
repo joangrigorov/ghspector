@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -1749,6 +1750,58 @@ func TestTUI_LogsSegmentTestsOverlap(t *testing.T) {
 	}
 	if strings.Contains(testsLogs, "No vulnerabilities found.") {
 		t.Error("expected Run Tests logs NOT to contain 'No vulnerabilities found.'")
+	}
+}
+
+func TestTUI_LogsSegmentRealWorldComplete(t *testing.T) {
+	// Read the full real-world log file
+	logData, err := os.ReadFile("testdata/raw_logs.txt")
+	if err != nil {
+		t.Fatalf("failed to read test log file: %v", err)
+	}
+
+	parseTime := func(s string) time.Time {
+		tVal, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatalf("failed to parse time %q: %v", s, err)
+		}
+		return tVal
+	}
+
+	steps := []gh.JobStep{
+		{Name: "Set up job", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:26Z"), CompletedAt: parseTime("2026-07-14T12:36:27Z")},
+		{Name: "Pull ghcr.io/reviewdog/action-actionlint:v1.72.0", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:27Z"), CompletedAt: parseTime("2026-07-14T12:36:31Z")},
+		{Name: "Checkout code", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:31Z"), CompletedAt: parseTime("2026-07-14T12:36:31Z")},
+		{Name: "Set up Go", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:31Z"), CompletedAt: parseTime("2026-07-14T12:36:41Z")},
+		{Name: "Run govulncheck", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:41Z"), CompletedAt: parseTime("2026-07-14T12:36:44Z")},
+		{Name: "Run Tests", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:44Z"), CompletedAt: parseTime("2026-07-14T12:36:49Z")},
+		{Name: "Run golangci-lint", Conclusion: "failure", StartedAt: parseTime("2026-07-14T12:36:49Z"), CompletedAt: parseTime("2026-07-14T12:36:52Z")},
+		{Name: "Run actionlint", Conclusion: "skipped", StartedAt: parseTime("2026-07-14T12:36:52Z"), CompletedAt: parseTime("2026-07-14T12:36:52Z")},
+		{Name: "Post Run golangci-lint", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:52Z"), CompletedAt: parseTime("2026-07-14T12:36:53Z")},
+		{Name: "Post Run govulncheck", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:53Z"), CompletedAt: parseTime("2026-07-14T12:36:53Z")},
+		{Name: "Post Set up Go", Conclusion: "skipped", StartedAt: parseTime("2026-07-14T12:36:53Z"), CompletedAt: parseTime("2026-07-14T12:36:53Z")},
+		{Name: "Post Checkout code", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:53Z"), CompletedAt: parseTime("2026-07-14T12:36:53Z")},
+		{Name: "Complete job", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:53Z"), CompletedAt: parseTime("2026-07-14T12:36:53Z")},
+	}
+
+	segments := segmentLogs(string(logData), steps)
+
+	// Step 4 ("Run govulncheck") should have logs and contain "No vulnerabilities found."
+	govulncheckLogs := segments[4]
+	if len(govulncheckLogs) == 0 {
+		t.Error("expected Run govulncheck logs to not be empty")
+	}
+	if !strings.Contains(govulncheckLogs, "No vulnerabilities found.") {
+		t.Error("expected Run govulncheck logs to contain 'No vulnerabilities found.'")
+	}
+
+	// Step 5 ("Run Tests") should have logs and contain "ghspector/internal/tui"
+	testsLogs := segments[5]
+	if len(testsLogs) == 0 {
+		t.Error("expected Run Tests logs to not be empty")
+	}
+	if !strings.Contains(testsLogs, "ghspector/internal/tui") {
+		t.Error("expected Run Tests logs to contain test suite execution output")
 	}
 }
 
