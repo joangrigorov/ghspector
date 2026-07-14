@@ -251,12 +251,12 @@ func (m Model) renderHeader() string {
 	ctxWidth := lipgloss.Width(contextInfo)
 	rlWidth := lipgloss.Width(rlRendered)
 
-	neededWidth := titleWidth + ctxWidth + rlWidth + 6
+	neededWidth := titleWidth + ctxWidth + rlWidth + 6 + 4
 	if width < neededWidth {
 		// Hide rate limit first
 		rlRendered = ""
 		rlWidth = 0
-		neededWidth = titleWidth + ctxWidth + 6
+		neededWidth = titleWidth + ctxWidth + 6 + 4
 		if width < neededWidth {
 			// Hide context info too
 			contextInfo = ""
@@ -264,11 +264,14 @@ func (m Model) renderHeader() string {
 		}
 	}
 
-	leftWidth := titleWidth
+	leftPadding := bgStyle.Render("  ")
+	rightPadding := bgStyle.Render("  ")
+
+	leftWidth := titleWidth + 2
 	if contextInfo != "" {
 		leftWidth += 2 + ctxWidth // title + "  " + contextInfo
 	}
-	rightWidth := rlWidth
+	rightWidth := rlWidth + 2
 	if rlRendered != "" {
 		rightWidth += 1 // rlRendered + " "
 	}
@@ -279,7 +282,7 @@ func (m Model) renderHeader() string {
 	}
 	spaces := strings.Repeat(" ", rightSpace)
 
-	headerContent := title
+	headerContent := leftPadding + title
 	if contextInfo != "" {
 		headerContent += bgStyle.Render("  ") + contextInfo
 	}
@@ -287,6 +290,7 @@ func (m Model) renderHeader() string {
 	if rlRendered != "" {
 		headerContent += rlRendered + bgStyle.Render(" ")
 	}
+	headerContent += rightPadding
 
 	headerLine := m.theme.Header.Copy().Width(width).Render(headerContent)
 	topPadding := m.theme.Header.Copy().Width(width).Render("")
