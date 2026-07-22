@@ -3184,16 +3184,24 @@ func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
 		name        string
 		startedAt   time.Time
 		completedAt time.Time
+		isPost      bool
 	}
 	var activeSteps []activeStep
+	lastMainIdx := -1
 	for i, s := range steps {
 		if s.Conclusion != "skipped" {
-			activeSteps = append(activeSteps, activeStep{
+			isPost := strings.HasPrefix(strings.ToLower(s.Name), "post ") || strings.EqualFold(s.Name, "complete job")
+			as := activeStep{
 				index:       i,
 				name:        s.Name,
 				startedAt:   s.StartedAt,
 				completedAt: s.CompletedAt,
-			})
+				isPost:      isPost,
+			}
+			activeSteps = append(activeSteps, as)
+			if !isPost {
+				lastMainIdx = len(activeSteps) - 1
+			}
 		}
 	}
 
@@ -3214,11 +3222,15 @@ func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
 			cleanLine = line[idx+2:]
 		}
 
-		// 1. Check if currentStepIdx is still valid according to time t
+		// 1. Timestamp-based progression for post steps or when post job cleanup begins
 		if hasTime && len(activeSteps) > 0 && currentActiveIdx < len(activeSteps)-1 {
 			currStep := activeSteps[currentActiveIdx]
-			if !currStep.completedAt.IsZero() {
-				if t.After(currStep.completedAt.Add(1000*time.Millisecond)) || strings.Contains(cleanLine, "Post job cleanup.") {
+			buffer := 1000 * time.Millisecond
+			if currStep.isPost {
+				buffer = 200 * time.Millisecond
+			}
+			if currStep.isPost || (lastMainIdx != -1 && currentActiveIdx >= lastMainIdx) || strings.Contains(cleanLine, "Post job cleanup.") {
+				if !currStep.completedAt.IsZero() && t.After(currStep.completedAt.Add(buffer)) {
 					currentActiveIdx++
 					currentStepIdx = activeSteps[currentActiveIdx].index
 				}
@@ -3329,14 +3341,33 @@ func calculateMatchScore(groupTitle, stepName string) int {
 	cleanG := cleanLogName(g)
 	cleanS := cleanLogName(s)
 
+	wordsG := strings.Fields(cleanG)
 	wordsS := strings.Fields(cleanS)
+
+	stopWords := map[string]bool{
+		"run": true, "post": true, "code": true, "job": true, "action": true,
+		"in": true, "to": true, "of": true, "for": true, "on": true, "at": true,
+		"by": true, "with": true, "the": true, "a": true, "an": true, "and": true,
+		"or": true, "is": true, "it": true, "as": true, "be": true,
+	}
+
 	score := 0
 	for _, w := range wordsS {
-		if len(w) >= 2 && w != "run" && w != "post" && w != "code" && w != "job" && w != "action" {
-			if strings.Contains(cleanG, w) {
-				score += len(w) * 10
-			} else if strings.HasSuffix(w, "s") && len(w) > 3 && strings.Contains(cleanG, w[:len(w)-1]) {
-				score += (len(w) - 1) * 10
+		if len(w) >= 2 && !stopWords[w] {
+			matched := false
+			for _, gw := range wordsG {
+				if gw == w {
+					matched = true
+					score += len(w) * 10
+					break
+				} else if strings.HasSuffix(w, "s") && len(w) > 3 && gw == w[:len(w)-1] {
+					matched = true
+					score += (len(w) - 1) * 10
+					break
+				}
+			}
+			if !matched && strings.Contains(cleanG, w) && len(w) >= 4 {
+				score += len(w) * 5
 			}
 		}
 	}

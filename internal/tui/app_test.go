@@ -1825,6 +1825,64 @@ func TestTUI_LogsSegmentRealWorldComplete(t *testing.T) {
 	}
 }
 
+func TestTUI_LogsSegmentSyntheticFastSteps(t *testing.T) {
+	parseTime := func(s string) time.Time {
+		tVal, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatalf("failed to parse time %q: %v", s, err)
+		}
+		return tVal
+	}
+
+	steps := []gh.JobStep{
+		{Name: "Set up job", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:30:47Z"), CompletedAt: parseTime("2026-07-22T12:30:48Z")},
+		{Name: "Checkout Code", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:30:48Z"), CompletedAt: parseTime("2026-07-22T12:30:50Z")},
+		{Name: "Set up Go", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:30:50Z"), CompletedAt: parseTime("2026-07-22T12:30:50Z")},
+		{Name: "Log in to GHCR", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:30:50Z"), CompletedAt: parseTime("2026-07-22T12:30:50Z")},
+		{Name: "Install Development Tools", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:30:50Z"), CompletedAt: parseTime("2026-07-22T12:31:04Z")},
+		{Name: "Post Set up Go", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:32:39Z"), CompletedAt: parseTime("2026-07-22T12:32:39Z")},
+		{Name: "Complete job", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:32:40Z"), CompletedAt: parseTime("2026-07-22T12:32:40Z")},
+	}
+
+	syntheticLogs := `2026-07-22T12:30:47.0000000Z ##[group]Operating System
+2026-07-22T12:30:47.5000000Z Linux 6.8.0
+2026-07-22T12:30:48.1000000Z ##[group]Run actions/checkout@v4
+2026-07-22T12:30:49.0000000Z Syncing repository
+2026-07-22T12:30:50.1000000Z ##[group]Run actions/setup-go@v5
+2026-07-22T12:30:50.2000000Z Setup go version spec 1.26.5
+2026-07-22T12:30:50.3000000Z Found in cache
+2026-07-22T12:30:50.4000000Z Successfully set up Go version 1.26.5
+2026-07-22T12:30:50.5000000Z go version go1.26.5 linux/amd64
+2026-07-22T12:30:51.1000000Z go env
+2026-07-22T12:30:51.2000000Z   GOOS='linux'
+2026-07-22T12:30:51.3000000Z   GOARCH='amd64'
+2026-07-22T12:30:51.4000000Z   GOROOT='/opt/tool/go'
+2026-07-22T12:30:52.1000000Z ##[group]Install Development Tools
+2026-07-22T12:30:53.0000000Z Installing tools...
+2026-07-22T12:32:39.1000000Z Post job cleanup
+2026-07-22T12:32:40.1000000Z Cleaning up orphan processes`
+
+	segments := segmentLogs(syntheticLogs, steps)
+
+	// Step 2 ("Set up Go") should have logs and contain GOROOT output
+	goLogs := segments[2]
+	if len(goLogs) == 0 {
+		t.Error("expected Set up Go logs to not be empty")
+	}
+	if !strings.Contains(goLogs, "GOROOT='/opt/tool/go'") {
+		t.Error("expected Set up Go logs to contain go env GOROOT output")
+	}
+
+	// Step 6 ("Complete job") should contain orphan process cleanup
+	completeLogs := segments[6]
+	if len(completeLogs) == 0 {
+		t.Error("expected Complete job logs to not be empty")
+	}
+	if !strings.Contains(completeLogs, "Cleaning up orphan processes") {
+		t.Error("expected Complete job logs to contain orphan cleanup output")
+	}
+}
+
 
 
 
