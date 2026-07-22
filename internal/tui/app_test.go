@@ -1786,31 +1786,42 @@ func TestTUI_LogsSegmentRealWorldComplete(t *testing.T) {
 
 	segments := segmentLogs(string(logData), steps)
 
+	// Assert that all executed steps have non-empty logs and skipped steps are empty
+	for i, step := range steps {
+		logLen := len(segments[i])
+		if step.Conclusion == "skipped" {
+			if logLen > 0 {
+				t.Errorf("expected skipped step %d (%q) to have 0 log length, got %d", i, step.Name, logLen)
+			}
+		} else if i != 8 && i != 9 && i != 11 { // non-skipped main steps and final job completion step
+			if logLen == 0 {
+				t.Errorf("expected executed step %d (%q) to have non-empty logs", i, step.Name)
+			}
+		}
+	}
+
 	// Step 4 ("Run govulncheck") should have logs and contain "No vulnerabilities found."
 	govulncheckLogs := segments[4]
-	if len(govulncheckLogs) == 0 {
-		t.Error("expected Run govulncheck logs to not be empty")
-	}
 	if !strings.Contains(govulncheckLogs, "No vulnerabilities found.") {
 		t.Error("expected Run govulncheck logs to contain 'No vulnerabilities found.'")
 	}
 
 	// Step 5 ("Run Tests") should have logs and contain "ghspector/internal/tui"
 	testsLogs := segments[5]
-	if len(testsLogs) == 0 {
-		t.Error("expected Run Tests logs to not be empty")
-	}
 	if !strings.Contains(testsLogs, "ghspector/internal/tui") {
 		t.Error("expected Run Tests logs to contain test suite execution output")
 	}
 
-	// Step 6 ("Run golangci-lint") should have logs and contain the linter findings (staticcheck SA1019 warnings)
+	// Step 6 ("Run golangci-lint") should have logs and contain the linter findings
 	linterLogs := segments[6]
-	if len(linterLogs) == 0 {
-		t.Error("expected Run golangci-lint logs to not be empty")
-	}
 	if !strings.Contains(linterLogs, "SA1019") || !strings.Contains(linterLogs, "LineUp is deprecated") {
 		t.Error("expected Run golangci-lint logs to contain linter deprecation issues")
+	}
+
+	// Step 12 ("Complete job") should have logs containing post cleanup lines
+	completeJobLogs := segments[12]
+	if !strings.Contains(completeJobLogs, "Cleaning up orphan processes") {
+		t.Error("expected Complete job logs to contain post cleanup orphan processes message")
 	}
 }
 
