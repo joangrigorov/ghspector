@@ -235,7 +235,6 @@ func (m Model) renderHeader() string {
 	headerBg := m.theme.HeaderBg
 	titleStyle := m.theme.HeaderTitle
 	contextStyle := m.theme.HeaderSubtitle
-
 	bgStyle := m.theme.Header
 
 	loadingInd := ""
@@ -246,7 +245,7 @@ func (m Model) renderHeader() string {
 		loadingInd = bgStyle.Render(" ") + spinnerStyle.Render(spinnerChar)
 	}
 
-	title := titleStyle.Render("ghspector | "+pageName) + loadingInd
+	title := titleStyle.Render("  ghspector | "+pageName) + loadingInd
 	contextInfo := contextStyle.Render("Account/Org: " + activeTarget)
 
 	var rlRendered string
@@ -259,66 +258,30 @@ func (m Model) renderHeader() string {
 		} else {
 			rlStyle = m.theme.StatusSuccessful.Background(headerBg)
 		}
-		rlRendered = rlStyle.Render(rlStr)
+		rlRendered = rlStyle.Render(rlStr) + bgStyle.Render("  ")
 	}
 
-	// Clamp/protect layout dimensions
 	width := m.width
 	if width < 40 {
 		width = 40
 	}
 
-	titleWidth := lipgloss.Width(title)
-	ctxWidth := lipgloss.Width(contextInfo)
-	rlWidth := lipgloss.Width(rlRendered)
+	leftStr := title + bgStyle.Render("   ") + contextInfo
+	leftLen := lipgloss.Width(leftStr)
 
-	neededWidth := titleWidth + ctxWidth + rlWidth + 6 + 4
-	if width < neededWidth {
-		// Hide rate limit first
-		rlRendered = ""
-		rlWidth = 0
-		neededWidth = titleWidth + ctxWidth + 6 + 4
-		if width < neededWidth {
-			// Hide context info too
-			contextInfo = ""
-			ctxWidth = 0
-		}
-	}
+	leftStyle := lipgloss.NewStyle().Background(headerBg).Width(leftLen)
+	rightStyle := lipgloss.NewStyle().Background(headerBg).Width(width - leftLen).Align(lipgloss.Right)
 
-	leftPadding := bgStyle.Render("  ")
-	rightPadding := bgStyle.Render("  ")
+	headerLine := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		leftStyle.Render(leftStr),
+		rightStyle.Render(rlRendered),
+	)
 
-	leftWidth := titleWidth + 2
-	if contextInfo != "" {
-		leftWidth += 2 + ctxWidth // title + "  " + contextInfo
-	}
-	rightWidth := rlWidth + 2
-	if rlRendered != "" {
-		rightWidth += 1 // rlRendered + " "
-	}
-
-	rightSpace := width - leftWidth - rightWidth
-	if rightSpace < 1 {
-		rightSpace = 1
-	}
-	spaces := strings.Repeat(" ", rightSpace)
-
-	headerContent := leftPadding + title
-	if contextInfo != "" {
-		headerContent += bgStyle.Render("  ") + contextInfo
-	}
-	headerContent += bgStyle.Render(spaces)
-	if rlRendered != "" {
-		headerContent += rlRendered + bgStyle.Render(" ")
-	}
-	headerContent += rightPadding
-
-	headerLine := m.theme.Header.Width(width).Render(headerContent)
-	topPadding := m.theme.Header.Width(width).Render(strings.Repeat(" ", width))
-	bottomPadding := m.theme.Header.Width(width).Render(strings.Repeat(" ", width))
+	blankLine := bgStyle.Render(strings.Repeat(" ", width))
 	hr := m.theme.Border.Render(strings.Repeat("─", width))
 
-	return topPadding + "\n" + headerLine + "\n" + bottomPadding + "\n" + hr
+	return blankLine + "\n" + headerLine + "\n" + blankLine + "\n" + hr
 }
 
 // renderFooter renders the standard bottom bar.
