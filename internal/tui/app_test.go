@@ -2044,6 +2044,50 @@ func TestRenderFooterDeterministicNoWrap(t *testing.T) {
 	}
 }
 
+func TestHeaderOutputsDeterministic(t *testing.T) {
+	client := gh.NewClient("test-token", "https://api.github.com")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.width = 120
+	m.height = 40
+
+	m.targets = []Target{{Name: "joangrigorov/ghspector"}}
+	m.selectedTargetIdx = 0
+
+	states := []struct {
+		state     viewState
+		activeTab mainTab
+		titlePart string
+	}{
+		{viewMain, tabWorkflows, "ghspector | Workflows"},
+		{viewMain, tabPRs, "ghspector | Pull Requests"},
+		{viewMain, tabIssues, "ghspector | Issues"},
+		{viewJobs, tabWorkflows, "ghspector | Workflow Jobs"},
+		{viewPRDetails, tabPRs, "ghspector | PR Details"},
+		{viewIssueDetails, tabIssues, "ghspector | Issue Details"},
+	}
+
+	for _, tc := range states {
+		m.state = tc.state
+		m.activeTab = tc.activeTab
+		header := m.renderHeader()
+		lines := strings.Split(header, "\n")
+
+		// Expect exactly 4 lines: blank, header text, blank, border
+		if len(lines) != 4 {
+			t.Errorf("state %v: expected exactly 4 lines in header, got %d:\n%s", tc.state, len(lines), header)
+		}
+
+		if !strings.Contains(lines[1], tc.titlePart) {
+			t.Errorf("state %v: expected line 1 to contain title %q, got: %q", tc.state, tc.titlePart, lines[1])
+		}
+
+		if !strings.Contains(lines[1], "Account/Org: joangrigorov/ghspector") {
+			t.Errorf("state %v: expected line 1 to contain org context, got: %q", tc.state, lines[1])
+		}
+	}
+}
+
 
 
 
