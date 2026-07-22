@@ -1081,6 +1081,9 @@ func (m Model) renderPullsView() string {
 				prNumStr := fmt.Sprintf("#%d", pr.Number)
 				
 				prTitle := pr.Title
+				if pr.Draft {
+					prTitle = "[Draft] " + pr.Title
+				}
 				if len(prTitle) > prTitleWidth {
 					prTitle = prTitle[:prTitleWidth-3] + "..."
 				}
@@ -1568,6 +1571,18 @@ func (m Model) renderPRRightSidebar(width, height int) string {
 			}
 		}
 
+		prStateStr := "OPEN"
+		if pr.Draft {
+			prStateStr = "DRAFT"
+		} else if pr.State == "closed" {
+			if pr.MergedAt != nil {
+				prStateStr = "MERGED"
+			} else {
+				prStateStr = "CLOSED"
+			}
+		}
+
+		formatRow("State", prStateStr)
 		formatRow("Author", "@"+authorLogin)
 		formatRow("Assignees", assigneesList)
 		formatRow("Reviewers", reviewersList)

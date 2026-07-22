@@ -1899,6 +1899,46 @@ func TestCleanLogForDisplay(t *testing.T) {
 	}
 }
 
+func TestPRDraftIndicators(t *testing.T) {
+	client := gh.NewClient("test-token", "https://api.github.com")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.width = 120
+	m.height = 30
+
+	draftPR := gh.PullRequest{
+		Number: 42,
+		Title:  "Draft Feature Implementation",
+		Draft:  true,
+		State:  "open",
+		User:   &gh.User{Login: "testuser"},
+		Repository: gh.Repository{
+			Name:     "myrepo",
+			FullName: "myorg/myrepo",
+		},
+	}
+
+	m.pulls = []gh.PullRequest{draftPR}
+	m.selectedPull = &draftPR
+
+	// 1. Verify PR List view output
+	listOutput := m.renderPullsView()
+	if !strings.Contains(listOutput, "[Draft]") {
+		t.Errorf("expected PR list view to contain '[Draft]', got:\n%s", listOutput)
+	}
+
+	// 2. Verify PR Details view output
+	detailsOutput := m.renderPRDetailsView()
+	if !strings.Contains(detailsOutput, "[DRAFT]") {
+		t.Errorf("expected PR details view header to contain '[DRAFT]', got:\n%s", detailsOutput)
+	}
+
+	sidebarOutput := m.renderPRRightSidebar(40, 20)
+	if !strings.Contains(sidebarOutput, "DRAFT") {
+		t.Errorf("expected PR sidebar to contain 'State: DRAFT', got:\n%s", sidebarOutput)
+	}
+}
+
 
 
 
