@@ -174,8 +174,17 @@ func (m Model) getStatusIndicator(status, conclusion string) string {
 // renderHeader renders the standard top bar.
 func (m Model) renderHeader() string {
 	activeTarget := "None"
-	if len(m.targets) > 0 && m.selectedTargetIdx < len(m.targets) {
+	if len(m.targets) > 0 && m.selectedTargetIdx >= 0 && m.selectedTargetIdx < len(m.targets) {
 		activeTarget = m.targets[m.selectedTargetIdx].Name
+	}
+	if activeTarget == "None" || activeTarget == "" {
+		if m.selectedPull != nil && m.selectedPull.Repository.FullName != "" {
+			activeTarget = m.selectedPull.Repository.FullName
+		} else if run := m.getRun(); run.Repository.FullName != "" {
+			activeTarget = run.Repository.FullName
+		} else if m.selectedIssue != nil && m.selectedIssue.Repository.FullName != "" {
+			activeTarget = m.selectedIssue.Repository.FullName
+		}
 	}
 	if m.filterActor != "" {
 		activeTarget += fmt.Sprintf(" (Filter: @%s)", m.filterActor)
@@ -305,8 +314,8 @@ func (m Model) renderHeader() string {
 	headerContent += rightPadding
 
 	headerLine := m.theme.Header.Width(width).Render(headerContent)
-	topPadding := m.theme.Header.Render(strings.Repeat(" ", width))
-	bottomPadding := m.theme.Header.Render(strings.Repeat(" ", width))
+	topPadding := m.theme.Header.Width(width).Render("")
+	bottomPadding := m.theme.Header.Width(width).Render("")
 	hr := m.theme.Border.Render(strings.Repeat("─", width))
 
 	return topPadding + "\n" + headerLine + "\n" + bottomPadding + "\n" + hr
@@ -1201,7 +1210,9 @@ func (m Model) renderPRDetailsView() string {
 
 	pr := m.selectedPull
 	if pr == nil {
-		return "No PR selected."
+		sb.WriteString("  " + m.theme.HelpDesc.Render("Loading PR details...") + "\n")
+		sb.WriteString(m.renderFooter([]string{"?:Help", "Esc:Back"}))
+		return sb.String()
 	}
 
 	prStateStr := "OPEN"
