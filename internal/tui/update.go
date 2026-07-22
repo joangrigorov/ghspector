@@ -1200,6 +1200,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.state = viewMain
 				}
+			case "a":
+				if m.selectedRunCanApprove() {
+					m.runApprovalState = 1
+					return m, nil
+				}
+			case "w", "W":
+				if len(m.jobs) > 0 && m.selectedJobIdx >= 0 && m.selectedJobIdx < len(m.jobs) {
+					job := m.jobs[m.selectedJobIdx]
+					if job.HTMLURL != "" {
+						_ = openBrowser(job.HTMLURL)
+					}
+				}
+			case "v", "V":
+				run := m.getRun()
+				if run.HTMLURL != "" {
+					_ = openBrowser(run.HTMLURL)
+				}
 			case "r", "ctrl+r":
 				run := m.getRun()
 				m.isLoading = true
@@ -1229,23 +1246,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.jobStartIndex = 0
 					m.jobs = nil
 					return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
-				}
-			case "a":
-				if m.selectedRunCanApprove() {
-					m.runApprovalState = 1
-					return m, nil
-				}
-			case "w":
-				run := m.getRun()
-				if run.HTMLURL != "" {
-					_ = openBrowser(run.HTMLURL)
-				}
-			case "v":
-				if len(m.jobs) > 0 && m.selectedJobIdx < len(m.jobs) {
-					job := m.jobs[m.selectedJobIdx]
-					if job.HTMLURL != "" {
-						_ = openBrowser(job.HTMLURL)
-					}
 				}
 			}
 

@@ -1969,6 +1969,27 @@ func TestStatusBannerAndAutoDismiss(t *testing.T) {
 	}
 }
 
+func TestJobViewBrowserShortcut(t *testing.T) {
+	client := gh.NewClient("test-token", "https://api.github.com")
+	m := InitModel(client, nil)
+	m.state = viewJobs
+	m.jobs = []gh.WorkflowJob{
+		{
+			ID:      101,
+			Name:    "build-job",
+			HTMLURL: "https://github.com/myorg/myrepo/actions/runs/1/job/101",
+		},
+	}
+	m.selectedJobIdx = 0
+
+	// Pressing 'w' in viewJobs should not crash or error out
+	rawModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	_ = rawModel.(Model)
+	if cmd != nil {
+		t.Errorf("expected nil cmd for browser open key press, got %v", cmd)
+	}
+}
+
 
 
 
