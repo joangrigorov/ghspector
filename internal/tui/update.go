@@ -3187,7 +3187,6 @@ func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
 		isPost      bool
 	}
 	var activeSteps []activeStep
-	lastMainIdx := -1
 	for i, s := range steps {
 		if s.Conclusion != "skipped" {
 			isPost := strings.HasPrefix(strings.ToLower(s.Name), "post ") || strings.EqualFold(s.Name, "complete job")
@@ -3199,9 +3198,6 @@ func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
 				isPost:      isPost,
 			}
 			activeSteps = append(activeSteps, as)
-			if !isPost {
-				lastMainIdx = len(activeSteps) - 1
-			}
 		}
 	}
 
@@ -3222,15 +3218,23 @@ func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
 			cleanLine = line[idx+2:]
 		}
 
-		// 1. Timestamp-based progression for post steps or when post job cleanup begins
+		// 1. Step transition check: advance if current step is done
 		if hasTime && len(activeSteps) > 0 && currentActiveIdx < len(activeSteps)-1 {
 			currStep := activeSteps[currentActiveIdx]
-			buffer := 1000 * time.Millisecond
-			if currStep.isPost {
-				buffer = 200 * time.Millisecond
-			}
-			if currStep.isPost || (lastMainIdx != -1 && currentActiveIdx >= lastMainIdx) || strings.Contains(cleanLine, "Post job cleanup.") {
-				if !currStep.completedAt.IsZero() && t.After(currStep.completedAt.Add(buffer)) {
+			nextStep := activeSteps[currentActiveIdx+1]
+
+			if !currStep.completedAt.IsZero() {
+				shouldAdvance := false
+				if currStep.isPost {
+					if !t.Before(currStep.completedAt) || !t.Before(nextStep.startedAt) {
+						shouldAdvance = true
+					}
+				} else if nextStep.isPost || strings.Contains(cleanLine, "Post job cleanup.") {
+					if strings.Contains(cleanLine, "Post job cleanup.") || t.After(currStep.completedAt.Add(1000*time.Millisecond)) {
+						shouldAdvance = true
+					}
+				}
+				if shouldAdvance {
 					currentActiveIdx++
 					currentStepIdx = activeSteps[currentActiveIdx].index
 				}
