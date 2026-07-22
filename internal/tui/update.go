@@ -3146,6 +3146,8 @@ func (m *Model) updateLogsViewportContent() {
 	segment := m.logsSegments[m.selectedStepIdx]
 	if segment == "" {
 		segment = "\n  (No logs available for this step.)"
+	} else {
+		segment = cleanLogForDisplay(segment)
 	}
 	m.logsViewport.SetContent(segment)
 	if m.followLogs {
@@ -3153,6 +3155,51 @@ func (m *Model) updateLogsViewportContent() {
 	} else {
 		m.logsViewport.GotoTop()
 	}
+}
+
+func cleanLogForDisplay(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	lines := strings.Split(raw, "\n")
+	var cleaned []string
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		// Skip standalone endgroup lines
+		if strings.HasSuffix(line, "##[endgroup]") || line == "##[endgroup]" {
+			continue
+		}
+
+		cleanLine := line
+		// Strip common GitHub Actions runner workflow control flags
+		cleanLine = strings.ReplaceAll(cleanLine, "##[group]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[endgroup]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[section]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[command]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[error]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[warning]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[debug]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[notice]", "")
+
+		// Strip standalone [command] prefix if present after timestamp
+		if idx := strings.Index(cleanLine, "Z [command]"); idx != -1 {
+			cleanLine = cleanLine[:idx+2] + cleanLine[idx+11:]
+		}
+
+		// Skip lines that became empty after stripping (e.g. just timestamp with no message)
+		payload := cleanLine
+		if idx := strings.Index(cleanLine, "Z "); idx != -1 {
+			payload = strings.TrimSpace(cleanLine[idx+2:])
+		}
+		if payload == "" {
+			continue
+		}
+
+		cleaned = append(cleaned, cleanLine)
+	}
+	return strings.Join(cleaned, "\n")
 }
 
 func parseLogTimestamp(line string) (time.Time, bool) {

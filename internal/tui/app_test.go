@@ -1883,6 +1883,22 @@ func TestTUI_LogsSegmentSyntheticFastSteps(t *testing.T) {
 	}
 }
 
+func TestCleanLogForDisplay(t *testing.T) {
+	rawInput := "2026-07-22T14:00:00Z ##[group]Run actions/checkout@v4\n" +
+		"2026-07-22T14:00:01Z [command]/usr/bin/git version\n" +
+		"2026-07-22T14:00:02Z ##[error]something went wrong\n" +
+		"2026-07-22T14:00:03Z ##[endgroup]\n"
+
+	expected := "2026-07-22T14:00:00Z Run actions/checkout@v4\n" +
+		"2026-07-22T14:00:01Z /usr/bin/git version\n" +
+		"2026-07-22T14:00:02Z something went wrong"
+
+	actual := cleanLogForDisplay(rawInput)
+	if actual != expected {
+		t.Errorf("expected:\n%q\ngot:\n%q", expected, actual)
+	}
+}
+
 
 
 
