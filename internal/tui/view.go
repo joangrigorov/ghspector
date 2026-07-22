@@ -305,11 +305,11 @@ func (m Model) renderHeader() string {
 	headerContent += rightPadding
 
 	headerLine := m.theme.Header.Width(width).Render(headerContent)
-	topPadding := m.theme.Header.Width(width).Render(" ")
-	bottomPadding := m.theme.Header.Width(width).Render(" ")
+	topPadding := m.theme.Header.Render(strings.Repeat(" ", width))
+	bottomPadding := m.theme.Header.Render(strings.Repeat(" ", width))
 	hr := m.theme.Border.Render(strings.Repeat("─", width))
 
-	return "\n" + topPadding + "\n" + headerLine + "\n" + bottomPadding + "\n" + hr
+	return topPadding + "\n" + headerLine + "\n" + bottomPadding + "\n" + hr
 }
 
 // renderFooter renders the standard bottom bar.
