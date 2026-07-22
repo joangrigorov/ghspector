@@ -189,26 +189,38 @@ func (m Model) renderHeader() string {
 
 	// Dynamic Page Name in Title
 	pageName := "Dashboard"
-	if m.state == viewMain {
-		if m.activeTab == tabWorkflows {
+	switch m.state {
+	case viewMain, viewPRFilterInput, viewPRFilterTypeSelect, viewIssueFilterInput, viewIssueFilterTypeSelect, viewFilterTypeSelect, viewRepoFilterSelect:
+		switch m.activeTab {
+		case tabWorkflows:
 			pageName = "Workflows"
-		} else if m.activeTab == tabPRs {
+		case tabPRs:
 			pageName = "Pull Requests"
-		} else if m.activeTab == tabIssues {
+		case tabIssues:
 			pageName = "Issues"
 		}
-	} else if m.state == viewPRDetails {
-		pageName = "PR Details"
-	} else if m.state == viewIssueDetails {
-		pageName = "Issue Details"
-	} else if m.state == viewIssueComments {
-		pageName = "Issue Comments"
-	} else if m.state == viewCommitDetails {
-		pageName = "Commit Details"
-	} else if m.state == viewJobs {
+	case viewJobs:
 		pageName = "Workflow Jobs"
-	} else if m.state == viewLogs {
+	case viewLogs:
 		pageName = "Job Logs"
+	case viewPRDetails:
+		pageName = "PR Details"
+	case viewPRComments:
+		pageName = "PR Comments"
+	case viewPRCommits:
+		pageName = "PR Commits"
+	case viewPRDiff:
+		pageName = "PR Diff"
+	case viewIssueDetails:
+		pageName = "Issue Details"
+	case viewIssueComments:
+		pageName = "Issue Comments"
+	case viewCommitDetails:
+		pageName = "Commit Details"
+	case viewSwitcher:
+		pageName = "Account / Repository Switcher"
+	case viewHelp:
+		pageName = "Help & Keybindings"
 	}
 
 	headerBg := m.theme.HeaderBg
@@ -293,11 +305,11 @@ func (m Model) renderHeader() string {
 	headerContent += rightPadding
 
 	headerLine := m.theme.Header.Width(width).Render(headerContent)
-	topPadding := m.theme.Header.Render(strings.Repeat(" ", width))
-	bottomPadding := m.theme.Header.Render(strings.Repeat(" ", width))
+	topPadding := m.theme.Header.Width(width).Render(" ")
+	bottomPadding := m.theme.Header.Width(width).Render(" ")
 	hr := m.theme.Border.Render(strings.Repeat("─", width))
 
-	return topPadding + "\n" + headerLine + "\n" + bottomPadding + "\n" + hr
+	return "\n" + topPadding + "\n" + headerLine + "\n" + bottomPadding + "\n" + hr
 }
 
 // renderFooter renders the standard bottom bar.
