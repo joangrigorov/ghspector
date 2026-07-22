@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -325,13 +326,13 @@ func (m Model) renderFooter(keys []string) string {
 		}
 	}
 
-	// Split keys into left-floating (Esc, ?) and right-floating (others)
+	// Split keys into left-floating (Help and Back/Exit/Quit) and right-floating (others)
 	for _, k := range actualKeys {
 		parts := strings.SplitN(k, ":", 2)
 		isLeft := false
 		if len(parts) > 0 {
 			keyStr := parts[0]
-			if keyStr == "Esc" || keyStr == "?" {
+			if keyStr == "?" || keyStr == "Esc" || keyStr == "Esc/q" || keyStr == "q" {
 				isLeft = true
 			}
 		}
@@ -341,6 +342,16 @@ func (m Model) renderFooter(keys []string) string {
 			rightKeys = append(rightKeys, k)
 		}
 	}
+
+	// Guarantee leftKeys order: '?' is ALWAYS first, 'Esc' (or back/exit/quit) is ALWAYS second
+	sort.SliceStable(leftKeys, func(i, j int) bool {
+		iIsHelp := strings.HasPrefix(leftKeys[i], "?")
+		jIsHelp := strings.HasPrefix(leftKeys[j], "?")
+		if iIsHelp && !jIsHelp {
+			return true
+		}
+		return false
+	})
 
 	// Format left keys
 	var leftRendered []string
@@ -558,7 +569,7 @@ func (m Model) renderMainView() string {
 		sb.WriteString("  Filter by actor: " + m.textInput.View() + "\n")
 	}
 
-	keys := []string{"?:Help", "Tab:Tabs", "j/k:Navigate", "Enter:Jobs", "w:Browser", "f:Filter", "m:My Runs", "x:Clear Filter", "r:Refresh"}
+	keys := []string{"?:Help", "Esc:Exit", "Tab:Tabs", "j/k:Navigate", "Enter:Jobs", "w:Browser", "f:Filter", "m:My Runs", "x:Clear Filter", "r:Refresh"}
 	if m.selectedRunCanApprove() {
 		keys = append(keys[:5], append([]string{"a:Approve"}, keys[5:]...)...)
 	}
@@ -734,7 +745,7 @@ func (m Model) renderJobsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"?:Help", "j/k:Navigate", "Enter:Logs", "Esc:Back", "w/v:Browser", "[/]:Attempts"}
+	keys := []string{"?:Help", "Esc:Back", "j/k:Navigate", "Enter:Logs", "w:Job in Browser", "v:Run in Browser", "[/]:Attempts"}
 	if m.selectedRunCanApprove() {
 		keys = append(keys[:5], append([]string{"a:Approve"}, keys[5:]...)...)
 	}
@@ -785,7 +796,7 @@ func (m Model) renderLogsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"?:Help", "j/k:Navigate Steps", "u/d:Scroll Logs", "Esc:Back", "r:Refresh"}
+	keys := []string{"?:Help", "Esc:Back", "j/k:Navigate Steps", "u/d:Scroll Logs", "w:Browser", "r:Refresh"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
@@ -1167,7 +1178,7 @@ func (m Model) renderPullsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"Tab:Tabs", "j/k:Navigate", "Enter:View PR", "w:Browser", "f:Filter", "s:State", "a:My PRs", "i:My Assigned", "v:My Reviewed", "x:Clear Filter"}
+	keys := []string{"?:Help", "Esc:Exit", "Tab:Tabs", "j/k:Navigate", "Enter:View PR", "w:Browser", "f:Filter", "s:State", "a:My PRs", "i:My Assigned", "v:My Reviewed", "x:Clear Filter"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
@@ -2395,7 +2406,7 @@ func (m Model) renderIssuesView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"Tab:Tabs", "j/k:Navigate", "Enter:View Issue", "w:Browser", "f:Filter", "s:State", "a:My Issues", "i:My Assigned", "x:Clear Filter"}
+	keys := []string{"?:Help", "Esc:Exit", "Tab:Tabs", "j/k:Navigate", "Enter:View Issue", "w:Browser", "f:Filter", "s:State", "a:My Issues", "i:My Assigned", "x:Clear Filter"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
