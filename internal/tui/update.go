@@ -1278,10 +1278,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.updateLogsViewportContent()
 				}
 			case "u", "pageup":
-				m.logsViewport.LineUp(3)
+				m.logsViewport.ScrollUp(3)
 				m.followLogs = false
 			case "d", "pagedown":
-				m.logsViewport.LineDown(3)
+				m.logsViewport.ScrollDown(3)
 				if m.logsViewport.AtBottom() {
 					m.followLogs = true
 				}
