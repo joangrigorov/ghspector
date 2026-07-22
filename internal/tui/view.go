@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -301,71 +300,88 @@ func (m Model) renderHeader() string {
 	return topPadding + "\n" + headerLine + "\n" + bottomPadding + "\n" + hr
 }
 
-// renderFooter renders the standard bottom bar.
+// renderFooter renders the standard 2-row bottom bar.
 func (m Model) renderFooter(keys []string) string {
-	var leftKeys []string
-	var rightKeys []string
+	isMainView := m.state == viewMain || m.state == viewSplash
+	backLabel := "Back"
+	if isMainView {
+		backLabel = "Exit"
+	}
+	if m.state == viewHelp {
+		backLabel = "Close"
+	}
 
-	// Check if '?' is already present
-	hasQuestionMark := false
+	helpLabel := "Help"
+	if m.state == viewHelp {
+		helpLabel = "Close Help"
+	}
+
+	// Fixed 2-row Left side:
+	// Row 1 Left: ?:Help  Esc:Exit/Back
+	// Row 2 Left: r:Refresh  q:Quit
+	r1LeftStr := m.theme.HelpKey.Render("?") + m.theme.HelpDesc.Render(":"+helpLabel) + "  " + m.theme.HelpKey.Render("Esc") + m.theme.HelpDesc.Render(":"+backLabel)
+	r2LeftStr := m.theme.HelpKey.Render("r") + m.theme.HelpDesc.Render(":Refresh") + "  " + m.theme.HelpKey.Render("q") + m.theme.HelpDesc.Render(":Quit")
+
+	// Filter out pinned keys (?, Esc, r, q, ctrl+r) from rightKeys
+	var rightKeys []string
 	for _, k := range keys {
 		parts := strings.SplitN(k, ":", 2)
-		if len(parts) > 0 && parts[0] == "?" {
-			hasQuestionMark = true
-			break
-		}
-	}
-
-	// Append '?' key if missing and not in splash
-	actualKeys := keys
-	if !hasQuestionMark && m.state != viewSplash {
-		if m.state == viewHelp {
-			actualKeys = append(actualKeys, "?:Close Help")
-		} else {
-			actualKeys = append(actualKeys, "?:Help")
-		}
-	}
-
-	// Split keys into left-floating (Help and Back/Exit/Quit) and right-floating (others)
-	for _, k := range actualKeys {
-		parts := strings.SplitN(k, ":", 2)
-		isLeft := false
 		if len(parts) > 0 {
 			keyStr := parts[0]
-			if keyStr == "?" || keyStr == "Esc" || keyStr == "Esc/q" || keyStr == "q" {
-				isLeft = true
+			if keyStr == "?" || keyStr == "Esc" || keyStr == "r" || keyStr == "q" || keyStr == "ctrl+r" {
+				continue
 			}
 		}
-		if isLeft {
-			leftKeys = append(leftKeys, k)
-		} else {
-			rightKeys = append(rightKeys, k)
-		}
+		rightKeys = append(rightKeys, k)
 	}
 
-	// Guarantee leftKeys order: '?' is ALWAYS first, 'Esc' (or back/exit/quit) is ALWAYS second
-	sort.SliceStable(leftKeys, func(i, j int) bool {
-		iIsHelp := strings.HasPrefix(leftKeys[i], "?")
-		jIsHelp := strings.HasPrefix(leftKeys[j], "?")
-		if iIsHelp && !jIsHelp {
-			return true
-		}
-		return false
-	})
-
-	// Format left keys
-	var leftRendered []string
-	for _, k := range leftKeys {
+	// Format right keys
+	var rightRendered []string
+	for _, k := range rightKeys {
 		parts := strings.SplitN(k, ":", 2)
 		if len(parts) == 2 {
-			leftRendered = append(leftRendered, m.theme.HelpKey.Render(parts[0])+m.theme.HelpDesc.Render(":"+parts[1]))
+			rightRendered = append(rightRendered, m.theme.HelpKey.Render(parts[0])+m.theme.HelpDesc.Render(":"+parts[1]))
 		} else {
-			leftRendered = append(leftRendered, m.theme.HelpDesc.Render(k))
+			rightRendered = append(rightRendered, m.theme.HelpDesc.Render(k))
 		}
 	}
-	leftStr := strings.Join(leftRendered, "  ")
 
-	// Format status banner above bottom bar
+	// Split right keys across 2 rows
+	var r1RightKeys, r2RightKeys []string
+	if len(rightRendered) <= 4 {
+		r1RightKeys = rightRendered
+	} else {
+		half := (len(rightRendered) + 1) / 2
+		r1RightKeys = rightRendered[:half]
+		r2RightKeys = rightRendered[half:]
+	}
+
+	r1RightStr := strings.Join(r1RightKeys, "  ")
+	r2RightStr := strings.Join(r2RightKeys, "  ")
+
+	// Maximize the width of the bottom bar
+	width := m.width
+	if width < 40 {
+		width = 40
+	}
+	contentWidth := width - 2 // accounting for Padding(0, 1)
+
+	formatRow := func(left, right string) string {
+		lLen := lipgloss.Width(left)
+		rLen := lipgloss.Width(right)
+		sp := contentWidth - lLen - rLen
+		if sp > 0 {
+			return left + strings.Repeat(" ", sp) + right
+		}
+		return left + "  " + right
+	}
+
+	row1 := formatRow(r1LeftStr, r1RightStr)
+	row2 := formatRow(r2LeftStr, r2RightStr)
+
+	bottomBarContent := row1 + "\n" + row2
+
+	// Format status banner above bottom bar if active
 	var statusBanner string
 	if m.statusMsg != "" {
 		lowerMsg := strings.ToLower(m.statusMsg)
@@ -381,39 +397,7 @@ func (m Model) renderFooter(keys []string) string {
 		}
 	}
 
-	// Format right keys
-	var rightRendered []string
-	for _, k := range rightKeys {
-		parts := strings.SplitN(k, ":", 2)
-		if len(parts) == 2 {
-			rightRendered = append(rightRendered, m.theme.HelpKey.Render(parts[0])+m.theme.HelpDesc.Render(":"+parts[1]))
-		} else {
-			rightRendered = append(rightRendered, m.theme.HelpDesc.Render(k))
-		}
-	}
-	rightStr := strings.Join(rightRendered, "  ")
-
-	// Maximize the width of the bottom bar
-	width := m.width
-	if width < 40 {
-		width = 40
-	}
-	contentWidth := width - 2 // accounting for Padding(0, 1)
-
-	leftWidth := lipgloss.Width(leftStr)
-	rightWidth := lipgloss.Width(rightStr)
-
-	var content string
-	spaceWidth := contentWidth - leftWidth - rightWidth
-	if spaceWidth > 0 {
-		content = leftStr + strings.Repeat(" ", spaceWidth) + rightStr
-	} else {
-		// Fallback if terminal is too narrow
-		content = leftStr + "  " + rightStr
-	}
-
-	// Render using bottom bar style with explicit content width
-	return statusBanner + m.theme.BottomBar.Width(contentWidth).Render(content)
+	return statusBanner + m.theme.BottomBar.Width(contentWidth).Render(bottomBarContent)
 }
 
 // renderMainView renders the Workflow Runs list with a scrolling window.
@@ -1013,9 +997,7 @@ func (m Model) renderPullsView() string {
 	if m.filterRepo != "" {
 		filterTexts = append(filterTexts, fmt.Sprintf("Repo: %s", m.filterRepo))
 	}
-	if len(filterTexts) > 0 {
-		sb.WriteString("  " + m.theme.StatusWaiting.Render("Filter active: "+strings.Join(filterTexts, ", ")+" (Press 'x' to clear)") + "\n\n")
-	}
+
 
 	prTitleWidth := m.width - 102
 	if prTitleWidth < 15 {
