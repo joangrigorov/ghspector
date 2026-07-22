@@ -300,7 +300,7 @@ func (m Model) renderHeader() string {
 	return topPadding + "\n" + headerLine + "\n" + bottomPadding + "\n" + hr
 }
 
-// renderFooter renders the standard 2-row bottom bar.
+// renderFooter renders the standard bottom bar.
 func (m Model) renderFooter(keys []string) string {
 	isMainView := m.state == viewMain || m.state == viewSplash
 	backLabel := "Back"
@@ -316,48 +316,21 @@ func (m Model) renderFooter(keys []string) string {
 		helpLabel = "Close Help"
 	}
 
-	// Fixed 2-row Left side:
-	// Row 1 Left: ?:Help  Esc:Exit/Back
-	// Row 2 Left: r:Refresh  q:Quit
+	// Pinned Left Side: ?:Help  Esc:Exit (or Esc:Back)
 	r1LeftStr := m.theme.HelpKey.Render("?") + m.theme.HelpDesc.Render(":"+helpLabel) + "  " + m.theme.HelpKey.Render("Esc") + m.theme.HelpDesc.Render(":"+backLabel)
-	r2LeftStr := m.theme.HelpKey.Render("r") + m.theme.HelpDesc.Render(":Refresh") + "  " + m.theme.HelpKey.Render("q") + m.theme.HelpDesc.Render(":Quit")
 
-	// Filter out pinned keys (?, Esc, r, q, ctrl+r) from rightKeys
+	// Filter out pinned keys (?, Esc) from rightKeys
 	var rightKeys []string
 	for _, k := range keys {
 		parts := strings.SplitN(k, ":", 2)
 		if len(parts) > 0 {
 			keyStr := parts[0]
-			if keyStr == "?" || keyStr == "Esc" || keyStr == "r" || keyStr == "q" || keyStr == "ctrl+r" {
+			if keyStr == "?" || keyStr == "Esc" {
 				continue
 			}
 		}
 		rightKeys = append(rightKeys, k)
 	}
-
-	// Format right keys
-	var rightRendered []string
-	for _, k := range rightKeys {
-		parts := strings.SplitN(k, ":", 2)
-		if len(parts) == 2 {
-			rightRendered = append(rightRendered, m.theme.HelpKey.Render(parts[0])+m.theme.HelpDesc.Render(":"+parts[1]))
-		} else {
-			rightRendered = append(rightRendered, m.theme.HelpDesc.Render(k))
-		}
-	}
-
-	// Split right keys across 2 rows
-	var r1RightKeys, r2RightKeys []string
-	if len(rightRendered) <= 4 {
-		r1RightKeys = rightRendered
-	} else {
-		half := (len(rightRendered) + 1) / 2
-		r1RightKeys = rightRendered[:half]
-		r2RightKeys = rightRendered[half:]
-	}
-
-	r1RightStr := strings.Join(r1RightKeys, "  ")
-	r2RightStr := strings.Join(r2RightKeys, "  ")
 
 	// Maximize the width of the bottom bar
 	width := m.width
@@ -366,20 +339,49 @@ func (m Model) renderFooter(keys []string) string {
 	}
 	contentWidth := width - 2 // accounting for Padding(0, 1)
 
-	formatRow := func(left, right string) string {
-		lLen := lipgloss.Width(left)
-		rLen := lipgloss.Width(right)
-		sp := contentWidth - lLen - rLen
-		if sp > 0 {
-			return left + strings.Repeat(" ", sp) + right
-		}
-		return left + "  " + right
+	leftLen := lipgloss.Width(r1LeftStr)
+	maxRightWidth := contentWidth - leftLen - 2
+	if maxRightWidth < 0 {
+		maxRightWidth = 0
 	}
 
-	row1 := formatRow(r1LeftStr, r1RightStr)
-	row2 := formatRow(r2LeftStr, r2RightStr)
+	// Format right keys while staying strictly within maxRightWidth
+	var rightRendered []string
+	currentRightWidth := 0
 
-	bottomBarContent := row1 + "\n" + row2
+	for _, k := range rightKeys {
+		parts := strings.SplitN(k, ":", 2)
+		var item string
+		if len(parts) == 2 {
+			item = m.theme.HelpKey.Render(parts[0]) + m.theme.HelpDesc.Render(":"+parts[1])
+		} else {
+			item = m.theme.HelpDesc.Render(k)
+		}
+
+		itemLen := lipgloss.Width(item)
+		neededWidth := itemLen
+		if len(rightRendered) > 0 {
+			neededWidth += 2 // accounting for "  " separator
+		}
+
+		if currentRightWidth+neededWidth <= maxRightWidth {
+			rightRendered = append(rightRendered, item)
+			currentRightWidth += neededWidth
+		} else {
+			// Stop adding keys if width limit is reached
+			break
+		}
+	}
+
+	rightStr := strings.Join(rightRendered, "  ")
+	rightLen := lipgloss.Width(rightStr)
+
+	spaceWidth := contentWidth - leftLen - rightLen
+	if spaceWidth < 1 {
+		spaceWidth = 1
+	}
+
+	bottomBarContent := r1LeftStr + strings.Repeat(" ", spaceWidth) + rightStr
 
 	// Format status banner above bottom bar if active
 	var statusBanner string
@@ -1230,9 +1232,9 @@ func (m Model) renderPRDetailsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"Esc:Back to PRs", "Tab:Toggle Focus", "j/k:Navigate", "Enter:Run/Browser", "Shift+D:Diff", "r:Refresh", "c:Comments", "v:Commits", "q:Quit"}
+	keys := []string{"?:Help", "Esc:Back", "Tab:Focus", "j/k:Navigate", "Enter:Run/Browser", "Shift+D:Diff", "r:Refresh", "c:Comments", "v:Commits"}
 	if m.viewerCanMerge() {
-		keys = []string{"Esc:Back", "Tab:Focus", "Shift+D:Diff", "r:Refresh", "m:Merge", "c:Comments", "v:Commits", "Shift+C:Close PR", "q:Quit"}
+		keys = []string{"?:Help", "Esc:Back", "Tab:Focus", "Shift+D:Diff", "r:Refresh", "m:Merge", "c:Comments", "v:Commits", "Shift+C:Close"}
 	}
 	sb.WriteString(m.renderFooter(keys))
 
