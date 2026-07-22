@@ -25,6 +25,7 @@ type Config struct {
 	DefaultAccount         string        `yaml:"default_account,omitempty"`
 	PollingIntervalSeconds int           `yaml:"polling_interval_seconds,omitempty"`
 	Polling                PollingConfig `yaml:"polling,omitempty"`
+	DefaultMergeMethod     string        `yaml:"default_merge_method,omitempty"`
 	TokenSource            string        `yaml:"-"`
 }
 

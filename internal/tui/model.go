@@ -32,6 +32,8 @@ const (
 	viewIssueComments
 	viewIssueFilterInput
 	viewIssueFilterTypeSelect
+	viewFilterTypeSelect
+	viewRepoFilterSelect
 )
 
 type mainTab int
@@ -77,8 +79,12 @@ type Model struct {
 	width, height int
 
 	// Targets (Orgs and User Accounts)
-	targets       []Target
+	targets           []Target
 	selectedTargetIdx int
+	repos             []gh.Repository
+	selectedRepoIdx   int
+	repoStartIndex    int
+	filterRepo        string
 
 	// Data Cache - Workflows
 	runs          []gh.WorkflowRun
@@ -149,13 +155,16 @@ type Model struct {
 	mergeMethod     int    // 0: squash, 1: merge, 2: rebase
 
 	// Logs browser
-	logs          string
-	logsViewport  viewport.Model
-	logsLoading   bool
-	followLogs    bool
+	logs             string
+	logsViewport     viewport.Model
+	logsLoading      bool
+	followLogs       bool
+	selectedStepIdx  int
+	logsSegments     map[int]string
 
 	// Status messages & flags
 	statusMsg   string
+	statusMsgID int
 	isLoading   bool
 	loadingMsg  string
 	
@@ -192,8 +201,9 @@ type initDataMsg struct {
 	err     error
 }
 type runsLoadedMsg struct {
-	runs []gh.WorkflowRun
-	err  error
+	runs  []gh.WorkflowRun
+	repos []gh.Repository
+	err   error
 }
 type runsPolledMsg struct {
 	runs []gh.WorkflowRun
@@ -221,6 +231,7 @@ type jobUpdateMsg struct {
 
 type pullsLoadedMsg struct {
 	pulls []gh.PullRequest
+	repos []gh.Repository
 	err   error
 }
 
@@ -242,8 +253,10 @@ type prCommentsLoadedMsg struct {
 }
 
 type issuesLoadedMsg struct {
-	issues []gh.Issue
-	err    error
+	issues  []gh.Issue
+	repos   []gh.Repository
+	hasMore bool
+	err     error
 }
 
 type issueDetailsLoadedMsg struct {
@@ -429,4 +442,20 @@ func (m Model) selectedRunCanApprove() bool {
 	
 	needsApproval := (run.Status == "waiting" || run.Conclusion == "action_required")
 	return needsApproval && m.approvalPermissions[run.ID]
+}
+
+type clearStatusMsg struct {
+	id int
+}
+
+func (m *Model) setStatusMsg(msg string) tea.Cmd {
+	m.statusMsg = msg
+	if msg == "" {
+		return nil
+	}
+	m.statusMsgID++
+	id := m.statusMsgID
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return clearStatusMsg{id: id}
+	})
 }

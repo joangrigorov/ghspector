@@ -27,7 +27,156 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Always handle tickMsg first to keep the loading spinner animating
 	if _, ok := msg.(tickMsg); ok {
 		m.tickCount++
+
+		// Check if we can recover from rate limit error
+		if m.err != nil && strings.Contains(strings.ToLower(m.err.Error()), "rate limit") {
+			rl := m.client.GetRateLimit()
+			if !rl.Reset.IsZero() && time.Now().After(rl.Reset) {
+				m.err = nil
+				m.isLoading = true
+				m.loadingMsg = "Rate limit reset. Reconnecting..."
+				
+				m.runPage = 1
+				m.hasMoreRuns = true
+				m.selectedRunIdx = 0
+				m.runStartIndex = 0
+				m.runs = nil
+
+				m.pullPage = 1
+				m.hasMorePulls = true
+				m.selectedPullIdx = 0
+				m.pullStartIndex = 0
+				m.pulls = nil
+
+				m.issuePage = 1
+				m.hasMoreIssues = true
+				m.selectedIssueIdx = 0
+				m.issueStartIndex = 0
+				m.issues = nil
+
+				return m, tea.Batch(m.tick(), m.fetchActiveTabCmd())
+			}
+		}
+
 		return m, m.tick()
+	}
+
+	// If there is a fatal error, only allow quitting
+	if m.err != nil {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "q", "ctrl+c":
+				if m.cancel != nil {
+					m.cancel()
+				}
+				return m, tea.Quit
+			}
+		}
+		return m, nil
+	}
+
+	// Intercept keys for filter type selection
+	if m.state == viewFilterTypeSelect {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "u", "U":
+				if m.activeTab == tabWorkflows {
+					m.state = viewMain
+					m.showFilterInput = true
+					m.textInput.SetValue(m.filterActor)
+					m.textInput.Focus()
+					return m, textinput.Blink
+				} else if m.activeTab == tabPRs {
+					m.state = viewPRFilterInput
+					m.textInput.SetValue("")
+					m.textInput.Focus()
+					return m, textinput.Blink
+				} else if m.activeTab == tabIssues {
+					m.state = viewIssueFilterInput
+					m.textInput.SetValue("")
+					m.textInput.Focus()
+					return m, textinput.Blink
+				}
+			case "r", "R":
+				m.state = viewRepoFilterSelect
+				m.selectedRepoIdx = 0
+				m.repoStartIndex = 0
+				if len(m.repos) == 0 {
+					m.isLoading = true
+					m.loadingMsg = "Loading repositories..."
+					return m, m.fetchReposCmd()
+				}
+				return m, nil
+			case "esc":
+				m.state = viewMain
+				return m, nil
+			case "ctrl+c":
+				if m.cancel != nil {
+					m.cancel()
+				}
+				return m, tea.Quit
+			}
+		}
+		return m, nil
+	}
+
+	// Intercept keys for repository filter selection
+	if m.state == viewRepoFilterSelect {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "j", "down":
+				if m.selectedRepoIdx < len(m.repos)-1 {
+					m.selectedRepoIdx++
+				}
+				return m, nil
+			case "k", "up":
+				if m.selectedRepoIdx > 0 {
+					m.selectedRepoIdx--
+				}
+				return m, nil
+			case "enter":
+				if len(m.repos) > 0 && m.selectedRepoIdx >= 0 && m.selectedRepoIdx < len(m.repos) {
+					m.filterRepo = m.repos[m.selectedRepoIdx].Name
+					m.state = viewMain
+					
+					m.isLoading = true
+					m.loadingMsg = fmt.Sprintf("Filtering by repo %s...", m.filterRepo)
+					
+					if m.activeTab == tabWorkflows {
+						m.runPage = 1
+						m.hasMoreRuns = true
+						m.selectedRunIdx = 0
+						m.runStartIndex = 0
+						m.runs = nil
+						return m, m.fetchRunsCmd()
+					} else if m.activeTab == tabPRs {
+						m.pullPage = 1
+						m.hasMorePulls = true
+						m.selectedPullIdx = 0
+						m.pullStartIndex = 0
+						m.pulls = nil
+						return m, m.fetchPullsCmd()
+					} else if m.activeTab == tabIssues {
+						m.issuePage = 1
+						m.hasMoreIssues = true
+						m.selectedIssueIdx = 0
+						m.issueStartIndex = 0
+						m.issues = nil
+						return m, m.fetchIssuesCmd()
+					}
+				}
+				return m, nil
+			case "esc":
+				m.state = viewFilterTypeSelect
+				return m, nil
+			case "ctrl+c":
+				if m.cancel != nil {
+					m.cancel()
+				}
+				return m, tea.Quit
+			}
+		}
+		return m, nil
 	}
 
 	// If filtering input is active, intercept key messages first
@@ -238,6 +387,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				case "r", "R":
 					m.mergeMethod = 2
+					m.mergeState = 2
+					return m, nil
+				case "d", "D":
+					defMethod := "squash"
+					if m.config != nil && m.config.DefaultMergeMethod != "" {
+						defMethod = strings.ToLower(m.config.DefaultMergeMethod)
+					}
+					var nextMethod string
+					switch defMethod {
+					case "squash":
+						nextMethod = "merge"
+					case "merge":
+						nextMethod = "rebase"
+					default:
+						nextMethod = "squash"
+					}
+					if m.config != nil {
+						m.config.DefaultMergeMethod = nextMethod
+						_ = auth.SaveConfig(m.config)
+					}
+					return m, nil
+				case "enter":
+					defMethod := "squash"
+					if m.config != nil && m.config.DefaultMergeMethod != "" {
+						defMethod = strings.ToLower(m.config.DefaultMergeMethod)
+					}
+					switch defMethod {
+					case "merge":
+						m.mergeMethod = 1
+					case "rebase":
+						m.mergeMethod = 2
+					default:
+						m.mergeMethod = 0
+					}
 					m.mergeState = 2
 					return m, nil
 				case "esc", "c", "C":
@@ -568,6 +751,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filterPRAssignee = ""
 					m.filterPRReviewer = ""
 					m.filterPRState = "open"
+					m.filterRepo = ""
 					m.isLoading = true
 					m.loadingMsg = "Clearing PR filters..."
 					m.pullPage = 1
@@ -578,6 +762,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.fetchPullsCmd()
 				} else if m.activeTab == tabWorkflows {
 					m.filterActor = ""
+					m.filterRepo = ""
 					m.isLoading = true
 					m.loadingMsg = "Clearing workflow filters..."
 					m.runPage = 1
@@ -590,6 +775,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filterIssueAuthor = ""
 					m.filterIssueAssignee = ""
 					m.filterIssueState = "open"
+					m.filterRepo = ""
 					m.isLoading = true
 					m.loadingMsg = "Clearing issue filters..."
 					m.issuePage = 1
@@ -634,22 +820,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.fetchIssuesCmd()
 				}
 			case "f":
-				if m.activeTab == tabWorkflows {
-					m.showFilterInput = true
-					m.textInput.SetValue(m.filterActor)
-					m.textInput.Focus()
-					return m, textinput.Blink
-				} else if m.activeTab == tabPRs {
-					m.state = viewPRFilterInput
-					m.textInput.SetValue("")
-					m.textInput.Focus()
-					return m, textinput.Blink
-				} else if m.activeTab == tabIssues {
-					m.state = viewIssueFilterInput
-					m.textInput.SetValue("")
-					m.textInput.Focus()
-					return m, textinput.Blink
-				}
+				m.state = viewFilterTypeSelect
+				return m, nil
 			case "w":
 				if m.activeTab == tabWorkflows && len(m.runs) > 0 && m.selectedRunIdx < len(m.runs) {
 					run := m.getRun()
@@ -1012,8 +1184,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.jobs) > 0 {
 					job := m.jobs[m.selectedJobIdx]
 					if job.Status == "in_progress" || job.Status == "queued" {
-						m.statusMsg = "Logs are not yet available for running jobs. Please wait for completion."
-						return m, nil
+						return m, m.setStatusMsg("Logs are not yet available for running jobs. Please wait for completion.")
 					}
 					run := m.getRun()
 					m.state = viewLogs
@@ -1028,6 +1199,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.prevState = viewMain
 				} else {
 					m.state = viewMain
+				}
+			case "a":
+				if m.selectedRunCanApprove() {
+					m.runApprovalState = 1
+					return m, nil
+				}
+			case "w", "W":
+				if len(m.jobs) > 0 && m.selectedJobIdx >= 0 && m.selectedJobIdx < len(m.jobs) {
+					job := m.jobs[m.selectedJobIdx]
+					url := job.HTMLURL
+					if url == "" {
+						run := m.getRun()
+						if run.HTMLURL != "" {
+							url = fmt.Sprintf("%s/job/%d", run.HTMLURL, job.ID)
+						} else if run.Repository.FullName != "" {
+							url = fmt.Sprintf("https://github.com/%s/actions/runs/%d/job/%d", run.Repository.FullName, run.ID, job.ID)
+						}
+					}
+					if url != "" {
+						_ = openBrowser(url)
+					}
+				}
+			case "v", "V":
+				run := m.getRun()
+				url := run.HTMLURL
+				if url == "" && run.Repository.FullName != "" {
+					url = fmt.Sprintf("https://github.com/%s/actions/runs/%d", run.Repository.FullName, run.ID)
+				}
+				if url != "" {
+					_ = openBrowser(url)
 				}
 			case "r", "ctrl+r":
 				run := m.getRun()
@@ -1059,23 +1260,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.jobs = nil
 					return m, m.fetchJobsCmd(run.Repository.Owner.Login, run.Repository.Name, run.ID, m.selectedAttempt)
 				}
-			case "a":
-				if m.selectedRunCanApprove() {
-					m.runApprovalState = 1
-					return m, nil
-				}
-			case "w":
-				run := m.getRun()
-				if run.HTMLURL != "" {
-					_ = openBrowser(run.HTMLURL)
-				}
-			case "v":
-				if len(m.jobs) > 0 && m.selectedJobIdx < len(m.jobs) {
-					job := m.jobs[m.selectedJobIdx]
-					if job.HTMLURL != "" {
-						_ = openBrowser(job.HTMLURL)
-					}
-				}
 			}
 
 		case viewLogs:
@@ -1085,26 +1269,63 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "r", "ctrl+r":
 				job := m.jobs[m.selectedJobIdx]
 				if job.Status == "in_progress" || job.Status == "queued" {
-					m.statusMsg = "Logs are not yet available for running jobs. Please wait for completion."
 					m.logsLoading = false
-					return m, nil
+					return m, m.setStatusMsg("Logs are not yet available for running jobs. Please wait for completion.")
 				}
 				run := m.getRun()
 				m.logs = ""
 				m.logsLoading = true
 				m.loadingMsg = "Refreshing logs"
 				return m, m.fetchLogsCmd(run.Repository.Owner.Login, run.Repository.Name, job.ID)
-			default:
-				// Forward movement keys to viewport and handle log follow status
-				oldY := m.logsViewport.YOffset
-				m.logsViewport, cmd = m.logsViewport.Update(msg)
-				cmds = append(cmds, cmd)
-
-				if m.logsViewport.YOffset < oldY {
-					m.followLogs = false
+			case "j", "down":
+				job := m.jobs[m.selectedJobIdx]
+				if m.selectedStepIdx < len(job.Steps)-1 {
+					m.selectedStepIdx++
+					m.updateLogsViewportContent()
 				}
+			case "k", "up":
+				if m.selectedStepIdx > 0 {
+					m.selectedStepIdx--
+					m.updateLogsViewportContent()
+				}
+			case "u", "pageup":
+				m.logsViewport.ScrollUp(3)
+				m.followLogs = false
+			case "d", "pagedown":
+				m.logsViewport.ScrollDown(3)
 				if m.logsViewport.AtBottom() {
 					m.followLogs = true
+				}
+			case "w", "W":
+				if len(m.jobs) > 0 && m.selectedJobIdx >= 0 && m.selectedJobIdx < len(m.jobs) {
+					job := m.jobs[m.selectedJobIdx]
+					url := job.HTMLURL
+					if url == "" {
+						run := m.getRun()
+						if run.HTMLURL != "" {
+							url = fmt.Sprintf("%s/job/%d", run.HTMLURL, job.ID)
+						} else if run.Repository.FullName != "" {
+							url = fmt.Sprintf("https://github.com/%s/actions/runs/%d/job/%d", run.Repository.FullName, run.ID, job.ID)
+						}
+					}
+					if url != "" {
+						_ = openBrowser(url)
+					}
+				}
+			default:
+				// Only forward key events that are not steps navigation
+				keyStr := msg.String()
+				if keyStr != "j" && keyStr != "k" && keyStr != "up" && keyStr != "down" {
+					oldY := m.logsViewport.YOffset
+					m.logsViewport, cmd = m.logsViewport.Update(msg)
+					cmds = append(cmds, cmd)
+
+					if m.logsViewport.YOffset < oldY {
+						m.followLogs = false
+					}
+					if m.logsViewport.AtBottom() {
+						m.followLogs = true
+					}
 				}
 			}
 
@@ -1139,6 +1360,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.dashboardPRsCount = 0
 				m.dashboardWorkflowsCount = 0
 				
+				m.repos = nil
+				m.filterRepo = ""
+				m.selectedRepoIdx = 0
+				m.repoStartIndex = 0
+				
 				return m, m.fetchActiveTabCmd()
 			case "esc":
 				m.state = m.prevState
@@ -1155,7 +1381,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		
-		m.logsViewport.Width = msg.Width - 4
+		leftWidth := 32
+		m.logsViewport.Width = msg.Width - leftWidth - 6
+		if m.logsViewport.Width < 10 {
+			m.logsViewport.Width = 10
+		}
 		m.logsViewport.Height = msg.Height - 8
 		if m.logsViewport.Height < 5 {
 			m.logsViewport.Height = 5
@@ -1261,15 +1491,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loadingMsg = "Loading dashboard for " + m.targets[m.selectedTargetIdx].Name
 		return m, m.fetchActiveTabCmd()
 
+	case clearStatusMsg:
+		if msg.id == m.statusMsgID {
+			m.statusMsg = ""
+		}
+		return m, nil
+
 	case dashboardStatsLoadedMsg:
 		m.isLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading dashboard: " + msg.err.Error()
-		} else {
-			m.dashboardPRsCount = msg.prsCount
-			m.dashboardWorkflowsCount = msg.workflowsCount
-			m.statusMsg = "Dashboard stats updated"
+			return m, m.setStatusMsg("Error loading dashboard: " + msg.err.Error())
 		}
+		m.dashboardPRsCount = msg.prsCount
+		m.dashboardWorkflowsCount = msg.workflowsCount
+		m.statusMsg = ""
 		m.state = viewMain
 
 	case pullsLoadedMsg:
@@ -1278,9 +1513,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.isLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading PRs: " + msg.err.Error()
 			m.state = viewMain
-			return m, nil
+			return m, m.setStatusMsg("Error loading PRs: " + msg.err.Error())
 		}
 		
 		if m.pullPage == 1 {
@@ -1289,12 +1523,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pulls = append(m.pulls, msg.pulls...)
 		}
 		
+		if len(m.repos) == 0 && len(msg.repos) > 0 {
+			m.repos = msg.repos
+		}
+
 		if len(msg.pulls) == 0 {
 			m.hasMorePulls = false
 		}
 		m.scrollPulls()
 		m.state = viewMain
-		m.statusMsg = "Successfully loaded Pull Requests"
+		m.statusMsg = ""
 
 	case issuesLoadedMsg:
 		if (m.state != viewMain && m.state != viewSplash) || m.activeTab != tabIssues {
@@ -1302,9 +1540,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.isLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading issues: " + msg.err.Error()
 			m.state = viewMain
-			return m, nil
+			return m, m.setStatusMsg("Error loading issues: " + msg.err.Error())
 		}
 
 		if m.issuePage == 1 {
@@ -1313,20 +1550,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.issues = append(m.issues, msg.issues...)
 		}
 
-		if len(msg.issues) == 0 {
-			m.hasMoreIssues = false
+		if len(m.repos) == 0 && len(msg.repos) > 0 {
+			m.repos = msg.repos
 		}
+
+		m.hasMoreIssues = msg.hasMore
 		m.scrollIssues()
 		m.state = viewMain
-		m.statusMsg = "Successfully loaded Issues"
-
+		m.statusMsg = ""
 
 	case prDetailsLoadedMsg:
 		m.isLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading PR details: " + msg.err.Error()
 			m.state = viewMain
-			return m, nil
+			return m, m.setStatusMsg("Error loading PR details: " + msg.err.Error())
 		}
 		
 		m.selectedPull = msg.pull
@@ -1580,9 +1817,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.isLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading runs: " + msg.err.Error()
 			m.state = viewMain
-			return m, nil
+			return m, m.setStatusMsg("Error loading runs: " + msg.err.Error())
 		}
 
 		filtered := msg.runs
@@ -1601,6 +1837,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runs = append(m.runs, filtered...)
 		}
 
+		if len(m.repos) == 0 && len(msg.repos) > 0 {
+			m.repos = msg.repos
+		}
+
 		sortRuns(m.runs)
 
 		if len(msg.runs) == 0 {
@@ -1609,7 +1849,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.scrollRuns()
 		m.state = viewMain
-		m.statusMsg = "Successfully loaded runs"
+		m.statusMsg = ""
 		return m, m.checkApprovalPermissionCmd()
 
 	case runsPolledMsg:
@@ -1675,25 +1915,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if strings.Contains(errStr, "404") || strings.Contains(errStr, "BlobNotFound") || strings.Contains(errStr, "The specified blob does not exist") {
 				statusMsg = "Logs are not yet available for running jobs. Please wait for the job to complete."
 			}
-			m.statusMsg = statusMsg
 			m.state = viewJobs
-			return m, nil
+			return m, m.setStatusMsg(statusMsg)
 		}
 		m.logs = msg.logs
+
+		job := m.jobs[m.selectedJobIdx]
+		m.logsSegments = segmentLogs(msg.logs, job.Steps)
+
+		m.selectedStepIdx = 0
+		for i, s := range job.Steps {
+			if s.Conclusion == "failure" {
+				m.selectedStepIdx = i
+				break
+			}
+		}
 
 		// Initialize viewport only if we are entering logs view for the first time
 		if m.state != viewLogs {
 			m.followLogs = true
-			m.logsViewport = viewport.New(m.width-4, m.height-8)
+			leftWidth := 32
+			m.logsViewport = viewport.New(m.width-leftWidth-6, m.height-8)
 			if m.logsViewport.Height < 5 {
 				m.logsViewport.Height = 5
 			}
 		}
 
-		m.logsViewport.SetContent(m.logs)
-		if m.followLogs {
-			m.logsViewport.GotoBottom()
-		}
+		m.updateLogsViewportContent()
 		m.state = viewLogs
 
 	case runUpdateMsg:
@@ -1756,16 +2004,32 @@ func (m Model) fetchRunsCmd() tea.Cmd {
 		}
 		target := m.targets[m.selectedTargetIdx]
 
-		// 1. Fetch repositories sorted by pushes
+		// 1. Resolve repositories list (use cached m.repos or fetch as fallback)
 		var repos []gh.Repository
-		var err error
-		if target.IsOrg {
-			repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 15)
+		if len(m.repos) > 0 {
+			repos = m.repos
 		} else {
-			repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 15)
+			var err error
+			if target.IsOrg {
+				repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 100)
+			} else {
+				repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 100)
+			}
+			if err != nil {
+				return runsLoadedMsg{err: err}
+			}
 		}
-		if err != nil {
-			return runsLoadedMsg{err: err}
+
+		// Apply repository filter if set
+		if m.filterRepo != "" {
+			var filtered []gh.Repository
+			for _, r := range repos {
+				if r.Name == m.filterRepo {
+					filtered = append(filtered, r)
+					break
+				}
+			}
+			repos = filtered
 		}
 
 		if len(repos) == 0 {
@@ -1805,7 +2069,7 @@ func (m Model) fetchRunsCmd() tea.Cmd {
 		// Sort all runs
 		sortRuns(allRuns)
 
-		return runsLoadedMsg{runs: allRuns}
+		return runsLoadedMsg{runs: allRuns, repos: repos}
 	}
 }
 
@@ -2202,14 +2466,29 @@ func (m Model) fetchPullsCmd() tea.Cmd {
 		target := m.targets[m.selectedTargetIdx]
 
 		var repos []gh.Repository
-		var err error
-		if target.IsOrg {
-			repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 15)
+		if len(m.repos) > 0 {
+			repos = m.repos
 		} else {
-			repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 15)
+			var err error
+			if target.IsOrg {
+				repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 100)
+			} else {
+				repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 100)
+			}
+			if err != nil {
+				return pullsLoadedMsg{err: err}
+			}
 		}
-		if err != nil {
-			return pullsLoadedMsg{err: err}
+
+		if m.filterRepo != "" {
+			var filtered []gh.Repository
+			for _, r := range repos {
+				if r.Name == m.filterRepo {
+					filtered = append(filtered, r)
+					break
+				}
+			}
+			repos = filtered
 		}
 
 		if len(repos) == 0 {
@@ -2284,7 +2563,7 @@ func (m Model) fetchPullsCmd() tea.Cmd {
 			return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
 		})
 
-		return pullsLoadedMsg{pulls: filtered}
+		return pullsLoadedMsg{pulls: filtered, repos: repos}
 	}
 }
 
@@ -2560,14 +2839,29 @@ func (m Model) fetchIssuesCmd() tea.Cmd {
 		target := m.targets[m.selectedTargetIdx]
 
 		var repos []gh.Repository
-		var err error
-		if target.IsOrg {
-			repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 15)
+		if len(m.repos) > 0 {
+			repos = m.repos
 		} else {
-			repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 15)
+			var err error
+			if target.IsOrg {
+				repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 100)
+			} else {
+				repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 100)
+			}
+			if err != nil {
+				return issuesLoadedMsg{err: err}
+			}
 		}
-		if err != nil {
-			return issuesLoadedMsg{err: err}
+
+		if m.filterRepo != "" {
+			var filtered []gh.Repository
+			for _, r := range repos {
+				if r.Name == m.filterRepo {
+					filtered = append(filtered, r)
+					break
+				}
+			}
+			repos = filtered
 		}
 
 		if len(repos) == 0 {
@@ -2583,6 +2877,8 @@ func (m Model) fetchIssuesCmd() tea.Cmd {
 			limit = 8
 		}
 
+		var anyHasMore bool
+
 		for i := 0; i < limit; i++ {
 			repo := repos[i]
 			wg.Add(1)
@@ -2592,13 +2888,16 @@ func (m Model) fetchIssuesCmd() tea.Cmd {
 				if state == "" {
 					state = "open"
 				}
-				issues, err := m.client.GetIssuesWithState(m.ctx, r.Owner.Login, r.Name, state, m.issuePage, 8)
+				issues, hasMore, err := m.client.GetIssuesWithState(m.ctx, r.Owner.Login, r.Name, state, m.issuePage, 50)
 				if err == nil {
 					for j := range issues {
 						issues[j].Repository = r
 					}
 					mu.Lock()
 					allIssues = append(allIssues, issues...)
+					if hasMore {
+						anyHasMore = true
+					}
 					mu.Unlock()
 				}
 			}(repo)
@@ -2630,7 +2929,7 @@ func (m Model) fetchIssuesCmd() tea.Cmd {
 			return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
 		})
 
-		return issuesLoadedMsg{issues: filtered}
+		return issuesLoadedMsg{issues: filtered, repos: repos, hasMore: anyHasMore}
 	}
 }
 
@@ -2842,5 +3141,333 @@ func (m Model) approveWorkflowRunCmd(owner, repo string, runID int64, status, co
 		}
 		return workflowRunApprovedMsg{runID: runID, err: fmt.Errorf("workflow run does not require approval")}
 	}
+}
+
+type reposLoadedMsg struct {
+	repos []gh.Repository
+	err   error
+}
+
+func (m Model) fetchReposCmd() tea.Cmd {
+	return func() tea.Msg {
+		if len(m.targets) == 0 {
+			return reposLoadedMsg{err: auth.ErrUnauthenticated}
+		}
+		target := m.targets[m.selectedTargetIdx]
+		var repos []gh.Repository
+		var err error
+		if target.IsOrg {
+			repos, err = m.client.GetRepos(m.ctx, "org", target.Name, 1, 100)
+		} else {
+			repos, err = m.client.GetRepos(m.ctx, "user", target.Name, 1, 100)
+		}
+		if err != nil {
+			return reposLoadedMsg{repos: nil, err: err}
+		}
+		return reposLoadedMsg{repos: repos}
+	}
+}
+
+func (m *Model) updateLogsViewportContent() {
+	segment := m.logsSegments[m.selectedStepIdx]
+	if segment == "" {
+		segment = "\n  (No logs available for this step.)"
+	} else {
+		segment = cleanLogForDisplay(segment)
+	}
+	m.logsViewport.SetContent(segment)
+	if m.followLogs {
+		m.logsViewport.GotoBottom()
+	} else {
+		m.logsViewport.GotoTop()
+	}
+}
+
+func cleanLogForDisplay(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	lines := strings.Split(raw, "\n")
+	var cleaned []string
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		// Skip standalone endgroup lines
+		if strings.HasSuffix(line, "##[endgroup]") || line == "##[endgroup]" {
+			continue
+		}
+
+		cleanLine := line
+		// Strip common GitHub Actions runner workflow control flags
+		cleanLine = strings.ReplaceAll(cleanLine, "##[group]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[endgroup]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[section]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[command]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[error]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[warning]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[debug]", "")
+		cleanLine = strings.ReplaceAll(cleanLine, "##[notice]", "")
+
+		// Strip standalone [command] prefix if present after timestamp
+		if idx := strings.Index(cleanLine, "Z [command]"); idx != -1 {
+			cleanLine = cleanLine[:idx+2] + cleanLine[idx+11:]
+		}
+
+		// Skip lines that became empty after stripping (e.g. just timestamp with no message)
+		payload := cleanLine
+		if idx := strings.Index(cleanLine, "Z "); idx != -1 {
+			payload = strings.TrimSpace(cleanLine[idx+2:])
+		}
+		if payload == "" {
+			continue
+		}
+
+		cleaned = append(cleaned, cleanLine)
+	}
+	return strings.Join(cleaned, "\n")
+}
+
+func parseLogTimestamp(line string) (time.Time, bool) {
+	idx := strings.Index(line, " ")
+	if idx == -1 {
+		return time.Time{}, false
+	}
+	tsStr := line[:idx]
+	if len(tsStr) < 19 {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, tsStr)
+	if err == nil {
+		return t, true
+	}
+	t, err = time.Parse(time.RFC3339Nano, tsStr)
+	if err == nil {
+		return t, true
+	}
+	return time.Time{}, false
+}
+
+func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
+	segments := make(map[int]string)
+	lines := strings.Split(rawLogs, "\n")
+
+	type activeStep struct {
+		index       int
+		name        string
+		startedAt   time.Time
+		completedAt time.Time
+		isPost      bool
+	}
+	var activeSteps []activeStep
+	for i, s := range steps {
+		if s.Conclusion != "skipped" {
+			isPost := strings.HasPrefix(strings.ToLower(s.Name), "post ") || strings.EqualFold(s.Name, "complete job")
+			as := activeStep{
+				index:       i,
+				name:        s.Name,
+				startedAt:   s.StartedAt,
+				completedAt: s.CompletedAt,
+				isPost:      isPost,
+			}
+			activeSteps = append(activeSteps, as)
+		}
+	}
+
+	currentActiveIdx := 0
+	currentStepIdx := 0
+	if len(activeSteps) > 0 {
+		currentStepIdx = activeSteps[0].index
+	}
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		t, hasTime := parseLogTimestamp(line)
+		cleanLine := line
+		if idx := strings.Index(line, "Z "); idx != -1 {
+			cleanLine = line[idx+2:]
+		}
+
+		// 1. Step transition check: advance if current step is done
+		if hasTime && len(activeSteps) > 0 && currentActiveIdx < len(activeSteps)-1 {
+			currStep := activeSteps[currentActiveIdx]
+			nextStep := activeSteps[currentActiveIdx+1]
+
+			if !currStep.completedAt.IsZero() {
+				shouldAdvance := false
+				if currStep.isPost {
+					if !t.Before(currStep.completedAt) || !t.Before(nextStep.startedAt) {
+						shouldAdvance = true
+					}
+				} else if nextStep.isPost || strings.Contains(cleanLine, "Post job cleanup.") {
+					if strings.Contains(cleanLine, "Post job cleanup.") || t.After(currStep.completedAt.Add(1000*time.Millisecond)) {
+						shouldAdvance = true
+					}
+				}
+				if shouldAdvance {
+					currentActiveIdx++
+					currentStepIdx = activeSteps[currentActiveIdx].index
+				}
+			}
+		}
+
+		if strings.Contains(cleanLine, "##[group]") || strings.Contains(cleanLine, "##[section]") {
+			title := cleanLine
+			if idx := strings.Index(cleanLine, "##[group]"); idx != -1 {
+				title = cleanLine[idx+9:]
+			} else if idx := strings.Index(cleanLine, "##[section]"); idx != -1 {
+				title = cleanLine[idx+11:]
+			}
+
+			// 1. Find candidates active around time t (using a 2-second grace window)
+			var candidates []activeStep
+			if hasTime {
+				for _, as := range activeSteps {
+					startLimit := as.startedAt.Add(-2 * time.Second)
+					var endLimit time.Time
+					if !as.completedAt.IsZero() {
+						endLimit = as.completedAt.Add(2 * time.Second)
+					}
+
+					inWindow := false
+					if !t.Before(startLimit) {
+						if endLimit.IsZero() || !t.After(endLimit) {
+							inWindow = true
+						}
+					}
+					if inWindow {
+						candidates = append(candidates, as)
+					}
+				}
+			}
+
+			// 2. Choose the best matching candidate
+			if len(candidates) > 0 {
+				bestIdx := currentStepIdx
+				maxScore := 0
+
+				for _, cand := range candidates {
+					// Only move forward chronologically in activeSteps
+					var activeIdx int
+					for idx, as := range activeSteps {
+						if as.index == cand.index {
+							activeIdx = idx
+							break
+						}
+					}
+					if activeIdx < currentActiveIdx {
+						continue
+					}
+
+					score := calculateMatchScore(title, cand.name)
+					if score > maxScore {
+						maxScore = score
+						bestIdx = cand.index
+					} else if score == maxScore && score > 0 {
+						// On tie with positive score, prefer the chronologically later step
+						bestIdx = cand.index
+					}
+				}
+
+				// Update both indexes to the chosen candidate
+				for idx, as := range activeSteps {
+					if as.index == bestIdx {
+						currentActiveIdx = idx
+						break
+					}
+				}
+				currentStepIdx = bestIdx
+			}
+		}
+
+		segments[currentStepIdx] = segments[currentStepIdx] + line + "\n"
+	}
+
+	return segments
+}
+
+func calculateMatchScore(groupTitle, stepName string) int {
+	g := strings.ToLower(groupTitle)
+	s := strings.ToLower(stepName)
+
+	gHasPost := strings.Contains(g, "post")
+	sHasPost := strings.Contains(s, "post")
+	if gHasPost != sHasPost {
+		return 0
+	}
+
+	gHasPre := strings.Contains(g, "pre")
+	sHasPre := strings.Contains(s, "pre")
+	if gHasPre != sHasPre {
+		return 0
+	}
+
+	if strings.Contains(g, s) || strings.Contains(s, g) {
+		return 1000
+	}
+
+	gStripped := stripAll(g)
+	sStripped := stripAll(s)
+	if strings.Contains(gStripped, sStripped) || strings.Contains(sStripped, gStripped) {
+		return 950
+	}
+
+	cleanG := cleanLogName(g)
+	cleanS := cleanLogName(s)
+
+	wordsG := strings.Fields(cleanG)
+	wordsS := strings.Fields(cleanS)
+
+	stopWords := map[string]bool{
+		"run": true, "post": true, "code": true, "job": true, "action": true,
+		"in": true, "to": true, "of": true, "for": true, "on": true, "at": true,
+		"by": true, "with": true, "the": true, "a": true, "an": true, "and": true,
+		"or": true, "is": true, "it": true, "as": true, "be": true,
+	}
+
+	score := 0
+	for _, w := range wordsS {
+		if len(w) >= 2 && !stopWords[w] {
+			matched := false
+			for _, gw := range wordsG {
+				if gw == w {
+					matched = true
+					score += len(w) * 10
+					break
+				} else if strings.HasSuffix(w, "s") && len(w) > 3 && gw == w[:len(w)-1] {
+					matched = true
+					score += (len(w) - 1) * 10
+					break
+				}
+			}
+			if !matched && strings.Contains(cleanG, w) && len(w) >= 4 {
+				score += len(w) * 5
+			}
+		}
+	}
+	return score
+}
+
+func stripAll(s string) string {
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.ReplaceAll(s, "-", "")
+	s = strings.ReplaceAll(s, "_", "")
+	s = strings.ReplaceAll(s, "/", "")
+	s = strings.ReplaceAll(s, "@", "")
+	s = strings.ReplaceAll(s, ":", "")
+	s = strings.ReplaceAll(s, ".", "")
+	return s
+}
+
+func cleanLogName(name string) string {
+	name = strings.ReplaceAll(name, "/", " ")
+	name = strings.ReplaceAll(name, "-", " ")
+	name = strings.ReplaceAll(name, "_", " ")
+	name = strings.ReplaceAll(name, "@", " ")
+	name = strings.ReplaceAll(name, ":", " ")
+	return name
 }
 

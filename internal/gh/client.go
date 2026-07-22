@@ -59,6 +59,13 @@ func (c *Client) GetRateLimit() RateLimitInfo {
 	return c.rateLimit
 }
 
+// SetRateLimit overrides the rate limit information (primarily for testing).
+func (c *Client) SetRateLimit(rl RateLimitInfo) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.rateLimit = rl
+}
+
 // GetScopes returns the scopes of the API token.
 func (c *Client) GetScopes() []string {
 	c.mu.RLock()
@@ -469,7 +476,7 @@ func (c *Client) GetPullRequestsWithState(ctx context.Context, owner, repo, stat
 }
 
 // GetIssuesWithState fetches issues with a custom state (open, closed, all) for a specific repository.
-func (c *Client) GetIssuesWithState(ctx context.Context, owner, repo, state string, page, perPage int) ([]Issue, error) {
+func (c *Client) GetIssuesWithState(ctx context.Context, owner, repo, state string, page, perPage int) ([]Issue, bool, error) {
 	var allIssues []Issue
 	q := params{
 		"state":    state,
@@ -479,7 +486,7 @@ func (c *Client) GetIssuesWithState(ctx context.Context, owner, repo, state stri
 	path := fmt.Sprintf("/repos/%s/%s/issues", owner, repo)
 	err := c.doRequest(ctx, "GET", path, q, &allIssues)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// Filter out PRs because the GitHub issues API returns both issues and pull requests.
@@ -489,7 +496,8 @@ func (c *Client) GetIssuesWithState(ctx context.Context, owner, repo, state stri
 			issues = append(issues, issue)
 		}
 	}
-	return issues, nil
+	hasMore := len(allIssues) == perPage
+	return issues, hasMore, nil
 }
 
 // GetIssue fetches a single issue by number.

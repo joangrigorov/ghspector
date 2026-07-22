@@ -161,6 +161,9 @@ default_org: "my-organization-name"
 # (Optional) Default user account context to open on startup
 default_account: "my-github-username"
 
+# (Optional) Default merge method to use when merging PRs (squash, merge, or rebase)
+default_merge_method: "squash"
+
 # (Optional) Background polling intervals in seconds (contextualized per tab/use-case)
 polling:
   workflows_interval_seconds: 5
