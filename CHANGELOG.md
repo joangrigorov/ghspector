@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/joangrigorov/ghspector/compare/v0.2.0...v0.3.0) (2026-07-22)
+
+
+### Features
+
+* **tui:** implement custom layout, merge defaults, and repo filtering ([#11](https://github.com/joangrigorov/ghspector/issues/11)) ([39e42f1](https://github.com/joangrigorov/ghspector/commit/39e42f196b9cab9009437878c1af4d613e4f1021))
+
 ## [0.2.0](https://github.com/joangrigorov/ghspector/compare/v0.1.0...v0.2.0) (2026-07-12)
 
 
