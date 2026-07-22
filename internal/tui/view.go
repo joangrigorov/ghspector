@@ -317,7 +317,7 @@ func (m Model) renderFooter(keys []string) string {
 	}
 
 	// Pinned Left Side: ?:Help  Esc:Exit (or Esc:Back)
-	r1LeftStr := m.theme.HelpKey.Render("?") + m.theme.HelpDesc.Render(":"+helpLabel) + "  " + m.theme.HelpKey.Render("Esc") + m.theme.HelpDesc.Render(":"+backLabel)
+	leftStr := m.theme.HelpKey.Render("?") + m.theme.HelpDesc.Render(":"+helpLabel) + "  " + m.theme.HelpKey.Render("Esc") + m.theme.HelpDesc.Render(":"+backLabel)
 
 	// Filter out pinned keys (?, Esc) from rightKeys
 	var rightKeys []string
@@ -332,14 +332,13 @@ func (m Model) renderFooter(keys []string) string {
 		rightKeys = append(rightKeys, k)
 	}
 
-	// Maximize the width of the bottom bar
 	width := m.width
 	if width < 40 {
 		width = 40
 	}
 	contentWidth := width - 2 // accounting for Padding(0, 1)
 
-	leftLen := lipgloss.Width(r1LeftStr)
+	leftLen := lipgloss.Width(leftStr)
 	maxRightWidth := contentWidth - leftLen - 2
 	if maxRightWidth < 0 {
 		maxRightWidth = 0
@@ -353,7 +352,17 @@ func (m Model) renderFooter(keys []string) string {
 		parts := strings.SplitN(k, ":", 2)
 		var item string
 		if len(parts) == 2 {
-			item = m.theme.HelpKey.Render(parts[0]) + m.theme.HelpDesc.Render(":"+parts[1])
+			desc := parts[1]
+			if desc == "Clear Filter" || desc == "Clear filter" {
+				desc = "Clear"
+			} else if desc == "Back to PRs" || desc == "Back to Details" || desc == "Back to PR" || desc == "Back to Issue" {
+				desc = "Back"
+			} else if desc == "Toggle Focus" {
+				desc = "Focus"
+			} else if desc == "Close PR" {
+				desc = "Close"
+			}
+			item = m.theme.HelpKey.Render(parts[0]) + m.theme.HelpDesc.Render(":"+desc)
 		} else {
 			item = m.theme.HelpDesc.Render(k)
 		}
@@ -368,20 +377,21 @@ func (m Model) renderFooter(keys []string) string {
 			rightRendered = append(rightRendered, item)
 			currentRightWidth += neededWidth
 		} else {
-			// Stop adding keys if width limit is reached
 			break
 		}
 	}
 
 	rightStr := strings.Join(rightRendered, "  ")
-	rightLen := lipgloss.Width(rightStr)
 
-	spaceWidth := contentWidth - leftLen - rightLen
-	if spaceWidth < 1 {
-		spaceWidth = 1
-	}
+	// Render Left (fixed) and Right (scalable right-aligned)
+	leftStyle := lipgloss.NewStyle().Width(leftLen)
+	rightStyle := lipgloss.NewStyle().Width(contentWidth - leftLen).Align(lipgloss.Right)
 
-	bottomBarContent := r1LeftStr + strings.Repeat(" ", spaceWidth) + rightStr
+	bottomBarContent := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		leftStyle.Render(leftStr),
+		rightStyle.Render(rightStr),
+	)
 
 	// Format status banner above bottom bar if active
 	var statusBanner string
