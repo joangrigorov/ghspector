@@ -2004,27 +2004,27 @@ func TestRenderFooterDeterministicNoWrap(t *testing.T) {
 		{
 			state:        viewMain,
 			keys:         []string{"Tab:Tabs", "j/k:Navigate", "Enter:Jobs", "w:Browser", "f:Filter", "m:My Runs", "x:Clear", "r:Refresh"},
-			expectedLeft: "?:Help  Esc:Exit",
+			expectedLeft: "?:Help  Esc:Exit  o:Account  q:Quit",
 		},
 		{
 			state:        viewMain,
 			keys:         []string{"Tab:Tabs", "j/k:Navigate", "Enter:View PR", "w:Browser", "f:Filter", "s:State", "a:My PRs", "i:Assigned", "v:Reviewed", "x:Clear", "r:Refresh"},
-			expectedLeft: "?:Help  Esc:Exit",
+			expectedLeft: "?:Help  Esc:Exit  o:Account  q:Quit",
 		},
 		{
 			state:        viewJobs,
 			keys:         []string{"j/k:Navigate", "Enter:Logs", "w:Job Browser", "v:Run Browser", "[/]:Attempts", "r:Refresh"},
-			expectedLeft: "?:Help  Esc:Back",
+			expectedLeft: "?:Help  Esc:Back  o:Account  q:Quit",
 		},
 		{
 			state:        viewLogs,
 			keys:         []string{"j/k:Steps", "u/d:Scroll Logs", "w:Browser", "r:Refresh"},
-			expectedLeft: "?:Help  Esc:Back",
+			expectedLeft: "?:Help  Esc:Back  o:Account  q:Quit",
 		},
 		{
 			state:        viewPRDetails,
 			keys:         []string{"Tab:Focus", "j/k:Navigate", "Enter:Run/Browser", "Shift+D:Diff", "r:Refresh", "m:Merge", "c:Comments", "v:Commits", "Shift+C:Close"},
-			expectedLeft: "?:Help  Esc:Back",
+			expectedLeft: "?:Help  Esc:Back  o:Account  q:Quit",
 		},
 	}
 

@@ -316,16 +316,19 @@ func (m Model) renderFooter(keys []string) string {
 		helpLabel = "Close Help"
 	}
 
-	// Pinned Left Side: ?:Help  Esc:Exit (or Esc:Back)
-	leftStr := m.theme.HelpKey.Render("?") + m.theme.HelpDesc.Render(":"+helpLabel) + "  " + m.theme.HelpKey.Render("Esc") + m.theme.HelpDesc.Render(":"+backLabel)
+	// Pinned Left Side Base: ?:Help  Esc:Exit (or Esc:Back)  o:Account  q:Quit
+	leftStr := m.theme.HelpKey.Render("?") + m.theme.HelpDesc.Render(":"+helpLabel) +
+		"  " + m.theme.HelpKey.Render("Esc") + m.theme.HelpDesc.Render(":"+backLabel) +
+		"  " + m.theme.HelpKey.Render("o") + m.theme.HelpDesc.Render(":Account") +
+		"  " + m.theme.HelpKey.Render("q") + m.theme.HelpDesc.Render(":Quit")
 
-	// Filter out pinned keys (?, Esc) from rightKeys
+	// Filter out pinned keys (?, Esc, o, q) from rightKeys
 	var rightKeys []string
 	for _, k := range keys {
 		parts := strings.SplitN(k, ":", 2)
 		if len(parts) > 0 {
 			keyStr := parts[0]
-			if keyStr == "?" || keyStr == "Esc" {
+			if keyStr == "?" || keyStr == "Esc" || keyStr == "o" || keyStr == "q" {
 				continue
 			}
 		}
