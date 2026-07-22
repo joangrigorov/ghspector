@@ -575,7 +575,15 @@ func (m Model) renderJobsView() string {
 	sb.WriteString("\n")
 
 	run := m.getRun()
-	workflowTitleText := renderHyperlink("Workflow: "+run.Name, run.HTMLURL)
+	runName := run.Name
+	if runName == "" {
+		runName = "Workflow"
+	}
+	repoFullName := run.Repository.FullName
+	if repoFullName == "" {
+		repoFullName = "unknown"
+	}
+	workflowTitleText := renderHyperlink("Workflow: "+runName, run.HTMLURL)
 	sb.WriteString("  " + m.theme.LogoText.Render(workflowTitleText) + "\n")
 
 	attemptText := ""
@@ -588,7 +596,12 @@ func (m Model) renderJobsView() string {
 	} else if shaText == "" {
 		shaText = "unknown"
 	}
-	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Branch: %s | SHA: %s%s", run.Repository.FullName, run.HeadBranch, shaText, attemptText)) + "\n\n")
+	divWidth := m.width - 4
+	if divWidth < 10 {
+		divWidth = 10
+	}
+	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Branch: %s | SHA: %s%s", repoFullName, run.HeadBranch, shaText, attemptText)) + "\n")
+	sb.WriteString("  " + m.theme.Border.Render(strings.Repeat("─", divWidth)) + "\n\n")
 
 	needsApproval := (run.Status == "waiting" || run.Conclusion == "action_required")
 	renderedCount := 0
@@ -1198,9 +1211,13 @@ func (m Model) renderPRDetailsView() string {
 		authorLogin = pr.User.Login
 	}
 
+	divWidth := m.width - 4
+	if divWidth < 10 {
+		divWidth = 10
+	}
 	sb.WriteString("  " + prStateStyle.Render(fmt.Sprintf("[%s]", prStateStr)) + " " + m.theme.LogoText.Render(fmt.Sprintf("PR #%d: %s", pr.Number, pr.Title)) + "\n")
 	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Author: @%s | Source: %s → Base: %s", pr.Repository.FullName, authorLogin, pr.Head.Ref, pr.Base.Ref)) + "\n")
-	sb.WriteString("  " + m.theme.Border.Render(strings.Repeat("─", m.width-4)) + "\n\n")
+	sb.WriteString("  " + m.theme.Border.Render(strings.Repeat("─", divWidth)) + "\n\n")
 
 	// Calculate widths dynamically
 	sidebarWidth := m.width / 5
@@ -2418,9 +2435,13 @@ func (m Model) renderIssueDetailsView() string {
 		authorLogin = issue.User.Login
 	}
 
+	divWidth := m.width - 4
+	if divWidth < 10 {
+		divWidth = 10
+	}
 	sb.WriteString("  " + issueStateStyle.Render(fmt.Sprintf("[%s]", issueStateStr)) + " " + m.theme.LogoText.Render(fmt.Sprintf("Issue #%d: %s", issue.Number, issue.Title)) + "\n")
 	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Author: @%s", issue.Repository.FullName, authorLogin)) + "\n")
-	sb.WriteString("  " + m.theme.Border.Render(strings.Repeat("─", m.width-4)) + "\n\n")
+	sb.WriteString("  " + m.theme.Border.Render(strings.Repeat("─", divWidth)) + "\n\n")
 
 	// Calculate widths dynamically
 	sidebarWidth := m.width / 5
