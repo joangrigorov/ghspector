@@ -1187,8 +1187,8 @@ func TestTUI_RunningJobLogsAndPRDetailsRefresh(t *testing.T) {
 	// Pressing Enter on running job should show warning and not fetch logs
 	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = rawModel.(Model)
-	if cmd != nil {
-		t.Error("expected command to be nil when trying to fetch logs of a running job")
+	if cmd == nil {
+		t.Error("expected auto-dismiss timer command when trying to fetch logs of a running job")
 	}
 	if !strings.Contains(m.statusMsg, "not yet available") {
 		t.Errorf("expected statusMsg to contain warning about running job logs, got %q", m.statusMsg)
@@ -1936,6 +1936,36 @@ func TestPRDraftIndicators(t *testing.T) {
 	sidebarOutput := m.renderPRRightSidebar(40, 20)
 	if !strings.Contains(sidebarOutput, "DRAFT") {
 		t.Errorf("expected PR sidebar to contain 'State: DRAFT', got:\n%s", sidebarOutput)
+	}
+}
+
+func TestStatusBannerAndAutoDismiss(t *testing.T) {
+	client := gh.NewClient("test-token", "https://api.github.com")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.width = 100
+	m.height = 30
+
+	cmd := m.setStatusMsg("Logs are not yet available for running jobs. Please wait for completion.")
+	if cmd == nil {
+		t.Fatal("expected setStatusMsg to return auto-dismiss timer command")
+	}
+
+	// 1. Verify status banner renders above footer
+	footerOutput := m.renderFooter([]string{"q:Quit"})
+	if !strings.Contains(footerOutput, "Logs are not yet available") {
+		t.Errorf("expected footer to contain status banner text, got:\n%s", footerOutput)
+	}
+	if !strings.Contains(footerOutput, "✖") {
+		t.Errorf("expected status banner to contain error icon '✖', got:\n%s", footerOutput)
+	}
+
+	// 2. Verify clearStatusMsg clears statusMsg
+	id := m.statusMsgID
+	rawModel, _ := m.Update(clearStatusMsg{id: id})
+	m = rawModel.(Model)
+	if m.statusMsg != "" {
+		t.Errorf("expected statusMsg to be cleared after clearStatusMsg, got %q", m.statusMsg)
 	}
 }
 

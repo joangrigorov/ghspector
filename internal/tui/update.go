@@ -1184,8 +1184,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.jobs) > 0 {
 					job := m.jobs[m.selectedJobIdx]
 					if job.Status == "in_progress" || job.Status == "queued" {
-						m.statusMsg = "Logs are not yet available for running jobs. Please wait for completion."
-						return m, nil
+						return m, m.setStatusMsg("Logs are not yet available for running jobs. Please wait for completion.")
 					}
 					run := m.getRun()
 					m.state = viewLogs
@@ -1257,9 +1256,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "r", "ctrl+r":
 				job := m.jobs[m.selectedJobIdx]
 				if job.Status == "in_progress" || job.Status == "queued" {
-					m.statusMsg = "Logs are not yet available for running jobs. Please wait for completion."
 					m.logsLoading = false
-					return m, nil
+					return m, m.setStatusMsg("Logs are not yet available for running jobs. Please wait for completion.")
 				}
 				run := m.getRun()
 				m.logs = ""
@@ -1464,15 +1462,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loadingMsg = "Loading dashboard for " + m.targets[m.selectedTargetIdx].Name
 		return m, m.fetchActiveTabCmd()
 
+	case clearStatusMsg:
+		if msg.id == m.statusMsgID {
+			m.statusMsg = ""
+		}
+		return m, nil
+
 	case dashboardStatsLoadedMsg:
 		m.isLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading dashboard: " + msg.err.Error()
-		} else {
-			m.dashboardPRsCount = msg.prsCount
-			m.dashboardWorkflowsCount = msg.workflowsCount
-			m.statusMsg = "Dashboard stats updated"
+			return m, m.setStatusMsg("Error loading dashboard: " + msg.err.Error())
 		}
+		m.dashboardPRsCount = msg.prsCount
+		m.dashboardWorkflowsCount = msg.workflowsCount
+		m.statusMsg = ""
 		m.state = viewMain
 
 	case pullsLoadedMsg:
@@ -1481,9 +1484,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.isLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading PRs: " + msg.err.Error()
 			m.state = viewMain
-			return m, nil
+			return m, m.setStatusMsg("Error loading PRs: " + msg.err.Error())
 		}
 		
 		if m.pullPage == 1 {
@@ -1501,7 +1503,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.scrollPulls()
 		m.state = viewMain
-		m.statusMsg = "Successfully loaded Pull Requests"
+		m.statusMsg = ""
 
 	case issuesLoadedMsg:
 		if (m.state != viewMain && m.state != viewSplash) || m.activeTab != tabIssues {
@@ -1509,9 +1511,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.isLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading issues: " + msg.err.Error()
 			m.state = viewMain
-			return m, nil
+			return m, m.setStatusMsg("Error loading issues: " + msg.err.Error())
 		}
 
 		if m.issuePage == 1 {
@@ -1527,15 +1528,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.hasMoreIssues = msg.hasMore
 		m.scrollIssues()
 		m.state = viewMain
-		m.statusMsg = "Successfully loaded Issues"
-
+		m.statusMsg = ""
 
 	case prDetailsLoadedMsg:
 		m.isLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading PR details: " + msg.err.Error()
 			m.state = viewMain
-			return m, nil
+			return m, m.setStatusMsg("Error loading PR details: " + msg.err.Error())
 		}
 		
 		m.selectedPull = msg.pull
@@ -1789,9 +1788,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.isLoading = false
 		if msg.err != nil {
-			m.statusMsg = "Error loading runs: " + msg.err.Error()
 			m.state = viewMain
-			return m, nil
+			return m, m.setStatusMsg("Error loading runs: " + msg.err.Error())
 		}
 
 		filtered := msg.runs
@@ -1822,7 +1820,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.scrollRuns()
 		m.state = viewMain
-		m.statusMsg = "Successfully loaded runs"
+		m.statusMsg = ""
 		return m, m.checkApprovalPermissionCmd()
 
 	case runsPolledMsg:
@@ -1888,9 +1886,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if strings.Contains(errStr, "404") || strings.Contains(errStr, "BlobNotFound") || strings.Contains(errStr, "The specified blob does not exist") {
 				statusMsg = "Logs are not yet available for running jobs. Please wait for the job to complete."
 			}
-			m.statusMsg = statusMsg
 			m.state = viewJobs
-			return m, nil
+			return m, m.setStatusMsg(statusMsg)
 		}
 		m.logs = msg.logs
 

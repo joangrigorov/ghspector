@@ -354,25 +354,19 @@ func (m Model) renderFooter(keys []string) string {
 	}
 	leftStr := strings.Join(leftRendered, "  ")
 
-	// Format status
-	status := ""
+	// Format status banner above bottom bar
+	var statusBanner string
 	if m.statusMsg != "" {
 		lowerMsg := strings.ToLower(m.statusMsg)
-		if strings.HasPrefix(lowerMsg, "error") || strings.Contains(lowerMsg, "failed") || strings.Contains(lowerMsg, "missing scopes") {
-			cleanErr := m.statusMsg
-			cleanErr = strings.TrimPrefix(cleanErr, "Error: ")
-			cleanErr = strings.TrimPrefix(cleanErr, "error: ")
-			status = " | " + m.theme.StatusFailed.Render("error: "+cleanErr)
-		} else {
-			status = " | " + m.theme.StatusSuccessful.Render(m.statusMsg)
-		}
-	}
+		isError := strings.HasPrefix(lowerMsg, "error") || strings.Contains(lowerMsg, "failed") || strings.Contains(lowerMsg, "missing scopes") || strings.Contains(lowerMsg, "not yet available") || strings.Contains(lowerMsg, "invalid") || strings.Contains(lowerMsg, "cannot")
 
-	if status != "" {
-		if leftStr != "" {
-			leftStr += status
+		cleanMsg := m.statusMsg
+		if isError {
+			cleanMsg = strings.TrimPrefix(cleanMsg, "Error: ")
+			cleanMsg = strings.TrimPrefix(cleanMsg, "error: ")
+			statusBanner = "  " + m.theme.StatusFailed.Render("✖ "+cleanMsg) + "\n"
 		} else {
-			leftStr = status
+			statusBanner = "  " + m.theme.StatusWaiting.Render("ℹ "+cleanMsg) + "\n"
 		}
 	}
 
@@ -408,7 +402,7 @@ func (m Model) renderFooter(keys []string) string {
 	}
 
 	// Render using bottom bar style with explicit content width
-	return "\n" + m.theme.BottomBar.Width(contentWidth).Render(content)
+	return statusBanner + m.theme.BottomBar.Width(contentWidth).Render(content)
 }
 
 // renderMainView renders the Workflow Runs list with a scrolling window.

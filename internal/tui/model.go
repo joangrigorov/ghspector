@@ -164,6 +164,7 @@ type Model struct {
 
 	// Status messages & flags
 	statusMsg   string
+	statusMsgID int
 	isLoading   bool
 	loadingMsg  string
 	
@@ -441,4 +442,20 @@ func (m Model) selectedRunCanApprove() bool {
 	
 	needsApproval := (run.Status == "waiting" || run.Conclusion == "action_required")
 	return needsApproval && m.approvalPermissions[run.ID]
+}
+
+type clearStatusMsg struct {
+	id int
+}
+
+func (m *Model) setStatusMsg(msg string) tea.Cmd {
+	m.statusMsg = msg
+	if msg == "" {
+		return nil
+	}
+	m.statusMsgID++
+	id := m.statusMsgID
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return clearStatusMsg{id: id}
+	})
 }
