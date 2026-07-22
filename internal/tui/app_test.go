@@ -1990,6 +1990,60 @@ func TestJobViewBrowserShortcut(t *testing.T) {
 	}
 }
 
+func TestRenderFooterDeterministicNoWrap(t *testing.T) {
+	client := gh.NewClient("test-token", "https://api.github.com")
+	m := InitModel(client, nil)
+	m.width = 120
+	m.height = 30
+
+	testCases := []struct {
+		state        viewState
+		keys         []string
+		expectedLeft string
+	}{
+		{
+			state:        viewMain,
+			keys:         []string{"Tab:Tabs", "j/k:Navigate", "Enter:Jobs", "w:Browser", "f:Filter", "m:My Runs", "x:Clear", "r:Refresh"},
+			expectedLeft: "?:Help  Esc:Exit",
+		},
+		{
+			state:        viewMain,
+			keys:         []string{"Tab:Tabs", "j/k:Navigate", "Enter:View PR", "w:Browser", "f:Filter", "s:State", "a:My PRs", "i:Assigned", "v:Reviewed", "x:Clear", "r:Refresh"},
+			expectedLeft: "?:Help  Esc:Exit",
+		},
+		{
+			state:        viewJobs,
+			keys:         []string{"j/k:Navigate", "Enter:Logs", "w:Job Browser", "v:Run Browser", "[/]:Attempts", "r:Refresh"},
+			expectedLeft: "?:Help  Esc:Back",
+		},
+		{
+			state:        viewLogs,
+			keys:         []string{"j/k:Steps", "u/d:Scroll Logs", "w:Browser", "r:Refresh"},
+			expectedLeft: "?:Help  Esc:Back",
+		},
+		{
+			state:        viewPRDetails,
+			keys:         []string{"Tab:Focus", "j/k:Navigate", "Enter:Run/Browser", "Shift+D:Diff", "r:Refresh", "m:Merge", "c:Comments", "v:Commits", "Shift+C:Close"},
+			expectedLeft: "?:Help  Esc:Back",
+		},
+	}
+
+	for _, tc := range testCases {
+		m.state = tc.state
+		footer := m.renderFooter(tc.keys)
+
+		// Border (line 1) + 1 single bottom bar text line (line 2) = 2 lines total
+		lines := strings.Split(footer, "\n")
+		if len(lines) != 2 {
+			t.Errorf("state %v: expected top border + single content line without wrapping (2 lines total), got %d lines:\n%s", tc.state, len(lines), footer)
+		}
+
+		if !strings.Contains(footer, tc.expectedLeft) {
+			t.Errorf("state %v: expected left side to contain %q, got:\n%s", tc.state, tc.expectedLeft, footer)
+		}
+	}
+}
+
 
 
 

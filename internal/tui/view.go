@@ -336,10 +336,11 @@ func (m Model) renderFooter(keys []string) string {
 	if width < 40 {
 		width = 40
 	}
-	contentWidth := width - 2 // accounting for Padding(0, 1)
 
+	// BottomBar has Padding(0, 1), so inner printable width is width - 2
+	innerWidth := width - 2
 	leftLen := lipgloss.Width(leftStr)
-	maxRightWidth := contentWidth - leftLen - 2
+	maxRightWidth := innerWidth - leftLen - 1
 	if maxRightWidth < 0 {
 		maxRightWidth = 0
 	}
@@ -385,7 +386,7 @@ func (m Model) renderFooter(keys []string) string {
 
 	// Render Left (fixed) and Right (scalable right-aligned)
 	leftStyle := lipgloss.NewStyle().Width(leftLen)
-	rightStyle := lipgloss.NewStyle().Width(contentWidth - leftLen).Align(lipgloss.Right)
+	rightStyle := lipgloss.NewStyle().Width(innerWidth - leftLen).Align(lipgloss.Right)
 
 	bottomBarContent := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -409,7 +410,7 @@ func (m Model) renderFooter(keys []string) string {
 		}
 	}
 
-	return statusBanner + m.theme.BottomBar.Width(contentWidth).Render(bottomBarContent)
+	return statusBanner + m.theme.BottomBar.Width(width).Render(bottomBarContent)
 }
 
 // renderMainView renders the Workflow Runs list with a scrolling window.
@@ -741,7 +742,7 @@ func (m Model) renderJobsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"?:Help", "Esc:Back", "j/k:Navigate", "Enter:Logs", "w:Job in Browser", "v:Run in Browser", "[/]:Attempts"}
+	keys := []string{"j/k:Navigate", "Enter:Logs", "w:Job Browser", "v:Run Browser", "[/]:Attempts", "r:Refresh"}
 	if m.selectedRunCanApprove() {
 		keys = append(keys[:5], append([]string{"a:Approve"}, keys[5:]...)...)
 	}
@@ -792,7 +793,7 @@ func (m Model) renderLogsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"?:Help", "Esc:Back", "j/k:Navigate Steps", "u/d:Scroll Logs", "w:Browser", "r:Refresh"}
+	keys := []string{"j/k:Steps", "u/d:Scroll Logs", "w:Browser", "r:Refresh"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
