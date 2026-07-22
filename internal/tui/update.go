@@ -1208,14 +1208,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "w", "W":
 				if len(m.jobs) > 0 && m.selectedJobIdx >= 0 && m.selectedJobIdx < len(m.jobs) {
 					job := m.jobs[m.selectedJobIdx]
-					if job.HTMLURL != "" {
-						_ = openBrowser(job.HTMLURL)
+					url := job.HTMLURL
+					if url == "" {
+						run := m.getRun()
+						if run.HTMLURL != "" {
+							url = fmt.Sprintf("%s/job/%d", run.HTMLURL, job.ID)
+						} else if run.Repository.FullName != "" {
+							url = fmt.Sprintf("https://github.com/%s/actions/runs/%d/job/%d", run.Repository.FullName, run.ID, job.ID)
+						}
+					}
+					if url != "" {
+						_ = openBrowser(url)
 					}
 				}
 			case "v", "V":
 				run := m.getRun()
-				if run.HTMLURL != "" {
-					_ = openBrowser(run.HTMLURL)
+				url := run.HTMLURL
+				if url == "" && run.Repository.FullName != "" {
+					url = fmt.Sprintf("https://github.com/%s/actions/runs/%d", run.Repository.FullName, run.ID)
+				}
+				if url != "" {
+					_ = openBrowser(url)
 				}
 			case "r", "ctrl+r":
 				run := m.getRun()
@@ -1282,6 +1295,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logsViewport.ScrollDown(3)
 				if m.logsViewport.AtBottom() {
 					m.followLogs = true
+				}
+			case "w", "W":
+				if len(m.jobs) > 0 && m.selectedJobIdx >= 0 && m.selectedJobIdx < len(m.jobs) {
+					job := m.jobs[m.selectedJobIdx]
+					url := job.HTMLURL
+					if url == "" {
+						run := m.getRun()
+						if run.HTMLURL != "" {
+							url = fmt.Sprintf("%s/job/%d", run.HTMLURL, job.ID)
+						} else if run.Repository.FullName != "" {
+							url = fmt.Sprintf("https://github.com/%s/actions/runs/%d/job/%d", run.Repository.FullName, run.ID, job.ID)
+						}
+					}
+					if url != "" {
+						_ = openBrowser(url)
+					}
 				}
 			default:
 				// Only forward key events that are not steps navigation
