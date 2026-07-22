@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -353,7 +354,7 @@ func TestTUI_Integration(t *testing.T) {
 	// Move scroll up: YOffset should become less than oldY (which was at bottom/max height)
 	// We can manually decrease YOffset to simulate scrolling up
 	model.logsViewport.YOffset = 1
-	rawModel, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("up")})
+	rawModel, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	model = rawModel.(Model)
 
 	if model.followLogs {
@@ -452,6 +453,11 @@ func TestTUI_ActorFilter(t *testing.T) {
 	// Test custom filter prompt input (f)
 	m.state = viewMain
 	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = rawModel.(Model)
+	if m.state != viewFilterTypeSelect {
+		t.Error("expected state viewFilterTypeSelect after pressing f")
+	}
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	m = rawModel.(Model)
 	if !m.showFilterInput {
 		t.Error("expected showFilterInput to be true")
@@ -1181,8 +1187,8 @@ func TestTUI_RunningJobLogsAndPRDetailsRefresh(t *testing.T) {
 	// Pressing Enter on running job should show warning and not fetch logs
 	rawModel, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = rawModel.(Model)
-	if cmd != nil {
-		t.Error("expected command to be nil when trying to fetch logs of a running job")
+	if cmd == nil {
+		t.Error("expected auto-dismiss timer command when trying to fetch logs of a running job")
 	}
 	if !strings.Contains(m.statusMsg, "not yet available") {
 		t.Errorf("expected statusMsg to contain warning about running job logs, got %q", m.statusMsg)
@@ -1366,6 +1372,719 @@ func TestWorkflowApprovalFlow(t *testing.T) {
 	}
 	if m.statusMsg != "Workflow run successfully approved!" {
 		t.Errorf("expected success statusMsg, got %q", m.statusMsg)
+	}
+}
+
+func TestTUI_DefaultMergeMethod(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	cfg := &auth.Config{
+		DefaultMergeMethod: "squash",
+	}
+	m := InitModel(client, cfg)
+	m.state = viewPRDetails
+	m.mergeState = 1 // choose merge method modal active
+
+	// 1. Pressing 'd' cycles DefaultMergeMethod: squash -> merge
+	rawModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = rawModel.(Model)
+	if m.config.DefaultMergeMethod != "merge" {
+		t.Errorf("expected default merge method to cycle to 'merge', got %q", m.config.DefaultMergeMethod)
+	}
+
+	// 2. Pressing 'd' cycles DefaultMergeMethod: merge -> rebase
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = rawModel.(Model)
+	if m.config.DefaultMergeMethod != "rebase" {
+		t.Errorf("expected default merge method to cycle to 'rebase', got %q", m.config.DefaultMergeMethod)
+	}
+
+	// 3. Pressing 'd' cycles DefaultMergeMethod: rebase -> squash
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = rawModel.(Model)
+	if m.config.DefaultMergeMethod != "squash" {
+		t.Errorf("expected default merge method to cycle to 'squash', got %q", m.config.DefaultMergeMethod)
+	}
+
+	// 4. Pressing Enter confirms the default (squash) and transitions to confirm screen (mergeState = 2)
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = rawModel.(Model)
+	if m.mergeState != 2 {
+		t.Errorf("expected mergeState to be 2 (confirm screen), got %d", m.mergeState)
+	}
+	if m.mergeMethod != 0 { // 0 is Squash
+		t.Errorf("expected mergeMethod to be 0 (squash), got %d", m.mergeMethod)
+	}
+}
+
+func TestTUI_RepoFilterSelection(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.state = viewMain
+	m.activeTab = tabPRs
+	m.repos = []gh.Repository{
+		{Name: "repo-a"},
+		{Name: "repo-b"},
+		{Name: "repo-c"},
+	}
+
+	// 1. Pressing 'f' enters filter type selection modal
+	rawModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = rawModel.(Model)
+	if m.state != viewFilterTypeSelect {
+		t.Errorf("expected state to be viewFilterTypeSelect, got %d", m.state)
+	}
+
+	// 2. Pressing 'r' enters repository list select modal
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m = rawModel.(Model)
+	if m.state != viewRepoFilterSelect {
+		t.Errorf("expected state to be viewRepoFilterSelect, got %d", m.state)
+	}
+	if m.selectedRepoIdx != 0 {
+		t.Errorf("expected default selectedRepoIdx to be 0, got %d", m.selectedRepoIdx)
+	}
+
+	// 3. Pressing 'j' (down) selects the next repository
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = rawModel.(Model)
+	if m.selectedRepoIdx != 1 {
+		t.Errorf("expected selectedRepoIdx to be 1 after down key, got %d", m.selectedRepoIdx)
+	}
+
+	// 4. Pressing Enter selects "repo-b", sets it as active repository filter, returns to main view and triggers pull request fetching
+	rawModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = rawModel.(Model)
+	if m.state != viewMain {
+		t.Errorf("expected state to return to viewMain, got %d", m.state)
+	}
+	if m.filterRepo != "repo-b" {
+		t.Errorf("expected filterRepo to be 'repo-b', got %q", m.filterRepo)
+	}
+	if cmd == nil {
+		t.Error("expected fetchPullsCmd to be returned")
+	}
+
+	// 5. Pressing 'x' clears all active filters (including repo filter)
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = rawModel.(Model)
+	if m.filterRepo != "" {
+		t.Errorf("expected filterRepo to be cleared, got %q", m.filterRepo)
+	}
+}
+
+func TestTUI_IssuesPaginationPRFiltering(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.state = viewMain
+	m.activeTab = tabIssues
+
+	// 1. Receive issuesLoadedMsg with 0 issues but hasMore = true
+	rawModel, _ := m.Update(issuesLoadedMsg{
+		issues:  []gh.Issue{},
+		hasMore: true,
+	})
+	m = rawModel.(Model)
+
+	// hasMoreIssues should be true because the message indicated there are more issues on subsequent pages
+	if !m.hasMoreIssues {
+		t.Error("expected hasMoreIssues to be true when msg.hasMore is true")
+	}
+
+	// 2. Receive issuesLoadedMsg with 0 issues and hasMore = false
+	rawModel, _ = m.Update(issuesLoadedMsg{
+		issues:  []gh.Issue{},
+		hasMore: false,
+	})
+	m = rawModel.(Model)
+
+	// hasMoreIssues should be false because the message indicated there are no more pages
+	if m.hasMoreIssues {
+		t.Error("expected hasMoreIssues to be false when msg.hasMore is false")
+	}
+}
+
+func TestTUI_RateLimitErrorRecovery(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.width = 80
+
+	// 1. Simulate rate limit error
+	m.err = fmt.Errorf("github api access forbidden: API rate limit exceeded")
+
+	// Verify error view renders and wraps the text
+	viewStr := m.View()
+	if !strings.Contains(viewStr, "FATAL ERROR") || !strings.Contains(viewStr, "rate limit exceeded") {
+		t.Error("expected error view to render rate limit error message")
+	}
+
+	// 2. Set rate limit reset time to 5 seconds in the future
+	resetTime := time.Now().Add(5 * time.Second)
+	client.SetRateLimit(gh.RateLimitInfo{
+		Limit:     5000,
+		Remaining: 0,
+		Reset:     resetTime,
+	})
+
+	// Run tickMsg, should NOT recover yet because resetTime is in the future
+	rawModel, _ := m.Update(tickMsg(time.Now()))
+	m = rawModel.(Model)
+	if m.err == nil {
+		t.Error("expected error to persist while reset time is in the future")
+	}
+
+	// 3. Set rate limit reset time to 1 second in the past
+	client.SetRateLimit(gh.RateLimitInfo{
+		Limit:     5000,
+		Remaining: 1000,
+		Reset:     time.Now().Add(-1 * time.Second),
+	})
+
+	// Run tickMsg, should recover, clear error, set loading, and return fetchActiveTabCmd
+	rawModel, cmd := m.Update(tickMsg(time.Now()))
+	m = rawModel.(Model)
+	if m.err != nil {
+		t.Errorf("expected error to be cleared after reset time passed, got: %v", m.err)
+	}
+	if !m.isLoading {
+		t.Error("expected isLoading to be true during recovery reconnect")
+	}
+	if cmd == nil {
+		t.Error("expected fetchActiveTabCmd to be returned on recovery")
+	}
+}
+
+func TestTUI_LogsSplitPaneAndSegmentation(t *testing.T) {
+	client := gh.NewClient("test-token", "")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.width = 80
+	m.height = 20
+
+	t1 := time.Date(2026, 7, 14, 14, 32, 0, 0, time.UTC)
+	t2 := time.Date(2026, 7, 14, 14, 32, 1, 0, time.UTC)
+	t3 := time.Date(2026, 7, 14, 14, 32, 2, 0, time.UTC)
+
+	steps := []gh.JobStep{
+		{Name: "Set up job", Number: 1, Status: "completed", Conclusion: "success", StartedAt: t1},
+		{Name: "Run actions/checkout@v4", Number: 2, Status: "completed", Conclusion: "success", StartedAt: t2},
+		{Name: "Run unit tests", Number: 3, Status: "completed", Conclusion: "failure", StartedAt: t3},
+	}
+	m.jobs = []gh.WorkflowJob{
+		{
+			ID:    7001,
+			Name:  "Build and Test",
+			Steps: steps,
+		},
+	}
+	m.selectedJobIdx = 0
+
+	rawLogs := `2026-07-14T14:32:00.000Z ##[group]Set up job
+Setting up github runner...
+##[endgroup]
+2026-07-14T14:32:01.000Z ##[group]Run actions/checkout@v4
+Checking out code repository...
+##[endgroup]
+2026-07-14T14:32:02.000Z ##[group]Run unit tests
+go test ./...
+Error: Test failed!
+`
+
+	// 1. Simulate loading logs
+	rawModel, _ := m.Update(logsLoadedMsg{
+		logs: rawLogs,
+	})
+	m = rawModel.(Model)
+
+	// selectedStepIdx should default to the failed step (index 2: "Run unit tests")
+	if m.selectedStepIdx != 2 {
+		t.Errorf("expected selectedStepIdx to default to failed step 2, got %d", m.selectedStepIdx)
+	}
+
+	// Logs content should contain the failed test run log output
+	content := m.logsViewport.View()
+	if !strings.Contains(content, "Test failed!") {
+		t.Error("expected logs viewport to display logs for the failed step")
+	}
+
+	// 2. Navigate step list upwards (to step 1: "Run actions/checkout@v4")
+	rawModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	m = rawModel.(Model)
+
+	if m.selectedStepIdx != 1 {
+		t.Errorf("expected selectedStepIdx to update to 1, got %d", m.selectedStepIdx)
+	}
+
+	content = m.logsViewport.View()
+	if !strings.Contains(content, "Checking out code repository...") {
+		t.Error("expected logs viewport to display logs for actions/checkout step")
+	}
+
+	// 3. Verify side-by-side view renders steps list and logs
+	viewStr := m.View()
+	if !strings.Contains(viewStr, "STEPS") || !strings.Contains(viewStr, "Run unit tests") {
+		t.Error("expected logs view to render steps list sidebar")
+	}
+}
+
+func TestTUI_LogsSegmentRealWorldData(t *testing.T) {
+	// Timestamps from user report
+	tSetup := time.Date(2026, 7, 14, 12, 29, 2, 967000000, time.UTC)
+	tGovulncheck := time.Date(2026, 7, 14, 12, 29, 2, 979000000, time.UTC)
+
+	steps := []gh.JobStep{
+		{Name: "Set up job", Number: 1, Status: "completed", Conclusion: "success", StartedAt: tSetup},
+		{Name: "Run govulncheck", Number: 2, Status: "completed", Conclusion: "success", StartedAt: tGovulncheck},
+	}
+
+	rawLogs := `2026-07-14T12:29:02.9670914Z GOROOT='/opt/hostedtoolcache/go/1.26.5/x64'
+2026-07-14T12:29:02.9671454Z GOSUMDB='sum.golang.org'
+2026-07-14T12:29:02.9676988Z ##[endgroup]
+2026-07-14T12:29:02.9794750Z ##[group]Run go install golang.org/x/vuln/cmd/govulncheck@latest
+2026-07-14T12:29:02.9795335Z go install golang.org/x/vuln/cmd/govulncheck@latest
+`
+
+	segments := segmentLogs(rawLogs, steps)
+
+	// Step 0 ("Set up job") logs should contain GOROOT and GOSUMDB
+	setupLogs := segments[0]
+	if !strings.Contains(setupLogs, "GOROOT") || !strings.Contains(setupLogs, "GOSUMDB") {
+		t.Error("expected Set up job logs to contain setup step variables")
+	}
+	if strings.Contains(setupLogs, "go install") {
+		t.Error("expected Set up job logs NOT to leak govulncheck step details")
+	}
+
+	// Step 1 ("Run govulncheck") logs should contain the go install details
+	govulncheckLogs := segments[1]
+	if !strings.Contains(govulncheckLogs, "go install") {
+		t.Error("expected Run govulncheck logs to contain command details")
+	}
+	if strings.Contains(govulncheckLogs, "GOROOT") {
+		t.Error("expected Run govulncheck logs NOT to contain setup step variables")
+	}
+}
+
+func TestTUI_LogsSegmentRealWorldOverlap(t *testing.T) {
+	tSetupGo := time.Date(2026, 7, 14, 12, 36, 31, 0, time.UTC)
+	tGovulncheck := time.Date(2026, 7, 14, 12, 36, 41, 0, time.UTC)
+	tRunTests := time.Date(2026, 7, 14, 12, 36, 44, 0, time.UTC)
+
+	steps := []gh.JobStep{
+		{Name: "Set up Go", Number: 4, Status: "completed", Conclusion: "success", StartedAt: tSetupGo},
+		{Name: "Run govulncheck", Number: 5, Status: "completed", Conclusion: "success", StartedAt: tGovulncheck},
+		{Name: "Run Tests", Number: 6, Status: "completed", Conclusion: "success", StartedAt: tRunTests},
+	}
+
+	rawLogs := `2026-07-14T12:36:31.1184254Z ##[group]Run actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+2026-07-14T12:36:42.1107776Z GOROOT='/opt/hostedtoolcache/go/1.26.5/x64'
+2026-07-14T12:36:42.1108127Z GOSUMDB='sum.golang.org'
+2026-07-14T12:36:42.1110541Z GOWORK=''
+2026-07-14T12:36:42.1110736Z PKG_CONFIG='pkg-config'
+2026-07-14T12:36:42.1110885Z 
+2026-07-14T12:36:42.1111185Z ##[endgroup]
+2026-07-14T12:36:42.1213529Z ##[group]Run go install golang.org/x/vuln/cmd/govulncheck@latest
+2026-07-14T12:36:42.1214030Z go install golang.org/x/vuln/cmd/govulncheck@latest
+2026-07-14T12:36:42.1248973Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-14T12:36:42.1250075Z ##[endgroup]
+2026-07-14T12:36:42.7494409Z ##[group]Run govulncheck -C "$WORK_DIR" -format "$OUTPUT_FORMAT" "$GO_PACKAGE"
+2026-07-14T12:36:42.7494945Z govulncheck -C "$WORK_DIR" -format "$OUTPUT_FORMAT" "$GO_PACKAGE"
+`
+
+	segments := segmentLogs(rawLogs, steps)
+
+	// Step 0 ("Set up Go") should contain GOWORK='' and PKG_CONFIG='pkg-config'
+	setupGoLogs := segments[0]
+	if !strings.Contains(setupGoLogs, "GOWORK=''") || !strings.Contains(setupGoLogs, "PKG_CONFIG='pkg-config'") {
+		t.Error("expected Set up Go logs to contain GOWORK and PKG_CONFIG")
+	}
+	if strings.Contains(setupGoLogs, "go install") || strings.Contains(setupGoLogs, "govulncheck") {
+		t.Error("expected Set up Go logs NOT to contain govulncheck command logs")
+	}
+
+	// Step 1 ("Run govulncheck") should contain the go install command and the govulncheck execution
+	govulncheckLogs := segments[1]
+	if !strings.Contains(govulncheckLogs, "go install") || !strings.Contains(govulncheckLogs, "govulncheck -C") {
+		t.Error("expected Run govulncheck logs to contain command logs and execution logs")
+	}
+	if strings.Contains(govulncheckLogs, "GOWORK=''") {
+		t.Error("expected Run govulncheck logs NOT to contain setup step variables")
+	}
+}
+
+func TestTUI_LogsSegmentTestsOverlap(t *testing.T) {
+	steps := []gh.JobStep{
+		{Name: "Run govulncheck", Number: 5, Status: "completed", Conclusion: "success"},
+		{Name: "Run Tests", Number: 6, Status: "completed", Conclusion: "success"},
+	}
+
+	rawLogs := `2026-07-14T12:40:12.7528311Z ##[endgroup]
+2026-07-14T12:40:12.7919385Z No vulnerabilities found.
+2026-07-14T12:40:12.8043267Z ##[group]Run go test -v -race ./...
+2026-07-14T12:40:12.8043612Z go test -v -race ./...
+2026-07-14T12:40:12.8077252Z shell: /usr/bin/bash -e {0}
+2026-07-14T12:40:12.8077528Z env:
+2026-07-14T12:40:12.8077732Z   GOTOOLCHAIN: local
+2026-07-14T12:40:12.8077956Z ##[endgroup]
+2026-07-14T12:40:14.5238213Z ?       ghspector/cmd/ghspector    [no test files]
+2026-07-14T12:40:15.5375145Z === RUN   TestResolveTokenWithCliGetter
+`
+
+	segments := segmentLogs(rawLogs, steps)
+
+	// Step 0 ("Run govulncheck") should contain the "No vulnerabilities found." line
+	govulncheckLogs := segments[0]
+	if !strings.Contains(govulncheckLogs, "No vulnerabilities found.") {
+		t.Error("expected Run govulncheck logs to contain 'No vulnerabilities found.' line")
+	}
+	if strings.Contains(govulncheckLogs, "go test -v") {
+		t.Error("expected Run govulncheck logs NOT to contain go test command logs")
+	}
+
+	// Step 1 ("Run Tests") should contain the go test command and outputs
+	testsLogs := segments[1]
+	if !strings.Contains(testsLogs, "go test -v") || !strings.Contains(testsLogs, "TestResolveTokenWithCliGetter") {
+		t.Error("expected Run Tests logs to contain command logs and run outputs")
+	}
+	if strings.Contains(testsLogs, "No vulnerabilities found.") {
+		t.Error("expected Run Tests logs NOT to contain 'No vulnerabilities found.'")
+	}
+}
+
+func TestTUI_LogsSegmentRealWorldComplete(t *testing.T) {
+	// Read the full real-world log file
+	logData, err := os.ReadFile("testdata/raw_logs.txt")
+	if err != nil {
+		t.Fatalf("failed to read test log file: %v", err)
+	}
+
+	parseTime := func(s string) time.Time {
+		tVal, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatalf("failed to parse time %q: %v", s, err)
+		}
+		return tVal
+	}
+
+	steps := []gh.JobStep{
+		{Name: "Set up job", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:26Z"), CompletedAt: parseTime("2026-07-14T12:36:27Z")},
+		{Name: "Pull ghcr.io/reviewdog/action-actionlint:v1.72.0", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:27Z"), CompletedAt: parseTime("2026-07-14T12:36:31Z")},
+		{Name: "Checkout code", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:31Z"), CompletedAt: parseTime("2026-07-14T12:36:31Z")},
+		{Name: "Set up Go", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:31Z"), CompletedAt: parseTime("2026-07-14T12:36:41Z")},
+		{Name: "Run govulncheck", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:41Z"), CompletedAt: parseTime("2026-07-14T12:36:44Z")},
+		{Name: "Run Tests", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:44Z"), CompletedAt: parseTime("2026-07-14T12:36:49Z")},
+		{Name: "Run golangci-lint", Conclusion: "failure", StartedAt: parseTime("2026-07-14T12:36:49Z"), CompletedAt: parseTime("2026-07-14T12:36:52Z")},
+		{Name: "Run actionlint", Conclusion: "skipped", StartedAt: parseTime("2026-07-14T12:36:52Z"), CompletedAt: parseTime("2026-07-14T12:36:52Z")},
+		{Name: "Post Run golangci-lint", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:52Z"), CompletedAt: parseTime("2026-07-14T12:36:53Z")},
+		{Name: "Post Run govulncheck", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:53Z"), CompletedAt: parseTime("2026-07-14T12:36:53Z")},
+		{Name: "Post Set up Go", Conclusion: "skipped", StartedAt: parseTime("2026-07-14T12:36:53Z"), CompletedAt: parseTime("2026-07-14T12:36:53Z")},
+		{Name: "Post Checkout code", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:53Z"), CompletedAt: parseTime("2026-07-14T12:36:53Z")},
+		{Name: "Complete job", Conclusion: "success", StartedAt: parseTime("2026-07-14T12:36:53Z"), CompletedAt: parseTime("2026-07-14T12:36:53Z")},
+	}
+
+	segments := segmentLogs(string(logData), steps)
+
+	// Assert that all executed steps have non-empty logs and skipped steps are empty
+	for i, step := range steps {
+		logLen := len(segments[i])
+		if step.Conclusion == "skipped" {
+			if logLen > 0 {
+				t.Errorf("expected skipped step %d (%q) to have 0 log length, got %d", i, step.Name, logLen)
+			}
+		} else {
+			if logLen == 0 {
+				t.Errorf("expected executed step %d (%q) to have non-empty logs", i, step.Name)
+			}
+		}
+	}
+
+	// Step 4 ("Run govulncheck") should have logs and contain "No vulnerabilities found."
+	govulncheckLogs := segments[4]
+	if !strings.Contains(govulncheckLogs, "No vulnerabilities found.") {
+		t.Error("expected Run govulncheck logs to contain 'No vulnerabilities found.'")
+	}
+
+	// Step 5 ("Run Tests") should have logs and contain "ghspector/internal/tui"
+	testsLogs := segments[5]
+	if !strings.Contains(testsLogs, "ghspector/internal/tui") {
+		t.Error("expected Run Tests logs to contain test suite execution output")
+	}
+
+	// Step 6 ("Run golangci-lint") should have logs and contain the linter findings
+	linterLogs := segments[6]
+	if !strings.Contains(linterLogs, "SA1019") || !strings.Contains(linterLogs, "LineUp is deprecated") {
+		t.Error("expected Run golangci-lint logs to contain linter deprecation issues")
+	}
+
+	// Step 12 ("Complete job") should have logs containing post cleanup lines
+	completeJobLogs := segments[12]
+	if !strings.Contains(completeJobLogs, "Cleaning up orphan processes") {
+		t.Error("expected Complete job logs to contain post cleanup orphan processes message")
+	}
+}
+
+func TestTUI_LogsSegmentSyntheticFastSteps(t *testing.T) {
+	parseTime := func(s string) time.Time {
+		tVal, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatalf("failed to parse time %q: %v", s, err)
+		}
+		return tVal
+	}
+
+	steps := []gh.JobStep{
+		{Name: "Set up job", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:30:47Z"), CompletedAt: parseTime("2026-07-22T12:30:48Z")},
+		{Name: "Checkout Code", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:30:48Z"), CompletedAt: parseTime("2026-07-22T12:30:50Z")},
+		{Name: "Set up Go", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:30:50Z"), CompletedAt: parseTime("2026-07-22T12:30:50Z")},
+		{Name: "Log in to GHCR", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:30:50Z"), CompletedAt: parseTime("2026-07-22T12:30:50Z")},
+		{Name: "Install Development Tools", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:30:50Z"), CompletedAt: parseTime("2026-07-22T12:31:04Z")},
+		{Name: "Post Set up Go", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:32:39Z"), CompletedAt: parseTime("2026-07-22T12:32:39Z")},
+		{Name: "Complete job", Conclusion: "success", StartedAt: parseTime("2026-07-22T12:32:40Z"), CompletedAt: parseTime("2026-07-22T12:32:40Z")},
+	}
+
+	syntheticLogs := `2026-07-22T12:30:47.0000000Z ##[group]Operating System
+2026-07-22T12:30:47.5000000Z Linux 6.8.0
+2026-07-22T12:30:48.1000000Z ##[group]Run actions/checkout@v4
+2026-07-22T12:30:49.0000000Z Syncing repository
+2026-07-22T12:30:50.1000000Z ##[group]Run actions/setup-go@v5
+2026-07-22T12:30:50.2000000Z Setup go version spec 1.26.5
+2026-07-22T12:30:50.3000000Z Found in cache
+2026-07-22T12:30:50.4000000Z Successfully set up Go version 1.26.5
+2026-07-22T12:30:50.5000000Z go version go1.26.5 linux/amd64
+2026-07-22T12:30:51.1000000Z go env
+2026-07-22T12:30:51.2000000Z   GOOS='linux'
+2026-07-22T12:30:51.3000000Z   GOARCH='amd64'
+2026-07-22T12:30:51.4000000Z   GOROOT='/opt/tool/go'
+2026-07-22T12:30:52.1000000Z ##[group]Install Development Tools
+2026-07-22T12:30:53.0000000Z Installing tools...
+2026-07-22T12:32:39.1000000Z Post job cleanup
+2026-07-22T12:32:40.1000000Z Cleaning up orphan processes`
+
+	segments := segmentLogs(syntheticLogs, steps)
+
+	// Step 2 ("Set up Go") should have logs and contain GOROOT output
+	goLogs := segments[2]
+	if len(goLogs) == 0 {
+		t.Error("expected Set up Go logs to not be empty")
+	}
+	if !strings.Contains(goLogs, "GOROOT='/opt/tool/go'") {
+		t.Error("expected Set up Go logs to contain go env GOROOT output")
+	}
+
+	// Step 6 ("Complete job") should contain orphan process cleanup
+	completeLogs := segments[6]
+	if len(completeLogs) == 0 {
+		t.Error("expected Complete job logs to not be empty")
+	}
+	if !strings.Contains(completeLogs, "Cleaning up orphan processes") {
+		t.Error("expected Complete job logs to contain orphan cleanup output")
+	}
+}
+
+func TestCleanLogForDisplay(t *testing.T) {
+	rawInput := "2026-07-22T14:00:00Z ##[group]Run actions/checkout@v4\n" +
+		"2026-07-22T14:00:01Z [command]/usr/bin/git version\n" +
+		"2026-07-22T14:00:02Z ##[error]something went wrong\n" +
+		"2026-07-22T14:00:03Z ##[endgroup]\n"
+
+	expected := "2026-07-22T14:00:00Z Run actions/checkout@v4\n" +
+		"2026-07-22T14:00:01Z /usr/bin/git version\n" +
+		"2026-07-22T14:00:02Z something went wrong"
+
+	actual := cleanLogForDisplay(rawInput)
+	if actual != expected {
+		t.Errorf("expected:\n%q\ngot:\n%q", expected, actual)
+	}
+}
+
+func TestPRDraftIndicators(t *testing.T) {
+	client := gh.NewClient("test-token", "https://api.github.com")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.width = 120
+	m.height = 30
+
+	draftPR := gh.PullRequest{
+		Number: 42,
+		Title:  "Draft Feature Implementation",
+		Draft:  true,
+		State:  "open",
+		User:   &gh.User{Login: "testuser"},
+		Repository: gh.Repository{
+			Name:     "myrepo",
+			FullName: "myorg/myrepo",
+		},
+	}
+
+	m.pulls = []gh.PullRequest{draftPR}
+	m.selectedPull = &draftPR
+
+	// 1. Verify PR List view output
+	listOutput := m.renderPullsView()
+	if !strings.Contains(listOutput, "[Draft]") {
+		t.Errorf("expected PR list view to contain '[Draft]', got:\n%s", listOutput)
+	}
+
+	// 2. Verify PR Details view output
+	detailsOutput := m.renderPRDetailsView()
+	if !strings.Contains(detailsOutput, "[DRAFT]") {
+		t.Errorf("expected PR details view header to contain '[DRAFT]', got:\n%s", detailsOutput)
+	}
+
+	sidebarOutput := m.renderPRRightSidebar(40, 20)
+	if !strings.Contains(sidebarOutput, "DRAFT") {
+		t.Errorf("expected PR sidebar to contain 'State: DRAFT', got:\n%s", sidebarOutput)
+	}
+}
+
+func TestStatusBannerAndAutoDismiss(t *testing.T) {
+	client := gh.NewClient("test-token", "https://api.github.com")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.width = 100
+	m.height = 30
+
+	cmd := m.setStatusMsg("Logs are not yet available for running jobs. Please wait for completion.")
+	if cmd == nil {
+		t.Fatal("expected setStatusMsg to return auto-dismiss timer command")
+	}
+
+	// 1. Verify status banner renders above footer
+	footerOutput := m.renderFooter([]string{"q:Quit"})
+	if !strings.Contains(footerOutput, "Logs are not yet available") {
+		t.Errorf("expected footer to contain status banner text, got:\n%s", footerOutput)
+	}
+	if !strings.Contains(footerOutput, "✖") {
+		t.Errorf("expected status banner to contain error icon '✖', got:\n%s", footerOutput)
+	}
+
+	// 2. Verify clearStatusMsg clears statusMsg
+	id := m.statusMsgID
+	rawModel, _ := m.Update(clearStatusMsg{id: id})
+	m = rawModel.(Model)
+	if m.statusMsg != "" {
+		t.Errorf("expected statusMsg to be cleared after clearStatusMsg, got %q", m.statusMsg)
+	}
+}
+
+func TestJobViewBrowserShortcut(t *testing.T) {
+	client := gh.NewClient("test-token", "https://api.github.com")
+	m := InitModel(client, nil)
+	m.state = viewJobs
+	m.jobs = []gh.WorkflowJob{
+		{
+			ID:      101,
+			Name:    "build-job",
+			HTMLURL: "https://github.com/myorg/myrepo/actions/runs/1/job/101",
+		},
+	}
+	m.selectedJobIdx = 0
+
+	// Pressing 'w' in viewJobs should not crash or error out
+	rawModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	_ = rawModel.(Model)
+	if cmd != nil {
+		t.Errorf("expected nil cmd for browser open key press, got %v", cmd)
+	}
+}
+
+func TestRenderFooterDeterministicNoWrap(t *testing.T) {
+	client := gh.NewClient("test-token", "https://api.github.com")
+	m := InitModel(client, nil)
+	m.width = 120
+	m.height = 30
+
+	testCases := []struct {
+		state        viewState
+		keys         []string
+		expectedLeft string
+	}{
+		{
+			state:        viewMain,
+			keys:         []string{"Tab:Tabs", "j/k:Navigate", "Enter:Jobs", "w:Browser", "f:Filter", "m:My Runs", "x:Clear", "r:Refresh"},
+			expectedLeft: "?:Help  Esc:Exit  o:Account  q:Quit",
+		},
+		{
+			state:        viewMain,
+			keys:         []string{"Tab:Tabs", "j/k:Navigate", "Enter:View PR", "w:Browser", "f:Filter", "s:State", "a:My PRs", "i:Assigned", "v:Reviewed", "x:Clear", "r:Refresh"},
+			expectedLeft: "?:Help  Esc:Exit  o:Account  q:Quit",
+		},
+		{
+			state:        viewJobs,
+			keys:         []string{"j/k:Navigate", "Enter:Logs", "w:Job Browser", "v:Run Browser", "[/]:Attempts", "r:Refresh"},
+			expectedLeft: "?:Help  Esc:Back  o:Account  q:Quit",
+		},
+		{
+			state:        viewLogs,
+			keys:         []string{"j/k:Steps", "u/d:Scroll Logs", "w:Browser", "r:Refresh"},
+			expectedLeft: "?:Help  Esc:Back  o:Account  q:Quit",
+		},
+		{
+			state:        viewPRDetails,
+			keys:         []string{"Tab:Focus", "j/k:Navigate", "Enter:Run/Browser", "Shift+D:Diff", "r:Refresh", "m:Merge", "c:Comments", "v:Commits", "Shift+C:Close"},
+			expectedLeft: "?:Help  Esc:Back  o:Account  q:Quit",
+		},
+	}
+
+	for _, tc := range testCases {
+		m.state = tc.state
+		footer := m.renderFooter(tc.keys)
+
+		// Border (line 1) + 1 single bottom bar text line (line 2) = 2 lines total
+		lines := strings.Split(footer, "\n")
+		if len(lines) != 2 {
+			t.Errorf("state %v: expected top border + single content line without wrapping (2 lines total), got %d lines:\n%s", tc.state, len(lines), footer)
+		}
+
+		if !strings.Contains(footer, tc.expectedLeft) {
+			t.Errorf("state %v: expected left side to contain %q, got:\n%s", tc.state, tc.expectedLeft, footer)
+		}
+	}
+}
+
+func TestHeaderOutputsDeterministic(t *testing.T) {
+	client := gh.NewClient("test-token", "https://api.github.com")
+	cfg := &auth.Config{}
+	m := InitModel(client, cfg)
+	m.width = 120
+	m.height = 40
+
+	m.targets = []Target{{Name: "joangrigorov/ghspector"}}
+	m.selectedTargetIdx = 0
+
+	states := []struct {
+		state     viewState
+		activeTab mainTab
+		titlePart string
+	}{
+		{viewMain, tabWorkflows, "ghspector | Workflows"},
+		{viewMain, tabPRs, "ghspector | Pull Requests"},
+		{viewMain, tabIssues, "ghspector | Issues"},
+		{viewJobs, tabWorkflows, "ghspector | Workflow Jobs"},
+		{viewPRDetails, tabPRs, "ghspector | PR Details"},
+		{viewIssueDetails, tabIssues, "ghspector | Issue Details"},
+	}
+
+	for _, tc := range states {
+		m.state = tc.state
+		m.activeTab = tc.activeTab
+		header := m.renderHeader()
+		lines := strings.Split(header, "\n")
+
+		// Expect exactly 4 lines: blank, header text, blank, border
+		if len(lines) != 4 {
+			t.Errorf("state %v: expected exactly 4 lines in header, got %d:\n%s", tc.state, len(lines), header)
+		}
+
+		if !strings.Contains(lines[1], tc.titlePart) {
+			t.Errorf("state %v: expected line 1 to contain title %q, got: %q", tc.state, tc.titlePart, lines[1])
+		}
+
+		if !strings.Contains(lines[1], "Account/Org: joangrigorov/ghspector") {
+			t.Errorf("state %v: expected line 1 to contain org context, got: %q", tc.state, lines[1])
+		}
 	}
 }
 

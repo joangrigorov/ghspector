@@ -1,0 +1,694 @@
+﻿2026-07-14T12:36:26.4116637Z Current runner version: '2.335.1'
+2026-07-14T12:36:26.4150677Z ##[group]Runner Image Provisioner
+2026-07-14T12:36:26.4151981Z Hosted Compute Agent
+2026-07-14T12:36:26.4153095Z Version: 20260624.560
+2026-07-14T12:36:26.4154107Z Commit: 925d229a51159bc391ae97e54a2dd1fe20af789d
+2026-07-14T12:36:26.4155551Z Build Date: 2026-06-24T18:26:47Z
+2026-07-14T12:36:26.4156767Z Worker ID: {cfb1a6e9-f5b3-4c18-869c-a55b44ca4b2d}
+2026-07-14T12:36:26.4158213Z Azure Region: eastus
+2026-07-14T12:36:26.4159332Z ##[endgroup]
+2026-07-14T12:36:26.4161471Z ##[group]Operating System
+2026-07-14T12:36:26.4162611Z Ubuntu
+2026-07-14T12:36:26.4163546Z 24.04.4
+2026-07-14T12:36:26.4164366Z LTS
+2026-07-14T12:36:26.4165289Z ##[endgroup]
+2026-07-14T12:36:26.4166238Z ##[group]Runner Image
+2026-07-14T12:36:26.4167292Z Image: ubuntu-24.04
+2026-07-14T12:36:26.4168537Z Version: 20260705.232.1
+2026-07-14T12:36:26.4170685Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260705.232/images/ubuntu/Ubuntu2404-Readme.md
+2026-07-14T12:36:26.4173327Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260705.232
+2026-07-14T12:36:26.4175035Z ##[endgroup]
+2026-07-14T12:36:26.4176955Z ##[group]GITHUB_TOKEN Permissions
+2026-07-14T12:36:26.4180141Z Contents: read
+2026-07-14T12:36:26.4181093Z Metadata: read
+2026-07-14T12:36:26.4181973Z ##[endgroup]
+2026-07-14T12:36:26.4185055Z Secret source: Actions
+2026-07-14T12:36:26.4186308Z Prepare workflow directory
+2026-07-14T12:36:26.4652671Z Prepare all required actions
+2026-07-14T12:36:26.4708900Z Getting action download info
+2026-07-14T12:36:26.6633588Z Download action repository 'actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0' (SHA:9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0)
+2026-07-14T12:36:26.7459941Z Download action repository 'actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16' (SHA:924ae3a1cded613372ab5595356fb5720e22ba16)
+2026-07-14T12:36:26.9147441Z Download action repository 'golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f' (SHA:032d45514ae346b1db93c04b0c90b841c370344f)
+2026-07-14T12:36:27.0175521Z Download action repository 'golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a' (SHA:ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a)
+2026-07-14T12:36:27.1903201Z Download action repository 'reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d' (SHA:6fb7acc99f4a1008869fa8a0f09cfca740837d9d)
+2026-07-14T12:36:27.3856365Z Getting action download info
+2026-07-14T12:36:27.4686218Z Download action repository 'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd' (SHA:de0fac2e4500dabe0009e67214ff5f5447ce83dd)
+2026-07-14T12:36:27.5018836Z Download action repository 'actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5' (SHA:7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5)
+2026-07-14T12:36:27.7880040Z Complete job name: Test and Lint
+2026-07-14T12:36:27.8393514Z ##[group]Pull down action image 'ghcr.io/reviewdog/action-actionlint:v1.72.0'
+2026-07-14T12:36:28.0269225Z ##[command]/usr/bin/docker pull ghcr.io/reviewdog/action-actionlint:v1.72.0
+2026-07-14T12:36:28.3318078Z v1.72.0: Pulling from reviewdog/action-actionlint
+2026-07-14T12:36:28.3898070Z 589002ba0eae: Pulling fs layer
+2026-07-14T12:36:28.3898785Z 0805a1082be0: Pulling fs layer
+2026-07-14T12:36:28.3899406Z 3566efde290b: Pulling fs layer
+2026-07-14T12:36:28.3899968Z 2800a7aef8b1: Pulling fs layer
+2026-07-14T12:36:28.3900379Z f420ae9f738c: Pulling fs layer
+2026-07-14T12:36:28.3900768Z 539ad613ffba: Pulling fs layer
+2026-07-14T12:36:28.3901208Z 1062eadcdc7d: Pulling fs layer
+2026-07-14T12:36:28.3901608Z d12341ef4ed7: Pulling fs layer
+2026-07-14T12:36:28.3901997Z 0180048b5c67: Pulling fs layer
+2026-07-14T12:36:28.3902384Z 3f242abd9c8e: Pulling fs layer
+2026-07-14T12:36:28.3902761Z 2800a7aef8b1: Waiting
+2026-07-14T12:36:28.3903140Z f420ae9f738c: Waiting
+2026-07-14T12:36:28.3903618Z 539ad613ffba: Waiting
+2026-07-14T12:36:28.3904202Z 1062eadcdc7d: Waiting
+2026-07-14T12:36:28.3904779Z d12341ef4ed7: Waiting
+2026-07-14T12:36:28.3905343Z 3f242abd9c8e: Waiting
+2026-07-14T12:36:28.3906205Z 0180048b5c67: Waiting
+2026-07-14T12:36:28.4588512Z 0805a1082be0: Download complete
+2026-07-14T12:36:28.5125266Z 2800a7aef8b1: Verifying Checksum
+2026-07-14T12:36:28.5126160Z 2800a7aef8b1: Download complete
+2026-07-14T12:36:28.5273050Z 589002ba0eae: Download complete
+2026-07-14T12:36:28.5691204Z 3566efde290b: Verifying Checksum
+2026-07-14T12:36:28.5695508Z 3566efde290b: Download complete
+2026-07-14T12:36:28.6029385Z 539ad613ffba: Verifying Checksum
+2026-07-14T12:36:28.6030576Z 539ad613ffba: Download complete
+2026-07-14T12:36:28.6053189Z f420ae9f738c: Verifying Checksum
+2026-07-14T12:36:28.6054475Z f420ae9f738c: Download complete
+2026-07-14T12:36:28.6587517Z 589002ba0eae: Pull complete
+2026-07-14T12:36:28.6851899Z 0180048b5c67: Verifying Checksum
+2026-07-14T12:36:28.6852657Z 0180048b5c67: Download complete
+2026-07-14T12:36:28.7011482Z 1062eadcdc7d: Verifying Checksum
+2026-07-14T12:36:28.7016749Z 1062eadcdc7d: Download complete
+2026-07-14T12:36:28.7073715Z d12341ef4ed7: Verifying Checksum
+2026-07-14T12:36:28.7499719Z d12341ef4ed7: Download complete
+2026-07-14T12:36:28.7500574Z 3f242abd9c8e: Verifying Checksum
+2026-07-14T12:36:28.7501375Z 3f242abd9c8e: Download complete
+2026-07-14T12:36:29.6596289Z 0805a1082be0: Pull complete
+2026-07-14T12:36:30.2526983Z 3566efde290b: Pull complete
+2026-07-14T12:36:30.2687236Z 2800a7aef8b1: Pull complete
+2026-07-14T12:36:30.7543577Z f420ae9f738c: Pull complete
+2026-07-14T12:36:30.8313104Z 539ad613ffba: Pull complete
+2026-07-14T12:36:30.9570829Z 1062eadcdc7d: Pull complete
+2026-07-14T12:36:31.0233663Z d12341ef4ed7: Pull complete
+2026-07-14T12:36:31.0664762Z 0180048b5c67: Pull complete
+2026-07-14T12:36:31.0780542Z 3f242abd9c8e: Pull complete
+2026-07-14T12:36:31.0832814Z Digest: sha256:918481e3b42182d1671c5807d57ed356203e11e96fa679f4f9a8a7b5a65152d9
+2026-07-14T12:36:31.0851886Z Status: Downloaded newer image for ghcr.io/reviewdog/action-actionlint:v1.72.0
+2026-07-14T12:36:31.0860902Z ghcr.io/reviewdog/action-actionlint:v1.72.0
+2026-07-14T12:36:31.0881374Z ##[endgroup]
+2026-07-14T12:36:31.1184254Z ##[group]Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+2026-07-14T12:36:31.1184957Z with:
+2026-07-14T12:36:31.1185216Z   repository: joangrigorov/ghspector
+2026-07-14T12:36:31.1187964Z   token: ***
+2026-07-14T12:36:31.1188180Z   ssh-strict: true
+2026-07-14T12:36:31.1188381Z   ssh-user: git
+2026-07-14T12:36:31.1188596Z   persist-credentials: true
+2026-07-14T12:36:31.1188833Z   clean: true
+2026-07-14T12:36:31.1189040Z   sparse-checkout-cone-mode: true
+2026-07-14T12:36:31.1189289Z   fetch-depth: 1
+2026-07-14T12:36:31.1189489Z   fetch-tags: false
+2026-07-14T12:36:31.1189704Z   show-progress: true
+2026-07-14T12:36:31.1189907Z   lfs: false
+2026-07-14T12:36:31.1190091Z   submodules: false
+2026-07-14T12:36:31.1190293Z   set-safe-directory: true
+2026-07-14T12:36:31.1190530Z   allow-unsafe-pr-checkout: false
+2026-07-14T12:36:31.1191084Z ##[endgroup]
+2026-07-14T12:36:31.2145261Z Syncing repository: joangrigorov/ghspector
+2026-07-14T12:36:31.2146639Z ##[group]Getting Git version info
+2026-07-14T12:36:31.2147050Z Working directory is '/home/runner/work/ghspector/ghspector'
+2026-07-14T12:36:31.2147896Z [command]/usr/bin/git version
+2026-07-14T12:36:31.2221453Z git version 2.54.0
+2026-07-14T12:36:31.2242851Z ##[endgroup]
+2026-07-14T12:36:31.2252901Z Temporarily overriding HOME='/home/runner/work/_temp/d4ddb9b0-8a68-4e1f-91c5-283c92d45954' before making global git config changes
+2026-07-14T12:36:31.2254242Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-14T12:36:31.2257876Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/ghspector/ghspector
+2026-07-14T12:36:31.2303254Z Deleting the contents of '/home/runner/work/ghspector/ghspector'
+2026-07-14T12:36:31.2306696Z ##[group]Determining repository object format
+2026-07-14T12:36:31.2308253Z ##[endgroup]
+2026-07-14T12:36:31.2308825Z ##[group]Initializing the repository
+2026-07-14T12:36:31.2312023Z [command]/usr/bin/git init /home/runner/work/ghspector/ghspector
+2026-07-14T12:36:31.2421370Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-07-14T12:36:31.2422372Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-07-14T12:36:31.2423211Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-07-14T12:36:31.2423688Z hint: call:
+2026-07-14T12:36:31.2423904Z hint:
+2026-07-14T12:36:31.2424207Z hint: 	git config --global init.defaultBranch <name>
+2026-07-14T12:36:31.2424575Z hint:
+2026-07-14T12:36:31.2424927Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-07-14T12:36:31.2425538Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-07-14T12:36:31.2425991Z hint:
+2026-07-14T12:36:31.2426226Z hint: 	git branch -m <name>
+2026-07-14T12:36:31.2426492Z hint:
+2026-07-14T12:36:31.2426907Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-07-14T12:36:31.2428265Z Initialized empty Git repository in /home/runner/work/ghspector/ghspector/.git/
+2026-07-14T12:36:31.2438897Z [command]/usr/bin/git remote add origin https://github.com/joangrigorov/ghspector
+2026-07-14T12:36:31.2481201Z ##[endgroup]
+2026-07-14T12:36:31.2481881Z ##[group]Disabling automatic garbage collection
+2026-07-14T12:36:31.2485453Z [command]/usr/bin/git config --local gc.auto 0
+2026-07-14T12:36:31.2514507Z ##[endgroup]
+2026-07-14T12:36:31.2515354Z ##[group]Setting up auth
+2026-07-14T12:36:31.2515943Z Removing SSH command configuration
+2026-07-14T12:36:31.2520639Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-14T12:36:31.2555614Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-14T12:36:31.2909793Z Removing HTTP extra header
+2026-07-14T12:36:31.2914735Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-14T12:36:31.2946139Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-14T12:36:31.3155619Z Removing includeIf entries pointing to credentials config files
+2026-07-14T12:36:31.3161517Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-14T12:36:31.3194124Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-14T12:36:31.3409528Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-07-14T12:36:31.3443494Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/ghspector/ghspector/.git.path /home/runner/work/_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:31.3471062Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/ghspector/ghspector/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:31.3503825Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:31.3532479Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:31.3557412Z ##[endgroup]
+2026-07-14T12:36:31.3558781Z ##[group]Fetching the repository
+2026-07-14T12:36:31.3565739Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +fd19b12cf8ea6420b7bb792d03d424a4bdc4ed52:refs/remotes/pull/11/merge
+2026-07-14T12:36:31.5604734Z From https://github.com/joangrigorov/ghspector
+2026-07-14T12:36:31.5605584Z  * [new ref]         fd19b12cf8ea6420b7bb792d03d424a4bdc4ed52 -> pull/11/merge
+2026-07-14T12:36:31.5640568Z ##[endgroup]
+2026-07-14T12:36:31.5641316Z ##[group]Determining the checkout info
+2026-07-14T12:36:31.5642117Z ##[endgroup]
+2026-07-14T12:36:31.5646957Z [command]/usr/bin/git sparse-checkout disable
+2026-07-14T12:36:31.5690681Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-07-14T12:36:31.5716558Z ##[group]Checking out the ref
+2026-07-14T12:36:31.5721595Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/11/merge
+2026-07-14T12:36:31.5814648Z Note: switching to 'refs/remotes/pull/11/merge'.
+2026-07-14T12:36:31.5815272Z 
+2026-07-14T12:36:31.5815866Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-07-14T12:36:31.5816775Z changes and commit them, and you can discard any commits you make in this
+2026-07-14T12:36:31.5817866Z state without impacting any branches by switching back to a branch.
+2026-07-14T12:36:31.5818452Z 
+2026-07-14T12:36:31.5818825Z If you want to create a new branch to retain commits you create, you may
+2026-07-14T12:36:31.5819638Z do so (now or later) by using -c with the switch command. Example:
+2026-07-14T12:36:31.5819956Z 
+2026-07-14T12:36:31.5820091Z   git switch -c <new-branch-name>
+2026-07-14T12:36:31.5820272Z 
+2026-07-14T12:36:31.5820395Z Or undo this operation with:
+2026-07-14T12:36:31.5820734Z 
+2026-07-14T12:36:31.5820840Z   git switch -
+2026-07-14T12:36:31.5821132Z 
+2026-07-14T12:36:31.5821569Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-07-14T12:36:31.5822125Z 
+2026-07-14T12:36:31.5822799Z HEAD is now at fd19b12 Merge 329bd90ee3bad70877d5c43dc8d6f08211662393 into 26604e66fc4e81e0d4881fa6ac745065c56d3256
+2026-07-14T12:36:31.5824495Z ##[endgroup]
+2026-07-14T12:36:31.5859770Z [command]/usr/bin/git log -1 --format=%H
+2026-07-14T12:36:31.5882242Z fd19b12cf8ea6420b7bb792d03d424a4bdc4ed52
+2026-07-14T12:36:31.6114151Z ##[group]Run actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+2026-07-14T12:36:31.6114752Z with:
+2026-07-14T12:36:31.6115058Z   go-version-file: go.mod
+2026-07-14T12:36:31.6115439Z   cache: true
+2026-07-14T12:36:31.6115776Z   check-latest: false
+2026-07-14T12:36:31.6120516Z   token: ***
+2026-07-14T12:36:31.6120742Z ##[endgroup]
+2026-07-14T12:36:31.7308561Z Setup go version spec 1.26.5
+2026-07-14T12:36:31.7321486Z Attempting to download 1.26.5...
+2026-07-14T12:36:32.0594625Z matching 1.26.5...
+2026-07-14T12:36:32.0620929Z Acquiring 1.26.5 from https://github.com/actions/go-versions/releases/download/1.26.5-28913679792/go-1.26.5-linux-x64.tar.gz
+2026-07-14T12:36:32.5542846Z Extracting Go...
+2026-07-14T12:36:32.5647786Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/4299b7fb-5060-4960-858a-32571f061cfe -f /home/runner/work/_temp/469457c1-70ac-4cb0-9fdf-643e1517c95e
+2026-07-14T12:36:34.2381835Z Successfully extracted go to /home/runner/work/_temp/4299b7fb-5060-4960-858a-32571f061cfe
+2026-07-14T12:36:34.2382404Z Adding to the cache ...
+2026-07-14T12:36:39.4107429Z Successfully cached go to /opt/hostedtoolcache/go/1.26.5/x64
+2026-07-14T12:36:39.4110479Z Added go to the path
+2026-07-14T12:36:39.4112732Z Successfully set up Go version 1.26.5
+2026-07-14T12:36:39.4332086Z [command]/opt/hostedtoolcache/go/1.26.5/x64/bin/go env GOMODCACHE
+2026-07-14T12:36:39.4363047Z [command]/opt/hostedtoolcache/go/1.26.5/x64/bin/go env GOCACHE
+2026-07-14T12:36:39.4394408Z /home/runner/go/pkg/mod
+2026-07-14T12:36:39.4412946Z /home/runner/.cache/go-build
+2026-07-14T12:36:39.5103783Z Cache hit for: setup-go-Linux-x64-ubuntu24-go-1.26.5-43f238d27a4e9e219d0e4ac0534fadbef2c7901a904c43105eeb8ae6cb580a16
+2026-07-14T12:36:40.0488054Z Received 132572892 of 132572892 (100.0%), 251.4 MBs/sec
+2026-07-14T12:36:40.0489209Z Cache Size: ~126 MB (132572892 B)
+2026-07-14T12:36:40.0593261Z [command]/usr/bin/tar -xf /home/runner/work/_temp/3ac3ff7b-8d97-4116-90ec-03e04487adb4/cache.tzst -P -C /home/runner/work/ghspector/ghspector --use-compress-program unzstd
+2026-07-14T12:36:41.1329155Z Cache restored successfully
+2026-07-14T12:36:41.1394779Z Cache restored from key: setup-go-Linux-x64-ubuntu24-go-1.26.5-43f238d27a4e9e219d0e4ac0534fadbef2c7901a904c43105eeb8ae6cb580a16
+2026-07-14T12:36:41.1418917Z go version go1.26.5 linux/amd64
+2026-07-14T12:36:41.1419219Z 
+2026-07-14T12:36:41.1419658Z ##[group]go env
+2026-07-14T12:36:41.1551141Z AR='ar'
+2026-07-14T12:36:41.1551482Z CC='gcc'
+2026-07-14T12:36:41.1551817Z CGO_CFLAGS='-O2 -g'
+2026-07-14T12:36:41.1552210Z CGO_CPPFLAGS=''
+2026-07-14T12:36:41.1552570Z CGO_CXXFLAGS='-O2 -g'
+2026-07-14T12:36:41.1552945Z CGO_ENABLED='1'
+2026-07-14T12:36:41.1553282Z CGO_FFLAGS='-O2 -g'
+2026-07-14T12:36:41.1553721Z CGO_LDFLAGS='-O2 -g'
+2026-07-14T12:36:41.1554072Z CXX='g++'
+2026-07-14T12:36:41.1554395Z GCCGO='gccgo'
+2026-07-14T12:36:41.1554725Z GO111MODULE=''
+2026-07-14T12:36:41.1554995Z GOAMD64='v1'
+2026-07-14T12:36:41.1555205Z GOARCH='amd64'
+2026-07-14T12:36:41.1555433Z GOAUTH='netrc'
+2026-07-14T12:36:41.1555630Z GOBIN=''
+2026-07-14T12:36:41.1555866Z GOCACHE='/home/runner/.cache/go-build'
+2026-07-14T12:36:41.1556150Z GOCACHEPROG=''
+2026-07-14T12:36:41.1556355Z GODEBUG=''
+2026-07-14T12:36:41.1556569Z GOENV='/home/runner/.config/go/env'
+2026-07-14T12:36:41.1556835Z GOEXE=''
+2026-07-14T12:36:41.1557039Z GOEXPERIMENT=''
+2026-07-14T12:36:41.1557249Z GOFIPS140='off'
+2026-07-14T12:36:41.1557449Z GOFLAGS=''
+2026-07-14T12:36:41.1558392Z GOGCCFLAGS='-fPIC -m64 -pthread -Wl,--no-gc-sections -fmessage-length=0 -ffile-prefix-map=/tmp/go-build3847537350=/tmp/go-build -gno-record-gcc-switches'
+2026-07-14T12:36:41.1559143Z GOHOSTARCH='amd64'
+2026-07-14T12:36:41.1559377Z GOHOSTOS='linux'
+2026-07-14T12:36:41.1559602Z GOINSECURE=''
+2026-07-14T12:36:41.1559922Z GOMOD='/home/runner/work/ghspector/ghspector/go.mod'
+2026-07-14T12:36:41.1560294Z GOMODCACHE='/home/runner/go/pkg/mod'
+2026-07-14T12:36:41.1560579Z GONOPROXY=''
+2026-07-14T12:36:41.1560788Z GONOSUMDB=''
+2026-07-14T12:36:41.1561225Z GOOS='linux'
+2026-07-14T12:36:41.1561457Z GOPATH='/home/runner/go'
+2026-07-14T12:36:41.1561709Z GOPRIVATE=''
+2026-07-14T12:36:41.1562269Z GOPROXY='https://proxy.golang.org,direct'
+2026-07-14T12:36:41.1562851Z GOROOT='/opt/hostedtoolcache/go/1.26.5/x64'
+2026-07-14T12:36:41.1563185Z GOSUMDB='sum.golang.org'
+2026-07-14T12:36:41.1563439Z GOTELEMETRY='local'
+2026-07-14T12:36:41.1563732Z GOTELEMETRYDIR='/home/runner/.config/go/telemetry'
+2026-07-14T12:36:41.1564325Z GOTMPDIR=''
+2026-07-14T12:36:41.1564546Z GOTOOLCHAIN='local'
+2026-07-14T12:36:41.1564908Z GOTOOLDIR='/opt/hostedtoolcache/go/1.26.5/x64/pkg/tool/linux_amd64'
+2026-07-14T12:36:41.1565355Z GOVCS=''
+2026-07-14T12:36:41.1565570Z GOVERSION='go1.26.5'
+2026-07-14T12:36:41.1565803Z GOWORK=''
+2026-07-14T12:36:41.1566024Z PKG_CONFIG='pkg-config'
+2026-07-14T12:36:41.1566184Z 
+2026-07-14T12:36:41.1566492Z ##[endgroup]
+2026-07-14T12:36:41.1817428Z ##[group]Run golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f
+2026-07-14T12:36:41.1818072Z with:
+2026-07-14T12:36:41.1818269Z   cache: false
+2026-07-14T12:36:41.1818488Z   go-version-input: stable
+2026-07-14T12:36:41.1818719Z   check-latest: true
+2026-07-14T12:36:41.1818927Z   go-package: ./...
+2026-07-14T12:36:41.1819132Z   work-dir: .
+2026-07-14T12:36:41.1819326Z   repo-checkout: true
+2026-07-14T12:36:41.1819537Z   output-format: text
+2026-07-14T12:36:41.1819739Z env:
+2026-07-14T12:36:41.1819913Z   GOTOOLCHAIN: local
+2026-07-14T12:36:41.1820110Z ##[endgroup]
+2026-07-14T12:36:41.1941415Z ##[group]Run actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+2026-07-14T12:36:41.1941769Z with:
+2026-07-14T12:36:41.1941974Z   repository: joangrigorov/ghspector
+2026-07-14T12:36:41.1944474Z   token: ***
+2026-07-14T12:36:41.1944674Z   ssh-strict: true
+2026-07-14T12:36:41.1944884Z   ssh-user: git
+2026-07-14T12:36:41.1945111Z   persist-credentials: true
+2026-07-14T12:36:41.1945382Z   clean: true
+2026-07-14T12:36:41.1945592Z   sparse-checkout-cone-mode: true
+2026-07-14T12:36:41.1945840Z   fetch-depth: 1
+2026-07-14T12:36:41.1946034Z   fetch-tags: false
+2026-07-14T12:36:41.1946413Z   show-progress: true
+2026-07-14T12:36:41.1946622Z   lfs: false
+2026-07-14T12:36:41.1946815Z   submodules: false
+2026-07-14T12:36:41.1947025Z   set-safe-directory: true
+2026-07-14T12:36:41.1947243Z env:
+2026-07-14T12:36:41.1947421Z   GOTOOLCHAIN: local
+2026-07-14T12:36:41.1947804Z ##[endgroup]
+2026-07-14T12:36:41.2743238Z Syncing repository: joangrigorov/ghspector
+2026-07-14T12:36:41.2744290Z ##[group]Getting Git version info
+2026-07-14T12:36:41.2744966Z Working directory is '/home/runner/work/ghspector/ghspector'
+2026-07-14T12:36:41.2780895Z [command]/usr/bin/git version
+2026-07-14T12:36:41.2816083Z git version 2.54.0
+2026-07-14T12:36:41.2838093Z ##[endgroup]
+2026-07-14T12:36:41.2851298Z Temporarily overriding HOME='/home/runner/work/_temp/009a9968-396f-44e4-8d5a-cb1cdf9c803d' before making global git config changes
+2026-07-14T12:36:41.2852247Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-14T12:36:41.2856695Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/ghspector/ghspector
+2026-07-14T12:36:41.2893289Z [command]/usr/bin/git config --local --get remote.origin.url
+2026-07-14T12:36:41.2916827Z https://github.com/joangrigorov/ghspector
+2026-07-14T12:36:41.2929468Z ##[group]Removing previously created refs, to avoid conflicts
+2026-07-14T12:36:41.2933540Z [command]/usr/bin/git rev-parse --symbolic-full-name --verify --quiet HEAD
+2026-07-14T12:36:41.2954171Z HEAD
+2026-07-14T12:36:41.2992302Z ##[endgroup]
+2026-07-14T12:36:41.2995235Z [command]/usr/bin/git submodule status
+2026-07-14T12:36:41.3208892Z ##[group]Cleaning the repository
+2026-07-14T12:36:41.3213391Z [command]/usr/bin/git clean -ffdx
+2026-07-14T12:36:41.3249160Z [command]/usr/bin/git reset --hard HEAD
+2026-07-14T12:36:41.3313706Z HEAD is now at fd19b12 Merge 329bd90ee3bad70877d5c43dc8d6f08211662393 into 26604e66fc4e81e0d4881fa6ac745065c56d3256
+2026-07-14T12:36:41.3318453Z ##[endgroup]
+2026-07-14T12:36:41.3319884Z ##[group]Disabling automatic garbage collection
+2026-07-14T12:36:41.3324360Z [command]/usr/bin/git config --local gc.auto 0
+2026-07-14T12:36:41.3351696Z ##[endgroup]
+2026-07-14T12:36:41.3352316Z ##[group]Setting up auth
+2026-07-14T12:36:41.3353439Z Removing SSH command configuration
+2026-07-14T12:36:41.3360216Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-14T12:36:41.3391282Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-14T12:36:41.3604448Z Removing HTTP extra header
+2026-07-14T12:36:41.3609608Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-14T12:36:41.3638934Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-14T12:36:41.3862215Z Removing includeIf entries pointing to credentials config files
+2026-07-14T12:36:41.3869459Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-14T12:36:41.3902553Z includeif.gitdir:/home/runner/work/ghspector/ghspector/.git.path
+2026-07-14T12:36:41.3903495Z includeif.gitdir:/home/runner/work/ghspector/ghspector/.git/worktrees/*.path
+2026-07-14T12:36:41.3904277Z includeif.gitdir:/github/workspace/.git.path
+2026-07-14T12:36:41.3904908Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-07-14T12:36:41.3912736Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/ghspector/ghspector/.git.path
+2026-07-14T12:36:41.3934817Z /home/runner/work/_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:41.3946171Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/ghspector/ghspector/.git.path /home/runner/work/_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:41.3983993Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/ghspector/ghspector/.git/worktrees/*.path
+2026-07-14T12:36:41.4003938Z /home/runner/work/_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:41.4011848Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/ghspector/ghspector/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:41.4040844Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-07-14T12:36:41.4060681Z /github/runner_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:41.4068042Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:41.4095731Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-07-14T12:36:41.4115170Z /github/runner_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:41.4122480Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config
+2026-07-14T12:36:41.4152847Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-14T12:36:41.4360573Z Removing credentials config '/home/runner/work/_temp/git-credentials-c4c145fd-b528-4404-89a7-a5673ccdaf24.config'
+2026-07-14T12:36:41.4373464Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-07-14T12:36:41.4407044Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/ghspector/ghspector/.git.path /home/runner/work/_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:41.4489662Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/ghspector/ghspector/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:41.4501871Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:41.4536790Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:41.4564540Z ##[endgroup]
+2026-07-14T12:36:41.4577201Z ##[group]Fetching the repository
+2026-07-14T12:36:41.4578556Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +fd19b12cf8ea6420b7bb792d03d424a4bdc4ed52:refs/remotes/pull/11/merge
+2026-07-14T12:36:41.6214028Z ##[endgroup]
+2026-07-14T12:36:41.6214447Z ##[group]Determining the checkout info
+2026-07-14T12:36:41.6215400Z ##[endgroup]
+2026-07-14T12:36:41.6221384Z [command]/usr/bin/git sparse-checkout disable
+2026-07-14T12:36:41.6261130Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-07-14T12:36:41.6286204Z ##[group]Checking out the ref
+2026-07-14T12:36:41.6291179Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/11/merge
+2026-07-14T12:36:41.6319441Z HEAD is now at fd19b12 Merge 329bd90ee3bad70877d5c43dc8d6f08211662393 into 26604e66fc4e81e0d4881fa6ac745065c56d3256
+2026-07-14T12:36:41.6325316Z ##[endgroup]
+2026-07-14T12:36:41.6361371Z [command]/usr/bin/git log -1 --format=%H
+2026-07-14T12:36:41.6384315Z fd19b12cf8ea6420b7bb792d03d424a4bdc4ed52
+2026-07-14T12:36:41.6524377Z ##[group]Run actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
+2026-07-14T12:36:41.6524745Z with:
+2026-07-14T12:36:41.6524935Z   go-version: stable
+2026-07-14T12:36:41.6525145Z   check-latest: true
+2026-07-14T12:36:41.6525511Z   cache: false
+2026-07-14T12:36:41.6528208Z   token: ***
+2026-07-14T12:36:41.6528407Z env:
+2026-07-14T12:36:41.6528592Z   GOTOOLCHAIN: local
+2026-07-14T12:36:41.6528804Z ##[endgroup]
+2026-07-14T12:36:41.7750742Z Setup go version spec stable
+2026-07-14T12:36:42.0818925Z stable version resolved as 1.26.5
+2026-07-14T12:36:42.0819449Z Attempting to resolve the latest version from the manifest...
+2026-07-14T12:36:42.0820889Z matching 1.26.5...
+2026-07-14T12:36:42.0852348Z Resolved as '1.26.5'
+2026-07-14T12:36:42.0857392Z Found in cache @ /opt/hostedtoolcache/go/1.26.5/x64
+2026-07-14T12:36:42.0860084Z Added go to the path
+2026-07-14T12:36:42.0863608Z Successfully set up Go version stable
+2026-07-14T12:36:42.1022799Z go version go1.26.5 linux/amd64
+2026-07-14T12:36:42.1022999Z 
+2026-07-14T12:36:42.1023296Z ##[group]go env
+2026-07-14T12:36:42.1098807Z AR='ar'
+2026-07-14T12:36:42.1099208Z CC='gcc'
+2026-07-14T12:36:42.1099410Z CGO_CFLAGS='-O2 -g'
+2026-07-14T12:36:42.1099639Z CGO_CPPFLAGS=''
+2026-07-14T12:36:42.1099877Z CGO_CXXFLAGS='-O2 -g'
+2026-07-14T12:36:42.1100105Z CGO_ENABLED='1'
+2026-07-14T12:36:42.1100303Z CGO_FFLAGS='-O2 -g'
+2026-07-14T12:36:42.1100536Z CGO_LDFLAGS='-O2 -g'
+2026-07-14T12:36:42.1100737Z CXX='g++'
+2026-07-14T12:36:42.1100922Z GCCGO='gccgo'
+2026-07-14T12:36:42.1101115Z GO111MODULE=''
+2026-07-14T12:36:42.1101304Z GOAMD64='v1'
+2026-07-14T12:36:42.1101489Z GOARCH='amd64'
+2026-07-14T12:36:42.1101680Z GOAUTH='netrc'
+2026-07-14T12:36:42.1101861Z GOBIN=''
+2026-07-14T12:36:42.1102069Z GOCACHE='/home/runner/.cache/go-build'
+2026-07-14T12:36:42.1102339Z GOCACHEPROG=''
+2026-07-14T12:36:42.1102527Z GODEBUG=''
+2026-07-14T12:36:42.1102755Z GOENV='/home/runner/.config/go/env'
+2026-07-14T12:36:42.1103004Z GOEXE=''
+2026-07-14T12:36:42.1103185Z GOEXPERIMENT=''
+2026-07-14T12:36:42.1103401Z GOFIPS140='off'
+2026-07-14T12:36:42.1103601Z GOFLAGS=''
+2026-07-14T12:36:42.1104253Z GOGCCFLAGS='-fPIC -m64 -pthread -Wl,--no-gc-sections -fmessage-length=0 -ffile-prefix-map=/tmp/go-build2148191530=/tmp/go-build -gno-record-gcc-switches'
+2026-07-14T12:36:42.1104931Z GOHOSTARCH='amd64'
+2026-07-14T12:36:42.1105142Z GOHOSTOS='linux'
+2026-07-14T12:36:42.1105340Z GOINSECURE=''
+2026-07-14T12:36:42.1105610Z GOMOD='/home/runner/work/ghspector/ghspector/go.mod'
+2026-07-14T12:36:42.1105949Z GOMODCACHE='/home/runner/go/pkg/mod'
+2026-07-14T12:36:42.1106210Z GONOPROXY=''
+2026-07-14T12:36:42.1106398Z GONOSUMDB=''
+2026-07-14T12:36:42.1106582Z GOOS='linux'
+2026-07-14T12:36:42.1106775Z GOPATH='/home/runner/go'
+2026-07-14T12:36:42.1106990Z GOPRIVATE=''
+2026-07-14T12:36:42.1107237Z GOPROXY='https://proxy.golang.org,direct'
+2026-07-14T12:36:42.1107776Z GOROOT='/opt/hostedtoolcache/go/1.26.5/x64'
+2026-07-14T12:36:42.1108127Z GOSUMDB='sum.golang.org'
+2026-07-14T12:36:42.1108361Z GOTELEMETRY='local'
+2026-07-14T12:36:42.1108837Z GOTELEMETRYDIR='/home/runner/.config/go/telemetry'
+2026-07-14T12:36:42.1109154Z GOTMPDIR=''
+2026-07-14T12:36:42.1109386Z GOTOOLCHAIN='local'
+2026-07-14T12:36:42.1109743Z GOTOOLDIR='/opt/hostedtoolcache/go/1.26.5/x64/pkg/tool/linux_amd64'
+2026-07-14T12:36:42.1110128Z GOVCS=''
+2026-07-14T12:36:42.1110338Z GOVERSION='go1.26.5'
+2026-07-14T12:36:42.1110541Z GOWORK=''
+2026-07-14T12:36:42.1110736Z PKG_CONFIG='pkg-config'
+2026-07-14T12:36:42.1110885Z 
+2026-07-14T12:36:42.1111185Z ##[endgroup]
+2026-07-14T12:36:42.1213529Z ##[group]Run go install golang.org/x/vuln/cmd/govulncheck@latest
+2026-07-14T12:36:42.1214030Z [36;1mgo install golang.org/x/vuln/cmd/govulncheck@latest[0m
+2026-07-14T12:36:42.1248973Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-14T12:36:42.1249318Z env:
+2026-07-14T12:36:42.1249507Z   GOTOOLCHAIN: local
+2026-07-14T12:36:42.1249726Z   GOOS: 
+2026-07-14T12:36:42.1249898Z   GOARCH: 
+2026-07-14T12:36:42.1250075Z ##[endgroup]
+2026-07-14T12:36:42.7494409Z ##[group]Run govulncheck -C "$WORK_DIR" -format "$OUTPUT_FORMAT" "$GO_PACKAGE"
+2026-07-14T12:36:42.7494945Z [36;1mgovulncheck -C "$WORK_DIR" -format "$OUTPUT_FORMAT" "$GO_PACKAGE"[0m
+2026-07-14T12:36:42.7526457Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-14T12:36:42.7526965Z env:
+2026-07-14T12:36:42.7527158Z   GOTOOLCHAIN: local
+2026-07-14T12:36:42.7527382Z   WORK_DIR: .
+2026-07-14T12:36:42.7527784Z   OUTPUT_FORMAT: text
+2026-07-14T12:36:42.7528107Z   GO_PACKAGE: ./...
+2026-07-14T12:36:42.7528311Z ##[endgroup]
+2026-07-14T12:36:44.6256130Z No vulnerabilities found.
+2026-07-14T12:36:44.6401081Z ##[group]Run go test -v -race ./...
+2026-07-14T12:36:44.6401427Z [36;1mgo test -v -race ./...[0m
+2026-07-14T12:36:44.6433451Z shell: /usr/bin/bash -e {0}
+2026-07-14T12:36:44.6433714Z env:
+2026-07-14T12:36:44.6433906Z   GOTOOLCHAIN: local
+2026-07-14T12:36:44.6434124Z ##[endgroup]
+2026-07-14T12:36:46.4427335Z ?   	ghspector/cmd/ghspector	[no test files]
+2026-07-14T12:36:47.4568487Z === RUN   TestResolveTokenWithCliGetter
+2026-07-14T12:36:47.4569505Z === RUN   TestResolveTokenWithCliGetter/Env_Variable_GH_TOKEN_takes_highest_priority
+2026-07-14T12:36:47.4570698Z === RUN   TestResolveTokenWithCliGetter/Env_Variable_GITHUB_TOKEN_takes_priority_over_config/cli
+2026-07-14T12:36:47.4571902Z === RUN   TestResolveTokenWithCliGetter/Config_file_fallback
+2026-07-14T12:36:47.4572600Z === RUN   TestResolveTokenWithCliGetter/CLI_fallback
+2026-07-14T12:36:47.4573414Z === RUN   TestResolveTokenWithCliGetter/All_fail_returns_ErrUnauthenticated
+2026-07-14T12:36:47.4574498Z --- PASS: TestResolveTokenWithCliGetter (0.00s)
+2026-07-14T12:36:47.4575651Z     --- PASS: TestResolveTokenWithCliGetter/Env_Variable_GH_TOKEN_takes_highest_priority (0.00s)
+2026-07-14T12:36:47.4577230Z     --- PASS: TestResolveTokenWithCliGetter/Env_Variable_GITHUB_TOKEN_takes_priority_over_config/cli (0.00s)
+2026-07-14T12:36:47.4578827Z     --- PASS: TestResolveTokenWithCliGetter/Config_file_fallback (0.00s)
+2026-07-14T12:36:47.4579771Z     --- PASS: TestResolveTokenWithCliGetter/CLI_fallback (0.00s)
+2026-07-14T12:36:47.4580896Z     --- PASS: TestResolveTokenWithCliGetter/All_fail_returns_ErrUnauthenticated (0.00s)
+2026-07-14T12:36:47.4581686Z === RUN   TestPollingConfig
+2026-07-14T12:36:47.4582170Z --- PASS: TestPollingConfig (0.00s)
+2026-07-14T12:36:47.4582615Z PASS
+2026-07-14T12:36:47.4582972Z ok  	ghspector/internal/auth	1.012s
+2026-07-14T12:36:47.4757091Z === RUN   TestClient_GetUser
+2026-07-14T12:36:47.4757846Z --- PASS: TestClient_GetUser (0.00s)
+2026-07-14T12:36:47.4758359Z === RUN   TestClient_RateLimitBackup
+2026-07-14T12:36:47.4758887Z --- PASS: TestClient_RateLimitBackup (0.00s)
+2026-07-14T12:36:47.4759417Z === RUN   TestClient_Forbidden
+2026-07-14T12:36:47.4759900Z --- PASS: TestClient_Forbidden (0.00s)
+2026-07-14T12:36:47.4760438Z === RUN   TestClient_GetWorkflowRunsAndJobs
+2026-07-14T12:36:47.4761045Z --- PASS: TestClient_GetWorkflowRunsAndJobs (0.00s)
+2026-07-14T12:36:47.4761671Z === RUN   TestClient_GetWorkflowRuns_ActorFilter
+2026-07-14T12:36:47.4762299Z --- PASS: TestClient_GetWorkflowRuns_ActorFilter (0.00s)
+2026-07-14T12:36:47.4762934Z === RUN   TestClient_GetWorkflowRunAttemptJobs
+2026-07-14T12:36:47.4763613Z --- PASS: TestClient_GetWorkflowRunAttemptJobs (0.00s)
+2026-07-14T12:36:47.4764278Z === RUN   TestClient_GetCheckRunsDuplicateFiltering
+2026-07-14T12:36:47.4764989Z --- PASS: TestClient_GetCheckRunsDuplicateFiltering (0.00s)
+2026-07-14T12:36:47.4765631Z === RUN   TestClient_GetRepoPermission
+2026-07-14T12:36:47.4766180Z --- PASS: TestClient_GetRepoPermission (0.00s)
+2026-07-14T12:36:47.4766751Z === RUN   TestClient_GetPendingDeployments
+2026-07-14T12:36:47.4767327Z --- PASS: TestClient_GetPendingDeployments (0.00s)
+2026-07-14T12:36:47.4768143Z === RUN   TestClient_ApproveWorkflowRun
+2026-07-14T12:36:47.4768682Z --- PASS: TestClient_ApproveWorkflowRun (0.00s)
+2026-07-14T12:36:47.4769255Z === RUN   TestClient_ApprovePendingDeployments
+2026-07-14T12:36:47.4769857Z --- PASS: TestClient_ApprovePendingDeployments (0.00s)
+2026-07-14T12:36:47.4770386Z PASS
+2026-07-14T12:36:47.4770732Z ok  	ghspector/internal/gh	1.031s
+2026-07-14T12:36:49.4346379Z === RUN   TestTUI_Integration
+2026-07-14T12:36:49.4347020Z --- PASS: TestTUI_Integration (0.01s)
+2026-07-14T12:36:49.4347849Z === RUN   TestTUI_HelpScreen
+2026-07-14T12:36:49.4348770Z --- PASS: TestTUI_HelpScreen (0.00s)
+2026-07-14T12:36:49.4349370Z === RUN   TestTUI_ActorFilter
+2026-07-14T12:36:49.4349939Z --- PASS: TestTUI_ActorFilter (0.00s)
+2026-07-14T12:36:49.4350531Z === RUN   TestTUI_AttemptNavigation
+2026-07-14T12:36:49.4351379Z --- PASS: TestTUI_AttemptNavigation (0.00s)
+2026-07-14T12:36:49.4352062Z === RUN   Test_MatchActor
+2026-07-14T12:36:49.4352842Z --- PASS: Test_MatchActor (0.00s)
+2026-07-14T12:36:49.4353567Z === RUN   TestTUI_PRViewer
+2026-07-14T12:36:49.4354348Z --- PASS: TestTUI_PRViewer (0.00s)
+2026-07-14T12:36:49.4354862Z === RUN   TestPRStateFiltering
+2026-07-14T12:36:49.4355348Z --- PASS: TestPRStateFiltering (0.00s)
+2026-07-14T12:36:49.4355837Z === RUN   TestPRCommentsView
+2026-07-14T12:36:49.4356278Z --- PASS: TestPRCommentsView (0.01s)
+2026-07-14T12:36:49.4356777Z === RUN   TestPrintFilterTypeSelectModal
+2026-07-14T12:36:49.4357419Z     app_test.go:743: Modal has 12 lines:
+2026-07-14T12:36:49.4358751Z     app_test.go:745: [0]: ┌──────────────────────────────────────────────┐ (len=144)
+2026-07-14T12:36:49.4359828Z     app_test.go:745: [1]: │                 FILTER TYPE                  │ (len=52)
+2026-07-14T12:36:49.4360923Z     app_test.go:745: [2]: ├──────────────────────────────────────────────┤ (len=144)
+2026-07-14T12:36:49.4361947Z     app_test.go:745: [3]: │                                              │ (len=52)
+2026-07-14T12:36:49.4363105Z     app_test.go:745: [4]: │    Filter user @testuser by:                 │ (len=52)
+2026-07-14T12:36:49.4364132Z     app_test.go:745: [5]: │                                              │ (len=52)
+2026-07-14T12:36:49.4365125Z     app_test.go:745: [6]: │    [A] Author                                │ (len=52)
+2026-07-14T12:36:49.4366150Z     app_test.go:745: [7]: │    [I] Assignee                              │ (len=52)
+2026-07-14T12:36:49.4367164Z     app_test.go:745: [8]: │    [R] Reviewer                              │ (len=52)
+2026-07-14T12:36:49.4368331Z     app_test.go:745: [9]: │                                              │ (len=52)
+2026-07-14T12:36:49.4369390Z     app_test.go:745: [10]: │  Press Esc or C to cancel                    │ (len=52)
+2026-07-14T12:36:49.4370499Z     app_test.go:745: [11]: └──────────────────────────────────────────────┘ (len=144)
+2026-07-14T12:36:49.4371217Z --- PASS: TestPrintFilterTypeSelectModal (0.00s)
+2026-07-14T12:36:49.4371813Z === RUN   TestOverlayFilterTypeSelectModal
+2026-07-14T12:36:49.4372416Z     app_test.go:760: Result has 24 lines:
+2026-07-14T12:36:49.4373264Z     app_test.go:762: [0]:                                                                                 
+2026-07-14T12:36:49.4374489Z     app_test.go:762: [1]:    ghspector | Dashboard   Account/Org: None                                    
+2026-07-14T12:36:49.4375635Z     app_test.go:762: [2]:                                                                                 
+2026-07-14T12:36:49.4376954Z     app_test.go:762: [3]: ────────────────────────────────────────────────────────────────────────────────
+2026-07-14T12:36:49.4378695Z     app_test.go:762: [4]:   ST  PR #   PULL REQUEST TITLE AUTHOR                   REPOSITORY           ASSIGNEES    REVIEWERS    LABELS          
+2026-07-14T12:36:49.4380676Z     app_test.go:762: [5]: ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+2026-07-14T12:36:49.4382077Z     app_test.go:762: [6]:                 ┌──────────────────────────────────────────────┐                
+2026-07-14T12:36:49.4383639Z     app_test.go:762: [7]:   No open pull r│                 FILTER TYPE                  │                
+2026-07-14T12:36:49.4385010Z     app_test.go:762: [8]:                 ├──────────────────────────────────────────────┤                
+2026-07-14T12:36:49.4386183Z     app_test.go:762: [9]:                 │                                              │                
+2026-07-14T12:36:49.4387406Z     app_test.go:762: [10]:                 │    Filter user @testuser by:                 │                
+2026-07-14T12:36:49.4389150Z     app_test.go:762: [11]:                 │                                              │                
+2026-07-14T12:36:49.4390371Z     app_test.go:762: [12]:                 │    [A] Author                                │                
+2026-07-14T12:36:49.4391772Z     app_test.go:762: [13]:                 │    [I] Assignee                              │                
+2026-07-14T12:36:49.4393005Z     app_test.go:762: [14]:                 │    [R] Reviewer                              │                
+2026-07-14T12:36:49.4394194Z     app_test.go:762: [15]:                 │                                              │                
+2026-07-14T12:36:49.4395412Z     app_test.go:762: [16]:                 │  Press Esc or C to cancel                    │                
+2026-07-14T12:36:49.4396693Z     app_test.go:762: [17]:                 └──────────────────────────────────────────────┘                
+2026-07-14T12:36:49.4397442Z     app_test.go:762: [18]: 
+2026-07-14T12:36:49.4398083Z     app_test.go:762: [19]: 
+2026-07-14T12:36:49.4398539Z     app_test.go:762: [20]: 
+2026-07-14T12:36:49.4399573Z     app_test.go:762: [21]: ──────────────────────────────────────────────────────────────────────────────
+2026-07-14T12:36:49.4400779Z     app_test.go:762: [22]:    Tab:Tabs  j/k:Navigate  Enter:View PR  w:Browser  f:Filter  s:State  a:My  
+2026-07-14T12:36:49.4402023Z     app_test.go:762: [23]:  PRs  i:My Assigned  v:My Reviewed  x:Clear Filter                            
+2026-07-14T12:36:49.4402866Z --- PASS: TestOverlayFilterTypeSelectModal (0.00s)
+2026-07-14T12:36:49.4403445Z === RUN   TestPRCommitsListScreen
+2026-07-14T12:36:49.4403937Z --- PASS: TestPRCommitsListScreen (0.00s)
+2026-07-14T12:36:49.4404508Z === RUN   TestPRDetailsCheckEnterHTMLURLFallback
+2026-07-14T12:36:49.4405182Z --- PASS: TestPRDetailsCheckEnterHTMLURLFallback (0.00s)
+2026-07-14T12:36:49.4405808Z === RUN   TestPRDetailsFormatCheckName
+2026-07-14T12:36:49.4406376Z --- PASS: TestPRDetailsFormatCheckName (0.00s)
+2026-07-14T12:36:49.4406915Z === RUN   TestExtractRunIDFromURL
+2026-07-14T12:36:49.4407396Z --- PASS: TestExtractRunIDFromURL (0.00s)
+2026-07-14T12:36:49.4408067Z === RUN   TestRenderJobsViewEmptySHA
+2026-07-14T12:36:49.4408586Z --- PASS: TestRenderJobsViewEmptySHA (0.00s)
+2026-07-14T12:36:49.4409106Z === RUN   TestModelPollTick
+2026-07-14T12:36:49.4409562Z === RUN   TestModelPollTick/Default_intervals
+2026-07-14T12:36:49.4410120Z === RUN   TestModelPollTick/Configured_intervals
+2026-07-14T12:36:49.4410655Z --- PASS: TestModelPollTick (0.00s)
+2026-07-14T12:36:49.4411301Z     --- PASS: TestModelPollTick/Default_intervals (0.00s)
+2026-07-14T12:36:49.4412064Z     --- PASS: TestModelPollTick/Configured_intervals (0.00s)
+2026-07-14T12:36:49.4412696Z === RUN   TestTUI_PRDiffViewAndMergePermissions
+2026-07-14T12:36:49.4413340Z --- PASS: TestTUI_PRDiffViewAndMergePermissions (0.00s)
+2026-07-14T12:36:49.4413992Z === RUN   TestTUI_RunningJobLogsAndPRDetailsRefresh
+2026-07-14T12:36:49.4414832Z --- PASS: TestTUI_RunningJobLogsAndPRDetailsRefresh (0.00s)
+2026-07-14T12:36:49.4415429Z === RUN   TestTUI_IssueViewer
+2026-07-14T12:36:49.4415866Z --- PASS: TestTUI_IssueViewer (0.00s)
+2026-07-14T12:36:49.4416337Z === RUN   TestIssueStateFiltering
+2026-07-14T12:36:49.4416823Z --- PASS: TestIssueStateFiltering (0.00s)
+2026-07-14T12:36:49.4417469Z === RUN   TestWorkflowApprovalFlow
+2026-07-14T12:36:49.4418140Z --- PASS: TestWorkflowApprovalFlow (0.00s)
+2026-07-14T12:36:49.4418641Z === RUN   TestTUI_DefaultMergeMethod
+2026-07-14T12:36:49.4419131Z --- PASS: TestTUI_DefaultMergeMethod (0.00s)
+2026-07-14T12:36:49.4419642Z === RUN   TestTUI_RepoFilterSelection
+2026-07-14T12:36:49.4420143Z --- PASS: TestTUI_RepoFilterSelection (0.00s)
+2026-07-14T12:36:49.4420695Z === RUN   TestTUI_IssuesPaginationPRFiltering
+2026-07-14T12:36:49.4421289Z --- PASS: TestTUI_IssuesPaginationPRFiltering (0.00s)
+2026-07-14T12:36:49.4421857Z === RUN   TestTUI_RateLimitErrorRecovery
+2026-07-14T12:36:49.4422390Z --- PASS: TestTUI_RateLimitErrorRecovery (0.00s)
+2026-07-14T12:36:49.4422968Z === RUN   TestTUI_LogsSplitPaneAndSegmentation
+2026-07-14T12:36:49.4423566Z --- PASS: TestTUI_LogsSplitPaneAndSegmentation (0.00s)
+2026-07-14T12:36:49.4424070Z PASS
+2026-07-14T12:36:49.4424403Z ok  	ghspector/internal/tui	1.131s
+2026-07-14T12:36:49.4559991Z ##[group]Run golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a
+2026-07-14T12:36:49.4560432Z with:
+2026-07-14T12:36:49.4560626Z   install-mode: binary
+2026-07-14T12:36:49.4560849Z   install-only: false
+2026-07-14T12:36:49.4563305Z   github-token: ***
+2026-07-14T12:36:49.4563516Z   verify: true
+2026-07-14T12:36:49.4563718Z   only-new-issues: false
+2026-07-14T12:36:49.4563942Z   skip-cache: false
+2026-07-14T12:36:49.4564143Z   skip-save-cache: false
+2026-07-14T12:36:49.4564376Z   cache-invalidation-interval: 7
+2026-07-14T12:36:49.4564633Z   problem-matchers: false
+2026-07-14T12:36:49.4564863Z env:
+2026-07-14T12:36:49.4565043Z   GOTOOLCHAIN: local
+2026-07-14T12:36:49.4565258Z ##[endgroup]
+2026-07-14T12:36:49.5972573Z ##[group]Restore cache
+2026-07-14T12:36:49.5978442Z Checking for go.mod: go.mod
+2026-07-14T12:36:49.6764676Z Cache hit for: golangci-lint.cache-Linux-2949-a3749a3fa2004b2c2fab7a875a96201387c39895
+2026-07-14T12:36:49.8937783Z Received 656325 of 656325 (100.0%), 4.5 MBs/sec
+2026-07-14T12:36:49.8938445Z Cache Size: ~1 MB (656325 B)
+2026-07-14T12:36:49.8990305Z [command]/usr/bin/tar -xf /home/runner/work/_temp/36b2a427-9416-4675-8330-113554a9d029/cache.tzst -P -C /home/runner/work/ghspector/ghspector --use-compress-program unzstd
+2026-07-14T12:36:50.0760552Z Cache restored successfully
+2026-07-14T12:36:50.0765413Z Restored cache for golangci-lint from key 'golangci-lint.cache-Linux-2949-a3749a3fa2004b2c2fab7a875a96201387c39895' in 479ms
+2026-07-14T12:36:50.0766890Z ##[endgroup]
+2026-07-14T12:36:50.0767521Z ##[group]Install
+2026-07-14T12:36:50.0768722Z Finding needed golangci-lint version...
+2026-07-14T12:36:50.0969913Z Requested golangci-lint 'latest', using 'v2.12.2', calculation took 19ms
+2026-07-14T12:36:50.0970807Z Installation mode: binary
+2026-07-14T12:36:50.0971382Z Installing golangci-lint binary v2.12.2...
+2026-07-14T12:36:50.0972984Z Downloading binary https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golangci-lint-2.12.2-linux-amd64.tar.gz ...
+2026-07-14T12:36:50.3352555Z [command]/usr/bin/tar xz --overwrite --warning=no-unknown-keyword --overwrite -C /home/runner -f /home/runner/work/_temp/04a529fb-b5e5-4503-8711-5b2cc4375bc2
+2026-07-14T12:36:50.5890464Z Installed golangci-lint into /home/runner/golangci-lint-2.12.2-linux-amd64/golangci-lint in 491ms
+2026-07-14T12:36:50.5894863Z ##[endgroup]
+2026-07-14T12:36:50.5899098Z ##[group]run golangci-lint
+2026-07-14T12:36:50.5903319Z Running [/home/runner/golangci-lint-2.12.2-linux-amd64/golangci-lint config path] in [/home/runner/work/ghspector/ghspector] ...
+2026-07-14T12:36:50.6699868Z Running [/home/runner/golangci-lint-2.12.2-linux-amd64/golangci-lint config verify] in [/home/runner/work/ghspector/ghspector] ...
+2026-07-14T12:36:50.7610223Z Running [/home/runner/golangci-lint-2.12.2-linux-amd64/golangci-lint run] in [/home/runner/work/ghspector/ghspector] ...
+2026-07-14T12:36:52.9684133Z ##[error]internal/tui/update.go:1281:5: SA1019: m.logsViewport.LineUp is deprecated: use [Model.ScrollUp] instead. (staticcheck)
+2026-07-14T12:36:52.9694552Z 				m.logsViewport.LineUp(3)
+2026-07-14T12:36:52.9695018Z 				^
+2026-07-14T12:36:52.9696916Z ##[error]internal/tui/update.go:1284:5: SA1019: m.logsViewport.LineDown is deprecated: use [Model.ScrollDown] instead. (staticcheck)
+2026-07-14T12:36:52.9699104Z 				m.logsViewport.LineDown(3)
+2026-07-14T12:36:52.9699567Z 				^
+2026-07-14T12:36:52.9699913Z 2 issues:
+2026-07-14T12:36:52.9700305Z * staticcheck: 2
+2026-07-14T12:36:52.9700520Z 
+2026-07-14T12:36:52.9713223Z ##[error]issues found
+2026-07-14T12:36:52.9714374Z Ran golangci-lint in 2204ms
+2026-07-14T12:36:52.9715069Z ##[endgroup]
+2026-07-14T12:36:52.9860256Z Post job cleanup.
+2026-07-14T12:36:53.1326381Z Cache hit occurred on the primary key golangci-lint.cache-Linux-2949-a3749a3fa2004b2c2fab7a875a96201387c39895, not saving cache.
+2026-07-14T12:36:53.1479487Z Post job cleanup.
+2026-07-14T12:36:53.1551802Z Post job cleanup.
+2026-07-14T12:36:53.2371591Z [command]/usr/bin/git version
+2026-07-14T12:36:53.2440276Z git version 2.54.0
+2026-07-14T12:36:53.2478480Z Temporarily overriding HOME='/home/runner/work/_temp/7b544160-9fcc-43f0-82ef-ecb9f3b60235' before making global git config changes
+2026-07-14T12:36:53.2480094Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-14T12:36:53.2483662Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/ghspector/ghspector
+2026-07-14T12:36:53.2512612Z Removing SSH command configuration
+2026-07-14T12:36:53.2519707Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-14T12:36:53.2552384Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-14T12:36:53.2776597Z Removing HTTP extra header
+2026-07-14T12:36:53.2782452Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-14T12:36:53.2816425Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-14T12:36:53.3043405Z Removing includeIf entries pointing to credentials config files
+2026-07-14T12:36:53.3053198Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-14T12:36:53.3077336Z includeif.gitdir:/home/runner/work/ghspector/ghspector/.git.path
+2026-07-14T12:36:53.3079179Z includeif.gitdir:/home/runner/work/ghspector/ghspector/.git/worktrees/*.path
+2026-07-14T12:36:53.3080400Z includeif.gitdir:/github/workspace/.git.path
+2026-07-14T12:36:53.3081209Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-07-14T12:36:53.3089393Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/ghspector/ghspector/.git.path
+2026-07-14T12:36:53.3112395Z /home/runner/work/_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:53.3125787Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/ghspector/ghspector/.git.path /home/runner/work/_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:53.3163438Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/ghspector/ghspector/.git/worktrees/*.path
+2026-07-14T12:36:53.3185959Z /home/runner/work/_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:53.3197163Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/ghspector/ghspector/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:53.3568688Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-07-14T12:36:53.3590895Z /github/runner_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:53.3600188Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:53.3631990Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-07-14T12:36:53.3652360Z /github/runner_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:53.3666322Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config
+2026-07-14T12:36:53.3697945Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-14T12:36:53.3910021Z Removing credentials config '/home/runner/work/_temp/git-credentials-2d886857-4bc0-44f0-8853-eca535748456.config'
+2026-07-14T12:36:53.4096300Z Post job cleanup.
+2026-07-14T12:36:53.4940631Z [command]/usr/bin/git version
+2026-07-14T12:36:53.4982987Z git version 2.54.0
+2026-07-14T12:36:53.5018026Z Temporarily overriding HOME='/home/runner/work/_temp/e7c7c7c0-6026-43f1-a6ac-b0d78b26d184' before making global git config changes
+2026-07-14T12:36:53.5018976Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-14T12:36:53.5023449Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/ghspector/ghspector
+2026-07-14T12:36:53.5052256Z Removing SSH command configuration
+2026-07-14T12:36:53.5058448Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-14T12:36:53.5090827Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-14T12:36:53.5305569Z Removing HTTP extra header
+2026-07-14T12:36:53.5310973Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-14T12:36:53.5343588Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-14T12:36:53.5550118Z Removing includeIf entries pointing to credentials config files
+2026-07-14T12:36:53.5556284Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-14T12:36:53.5585348Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-14T12:36:53.5912776Z Cleaning up orphan processes

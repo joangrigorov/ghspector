@@ -21,10 +21,18 @@ func (m Model) View() string {
 	switch m.state {
 	case viewSplash:
 		return RenderSplash(m.theme, m.loadingMsg, m.tickCount)
-	case viewMain, viewPRFilterInput, viewPRFilterTypeSelect, viewIssueFilterInput, viewIssueFilterTypeSelect:
+	case viewMain, viewPRFilterInput, viewPRFilterTypeSelect, viewIssueFilterInput, viewIssueFilterTypeSelect, viewFilterTypeSelect, viewRepoFilterSelect:
 		switch m.activeTab {
 		case tabWorkflows:
-			return m.renderMainView()
+			viewStr := m.renderMainView()
+			if m.state == viewFilterTypeSelect {
+				modalStr := m.renderFilterTypeSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			} else if m.state == viewRepoFilterSelect {
+				modalStr := m.renderRepoFilterSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			}
+			return viewStr
 		case tabPRs:
 			viewStr := m.renderPullsView()
 			if m.state == viewPRFilterInput {
@@ -32,6 +40,12 @@ func (m Model) View() string {
 				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
 			} else if m.state == viewPRFilterTypeSelect {
 				modalStr := m.renderPRFilterTypeSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			} else if m.state == viewFilterTypeSelect {
+				modalStr := m.renderFilterTypeSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			} else if m.state == viewRepoFilterSelect {
+				modalStr := m.renderRepoFilterSelectModal()
 				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
 			}
 			return viewStr
@@ -42,6 +56,12 @@ func (m Model) View() string {
 				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
 			} else if m.state == viewIssueFilterTypeSelect {
 				modalStr := m.renderIssueFilterTypeSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			} else if m.state == viewFilterTypeSelect {
+				modalStr := m.renderFilterTypeSelectModal()
+				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
+			} else if m.state == viewRepoFilterSelect {
+				modalStr := m.renderRepoFilterSelectModal()
 				viewStr = overlayModal(viewStr, modalStr, m.width, m.height, 48)
 			}
 			return viewStr
@@ -79,7 +99,33 @@ func (m Model) View() string {
 func (m Model) renderErrorView() string {
 	var sb strings.Builder
 	sb.WriteString("\n  " + m.theme.StatusFailed.Render("FATAL ERROR") + "\n\n")
-	sb.WriteString("  " + m.theme.TableRow.Render(m.err.Error()) + "\n\n")
+
+	// Wrap error text to terminal width - 4
+	w := m.width - 4
+	if w < 20 {
+		w = 20
+	}
+	errText := lipgloss.NewStyle().Width(w).Render(m.err.Error())
+	sb.WriteString("  " + errText + "\n\n")
+
+	// Check if this is a rate limit error
+	if strings.Contains(strings.ToLower(m.err.Error()), "rate limit") {
+		rl := m.client.GetRateLimit()
+		if !rl.Reset.IsZero() {
+			timeRemaining := time.Until(rl.Reset)
+			if timeRemaining > 0 {
+				timerStr := fmt.Sprintf("Rate Limit resets in: %s (at %s)", 
+					formatDuration(timeRemaining), 
+					rl.Reset.Format("15:04:05"),
+				)
+				sb.WriteString("  " + m.theme.StatusWaiting.Render(timerStr) + "\n\n")
+				sb.WriteString("  The app will automatically reconnect once the rate limit resets.\n\n")
+			} else {
+				sb.WriteString("  " + m.theme.StatusSuccessful.Render("Rate limit reset. Reconnecting...") + "\n\n")
+			}
+		}
+	}
+
 	sb.WriteString("  Press q or Ctrl+C to exit.\n")
 	return sb.String()
 }
@@ -128,8 +174,17 @@ func (m Model) getStatusIndicator(status, conclusion string) string {
 // renderHeader renders the standard top bar.
 func (m Model) renderHeader() string {
 	activeTarget := "None"
-	if len(m.targets) > 0 && m.selectedTargetIdx < len(m.targets) {
+	if len(m.targets) > 0 && m.selectedTargetIdx >= 0 && m.selectedTargetIdx < len(m.targets) {
 		activeTarget = m.targets[m.selectedTargetIdx].Name
+	}
+	if activeTarget == "None" || activeTarget == "" {
+		if m.selectedPull != nil && m.selectedPull.Repository.FullName != "" {
+			activeTarget = m.selectedPull.Repository.FullName
+		} else if run := m.getRun(); run.Repository.FullName != "" {
+			activeTarget = run.Repository.FullName
+		} else if m.selectedIssue != nil && m.selectedIssue.Repository.FullName != "" {
+			activeTarget = m.selectedIssue.Repository.FullName
+		}
 	}
 	if m.filterActor != "" {
 		activeTarget += fmt.Sprintf(" (Filter: @%s)", m.filterActor)
@@ -139,116 +194,210 @@ func (m Model) renderHeader() string {
 	rlStr := ""
 	if rl.Limit > 0 {
 		rlStr = fmt.Sprintf("Rate Limit: %d/%d reqs", rl.Remaining, rl.Limit)
-		// Warning color if rate limit is low
-		if rl.Remaining < 200 {
-			rlStr = m.theme.StatusFailed.Render(rlStr)
-		} else if rl.Remaining < 1000 {
-			rlStr = m.theme.StatusQueued.Render(rlStr)
-		} else {
-			rlStr = m.theme.StatusSuccessful.Render(rlStr)
-		}
 	}
 
 	// Dynamic Page Name in Title
 	pageName := "Dashboard"
-	if m.state == viewMain {
-		if m.activeTab == tabWorkflows {
+	switch m.state {
+	case viewMain, viewPRFilterInput, viewPRFilterTypeSelect, viewIssueFilterInput, viewIssueFilterTypeSelect, viewFilterTypeSelect, viewRepoFilterSelect:
+		switch m.activeTab {
+		case tabWorkflows:
 			pageName = "Workflows"
-		} else if m.activeTab == tabPRs {
+		case tabPRs:
 			pageName = "Pull Requests"
-		} else if m.activeTab == tabIssues {
+		case tabIssues:
 			pageName = "Issues"
 		}
-	} else if m.state == viewPRDetails {
-		pageName = "PR Details"
-	} else if m.state == viewIssueDetails {
-		pageName = "Issue Details"
-	} else if m.state == viewIssueComments {
-		pageName = "Issue Comments"
-	} else if m.state == viewCommitDetails {
-		pageName = "Commit Details"
-	} else if m.state == viewJobs {
+	case viewJobs:
 		pageName = "Workflow Jobs"
-	} else if m.state == viewLogs {
+	case viewLogs:
 		pageName = "Job Logs"
+	case viewPRDetails:
+		pageName = "PR Details"
+	case viewPRComments:
+		pageName = "PR Comments"
+	case viewPRCommits:
+		pageName = "PR Commits"
+	case viewPRDiff:
+		pageName = "PR Diff"
+	case viewIssueDetails:
+		pageName = "Issue Details"
+	case viewIssueComments:
+		pageName = "Issue Comments"
+	case viewCommitDetails:
+		pageName = "Commit Details"
+	case viewSwitcher:
+		pageName = "Account / Repository Switcher"
+	case viewHelp:
+		pageName = "Help & Keybindings"
 	}
+
+	headerBg := m.theme.HeaderBg
+	titleStyle := m.theme.HeaderTitle
+	contextStyle := m.theme.HeaderSubtitle
+	bgStyle := m.theme.Header
 
 	loadingInd := ""
 	if m.isLoading {
 		spinners := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		spinnerChar := spinners[m.tickCount%len(spinners)]
-		loadingInd = " " + m.theme.StatusWaiting.Render(spinnerChar)
+		spinnerStyle := m.theme.StatusWaiting.Background(headerBg)
+		loadingInd = bgStyle.Render(" ") + spinnerStyle.Render(spinnerChar)
 	}
-	title := m.theme.Title.Render("ghspector | "+pageName) + loadingInd
-	contextInfo := m.theme.Subtitle.Render("Account/Org: " + activeTarget)
 
-	// Clamp/protect layout dimensions
+	title := titleStyle.Render("  ghspector | "+pageName) + loadingInd
+	contextInfo := contextStyle.Render("Account/Org: " + activeTarget)
+
+	var rlRendered string
+	if rlStr != "" {
+		var rlStyle lipgloss.Style
+		if rl.Remaining < 200 {
+			rlStyle = m.theme.StatusFailed.Background(headerBg)
+		} else if rl.Remaining < 1000 {
+			rlStyle = m.theme.StatusQueued.Background(headerBg)
+		} else {
+			rlStyle = m.theme.StatusSuccessful.Background(headerBg)
+		}
+		rlRendered = rlStyle.Render(rlStr) + bgStyle.Render("  ")
+	}
+
 	width := m.width
 	if width < 40 {
 		width = 40
 	}
 
-	titleWidth := lipgloss.Width(title)
-	ctxWidth := lipgloss.Width(contextInfo)
-	rlWidth := lipgloss.Width(rlStr)
+	leftStr := title + bgStyle.Render("   ") + contextInfo
+	leftLen := lipgloss.Width(leftStr)
 
-	neededWidth := titleWidth + ctxWidth + rlWidth + 6
-	if width < neededWidth {
-		// Hide rate limit first
-		rlStr = ""
-		rlWidth = 0
-		neededWidth = titleWidth + ctxWidth + 6
-		if width < neededWidth {
-			// Hide context info too
-			contextInfo = ""
-			ctxWidth = 0
-		}
-	}
+	leftStyle := lipgloss.NewStyle().Background(headerBg).Width(leftLen)
+	rightStyle := lipgloss.NewStyle().Background(headerBg).Width(width - leftLen).Align(lipgloss.Right)
 
-	rightSpace := width - titleWidth - ctxWidth - rlWidth - 4
-	if rightSpace < 1 {
-		rightSpace = 1
-	}
-	spaces := strings.Repeat(" ", rightSpace)
+	headerLine := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		leftStyle.Render(leftStr),
+		rightStyle.Render(rlRendered),
+	)
 
-	res := "\n " + title + "  "
-	if contextInfo != "" {
-		res += contextInfo
-	}
-	res += spaces
-	if rlStr != "" {
-		res += rlStr
-	}
-	return res + "\n"
+	blankLine := bgStyle.Render(strings.Repeat(" ", width))
+	hr := m.theme.Border.Render(strings.Repeat("─", width))
+
+	return blankLine + "\n" + headerLine + "\n" + blankLine + "\n" + hr
 }
 
 // renderFooter renders the standard bottom bar.
 func (m Model) renderFooter(keys []string) string {
-	var formatted []string
+	isMainView := m.state == viewMain || m.state == viewSplash
+	backLabel := "Back"
+	if isMainView {
+		backLabel = "Exit"
+	}
+	if m.state == viewHelp {
+		backLabel = "Close"
+	}
+
+	helpLabel := "Help"
+	if m.state == viewHelp {
+		helpLabel = "Close Help"
+	}
+
+	// Pinned Left Side Base: ?:Help  Esc:Exit (or Esc:Back)  o:Account  q:Quit
+	leftStr := m.theme.HelpKey.Render("?") + m.theme.HelpDesc.Render(":"+helpLabel) +
+		"  " + m.theme.HelpKey.Render("Esc") + m.theme.HelpDesc.Render(":"+backLabel) +
+		"  " + m.theme.HelpKey.Render("o") + m.theme.HelpDesc.Render(":Account") +
+		"  " + m.theme.HelpKey.Render("q") + m.theme.HelpDesc.Render(":Quit")
+
+	// Filter out pinned keys (?, Esc, o, q) from rightKeys
+	var rightKeys []string
 	for _, k := range keys {
 		parts := strings.SplitN(k, ":", 2)
+		if len(parts) > 0 {
+			keyStr := parts[0]
+			if keyStr == "?" || keyStr == "Esc" || keyStr == "o" || keyStr == "q" {
+				continue
+			}
+		}
+		rightKeys = append(rightKeys, k)
+	}
+
+	width := m.width
+	if width < 40 {
+		width = 40
+	}
+
+	// BottomBar has Padding(0, 1), so inner printable width is width - 2
+	innerWidth := width - 2
+	leftLen := lipgloss.Width(leftStr)
+	maxRightWidth := innerWidth - leftLen - 1
+	if maxRightWidth < 0 {
+		maxRightWidth = 0
+	}
+
+	// Format right keys while staying strictly within maxRightWidth
+	var rightRendered []string
+	currentRightWidth := 0
+
+	for _, k := range rightKeys {
+		parts := strings.SplitN(k, ":", 2)
+		var item string
 		if len(parts) == 2 {
-			formatted = append(formatted, m.theme.HelpKey.Render(parts[0])+m.theme.HelpDesc.Render(":"+parts[1]))
+			desc := parts[1]
+			if desc == "Clear Filter" || desc == "Clear filter" {
+				desc = "Clear"
+			} else if desc == "Back to PRs" || desc == "Back to Details" || desc == "Back to PR" || desc == "Back to Issue" {
+				desc = "Back"
+			} else if desc == "Toggle Focus" {
+				desc = "Focus"
+			} else if desc == "Close PR" {
+				desc = "Close"
+			}
+			item = m.theme.HelpKey.Render(parts[0]) + m.theme.HelpDesc.Render(":"+desc)
 		} else {
-			formatted = append(formatted, m.theme.HelpDesc.Render(k))
+			item = m.theme.HelpDesc.Render(k)
+		}
+
+		itemLen := lipgloss.Width(item)
+		neededWidth := itemLen
+		if len(rightRendered) > 0 {
+			neededWidth += 2 // accounting for "  " separator
+		}
+
+		if currentRightWidth+neededWidth <= maxRightWidth {
+			rightRendered = append(rightRendered, item)
+			currentRightWidth += neededWidth
+		} else {
+			break
 		}
 	}
 
-	status := ""
+	rightStr := strings.Join(rightRendered, "  ")
+
+	// Render Left (fixed) and Right (scalable right-aligned)
+	leftStyle := lipgloss.NewStyle().Width(leftLen)
+	rightStyle := lipgloss.NewStyle().Width(innerWidth - leftLen).Align(lipgloss.Right)
+
+	bottomBarContent := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		leftStyle.Render(leftStr),
+		rightStyle.Render(rightStr),
+	)
+
+	// Format status banner above bottom bar if active
+	var statusBanner string
 	if m.statusMsg != "" {
 		lowerMsg := strings.ToLower(m.statusMsg)
-		if strings.HasPrefix(lowerMsg, "error") || strings.Contains(lowerMsg, "failed") || strings.Contains(lowerMsg, "missing scopes") {
-			cleanErr := m.statusMsg
-			cleanErr = strings.TrimPrefix(cleanErr, "Error: ")
-			cleanErr = strings.TrimPrefix(cleanErr, "error: ")
-			status = " | " + m.theme.StatusFailed.Render("error: "+cleanErr)
+		isError := strings.HasPrefix(lowerMsg, "error") || strings.Contains(lowerMsg, "failed") || strings.Contains(lowerMsg, "missing scopes") || strings.Contains(lowerMsg, "not yet available") || strings.Contains(lowerMsg, "invalid") || strings.Contains(lowerMsg, "cannot")
+
+		cleanMsg := m.statusMsg
+		if isError {
+			cleanMsg = strings.TrimPrefix(cleanMsg, "Error: ")
+			cleanMsg = strings.TrimPrefix(cleanMsg, "error: ")
+			statusBanner = "  " + m.theme.StatusFailed.Render("✖ "+cleanMsg) + "\n"
 		} else {
-			status = " | " + m.theme.StatusSuccessful.Render(m.statusMsg)
+			statusBanner = "  " + m.theme.StatusWaiting.Render("ℹ "+cleanMsg) + "\n"
 		}
 	}
 
-	content := strings.Join(formatted, "  ") + status
-	return "\n" + m.theme.BottomBar.Render(content) + "\n"
+	return statusBanner + m.theme.BottomBar.Width(width).Render(bottomBarContent)
 }
 
 // renderMainView renders the Workflow Runs list with a scrolling window.
@@ -262,6 +411,9 @@ func (m Model) renderMainView() string {
 	var filterTexts []string
 	if m.filterActor != "" {
 		filterTexts = append(filterTexts, fmt.Sprintf("Actor: @%s", m.filterActor))
+	}
+	if m.filterRepo != "" {
+		filterTexts = append(filterTexts, fmt.Sprintf("Repo: %s", m.filterRepo))
 	}
 	if len(filterTexts) > 0 {
 		sb.WriteString("  " + m.theme.StatusWaiting.Render("Filter active: "+strings.Join(filterTexts, ", ")+" (Press 'x' to clear)") + "\n\n")
@@ -401,7 +553,7 @@ func (m Model) renderMainView() string {
 		sb.WriteString("  Filter by actor: " + m.textInput.View() + "\n")
 	}
 
-	keys := []string{"?:Help", "Tab:Tabs", "j/k:Navigate", "Enter:Jobs", "w:Browser", "f:Filter", "m:My Runs", "x:Clear Filter", "r:Refresh"}
+	keys := []string{"?:Help", "Esc:Exit", "Tab:Tabs", "j/k:Navigate", "Enter:Jobs", "w:Browser", "f:Filter", "m:My Runs", "x:Clear Filter", "r:Refresh"}
 	if m.selectedRunCanApprove() {
 		keys = append(keys[:5], append([]string{"a:Approve"}, keys[5:]...)...)
 	}
@@ -423,7 +575,15 @@ func (m Model) renderJobsView() string {
 	sb.WriteString("\n")
 
 	run := m.getRun()
-	workflowTitleText := renderHyperlink("Workflow: "+run.Name, run.HTMLURL)
+	runName := run.Name
+	if runName == "" {
+		runName = "Workflow"
+	}
+	repoFullName := run.Repository.FullName
+	if repoFullName == "" {
+		repoFullName = "unknown"
+	}
+	workflowTitleText := renderHyperlink("Workflow: "+runName, run.HTMLURL)
 	sb.WriteString("  " + m.theme.LogoText.Render(workflowTitleText) + "\n")
 
 	attemptText := ""
@@ -436,7 +596,12 @@ func (m Model) renderJobsView() string {
 	} else if shaText == "" {
 		shaText = "unknown"
 	}
-	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Branch: %s | SHA: %s%s", run.Repository.FullName, run.HeadBranch, shaText, attemptText)) + "\n\n")
+	divWidth := m.width - 4
+	if divWidth < 10 {
+		divWidth = 10
+	}
+	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Branch: %s | SHA: %s%s", repoFullName, run.HeadBranch, shaText, attemptText)) + "\n")
+	sb.WriteString("  " + m.theme.Border.Render(strings.Repeat("─", divWidth)) + "\n\n")
 
 	needsApproval := (run.Status == "waiting" || run.Conclusion == "action_required")
 	renderedCount := 0
@@ -484,7 +649,12 @@ func (m Model) renderJobsView() string {
 		sb.WriteString("\n" + bannerStyle.Render(banner.String()) + "\n")
 		renderedCount = 9
 	} else {
-		header := fmt.Sprintf("  %-3s %-40s %-15s %-12s", "ST", "JOB NAME", "STARTED", "DURATION")
+		jobNameWidth := m.width - 44
+		if jobNameWidth < 10 {
+			jobNameWidth = 10
+		}
+
+		header := fmt.Sprintf("  %-3s %-*s %-8s %-15s %-12s", "ST", jobNameWidth, "JOB NAME", "STEPS", "STARTED", "DURATION")
 		sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
 
 		if len(m.jobs) == 0 {
@@ -530,16 +700,26 @@ func (m Model) renderJobsView() string {
 				}
 
 				jobName := job.Name
-				if len(jobName) > 38 {
-					jobName = jobName[:35] + "..."
+				if len(jobName) > jobNameWidth {
+					jobName = jobName[:jobNameWidth-3] + "..."
 				}
 
-				paddedJobName := fmt.Sprintf("%-40s", jobName)
+				paddedJobName := fmt.Sprintf("%-*s", jobNameWidth, jobName)
 				hyperlinkedJobName := renderHyperlink(paddedJobName, job.HTMLURL)
 
-				rowText := fmt.Sprintf("  %-3s %s %-15s %-12s",
+				// Calculate steps progress
+				completedSteps := 0
+				for _, step := range job.Steps {
+					if step.Status == "completed" {
+						completedSteps++
+					}
+				}
+				stepsStr := fmt.Sprintf("%d/%d", completedSteps, len(job.Steps))
+
+				rowText := fmt.Sprintf("  %-3s %s %-8s %-15s %-12s",
 					statusInd,
 					hyperlinkedJobName,
+					stepsStr,
 					startedStr,
 					durStr,
 				)
@@ -562,7 +742,7 @@ func (m Model) renderJobsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"?:Help", "j/k:Navigate", "Enter:Logs", "Esc:Back", "w/v:Browser", "[/]:Attempts"}
+	keys := []string{"j/k:Navigate", "Enter:Logs", "w:Job Browser", "v:Run Browser", "[/]:Attempts", "r:Refresh"}
 	if m.selectedRunCanApprove() {
 		keys = append(keys[:5], append([]string{"a:Approve"}, keys[5:]...)...)
 	}
@@ -584,30 +764,75 @@ func (m Model) renderLogsView() string {
 	sb.WriteString("\n")
 
 	job := m.jobs[m.selectedJobIdx]
-	sb.WriteString("  " + m.theme.LogoText.Render("Job: "+job.Name) + "\n")
+	sb.WriteString("  " + m.theme.LogoText.Render("Job: "+job.Name) + "\n\n")
 
-	// Render steps summaries
-	var stepsSummary []string
-	for _, step := range job.Steps {
-		indicator := m.getStatusIndicator(step.Status, step.Conclusion)
-		stepsSummary = append(stepsSummary, fmt.Sprintf("%s %s", indicator, step.Name))
-	}
-
-	if len(stepsSummary) > 0 {
-		sb.WriteString("  Steps: " + strings.Join(stepsSummary, " → ") + "\n")
-	}
-	sb.WriteString("\n")
+	leftWidth := 32
+	h := m.logsViewport.Height
 
 	viewContent := m.logsViewport.View()
 	if m.logsLoading {
-		viewContent = m.theme.HelpDesc.Render("  Loading logs...")
+		viewContent = m.theme.HelpDesc.Render("Loading logs...")
 	}
-	sb.WriteString("  " + m.theme.Border.Render(viewContent) + "\n")
 
-	keys := []string{"?:Help", "u/d:Scroll", "Esc:Back", "r:Refresh"}
+	// Render two columns side-by-side: Steps on the left, logs viewport on the right
+	sideBySide := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		m.renderStepsSidebar(leftWidth, h),
+		"   ", // separator gap
+		m.theme.Border.Render(viewContent),
+	)
+	sb.WriteString(sideBySide + "\n")
+
+	// Dynamic padding
+	contentHeight := h + 10
+	padding := m.height - contentHeight
+	if padding < 0 {
+		padding = 0
+	}
+	for i := 0; i < padding; i++ {
+		sb.WriteString("\n")
+	}
+
+	keys := []string{"j/k:Steps", "u/d:Scroll Logs", "w:Browser", "r:Refresh"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
+}
+
+func (m Model) renderStepsSidebar(width, height int) string {
+	var lines []string
+	headerStyle := m.theme.TableHeader
+	lines = append(lines, headerStyle.Render(fmt.Sprintf(" %-*s", width-1, "STEPS")))
+
+	job := m.jobs[m.selectedJobIdx]
+	for i, step := range job.Steps {
+		indicator := m.getStatusIndicator(step.Status, step.Conclusion)
+
+		nameLimit := width - 8
+		if nameLimit < 5 {
+			nameLimit = 5
+		}
+		stepName := step.Name
+		if len(stepName) > nameLimit {
+			stepName = stepName[:nameLimit-3] + "..."
+		}
+
+		var rowText string
+		if i == m.selectedStepIdx {
+			rowText = fmt.Sprintf(" > %s %-*s", indicator, nameLimit, stepName)
+			lines = append(lines, m.theme.TableSelected.Render(rowText))
+		} else {
+			rowText = fmt.Sprintf("   %s %-*s", indicator, nameLimit, stepName)
+			lines = append(lines, m.theme.TableRow.Render(rowText))
+		}
+	}
+
+	// Pad remaining height with empty lines so sidebar height matches viewport height
+	for len(lines) < height+1 {
+		lines = append(lines, "")
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // renderSwitcherView renders the context selection dialog overlay.
@@ -782,9 +1007,10 @@ func (m Model) renderPullsView() string {
 	if m.filterPRReviewer != "" {
 		filterTexts = append(filterTexts, fmt.Sprintf("Reviewer: @%s", m.filterPRReviewer))
 	}
-	if len(filterTexts) > 0 {
-		sb.WriteString("  " + m.theme.StatusWaiting.Render("Filter active: "+strings.Join(filterTexts, ", ")+" (Press 'x' to clear)") + "\n\n")
+	if m.filterRepo != "" {
+		filterTexts = append(filterTexts, fmt.Sprintf("Repo: %s", m.filterRepo))
 	}
+
 
 	prTitleWidth := m.width - 102
 	if prTitleWidth < 15 {
@@ -795,7 +1021,7 @@ func (m Model) renderPullsView() string {
 	sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
 
 	renderedCount := 0
-	hideList := m.state == viewPRFilterInput || m.state == viewPRFilterTypeSelect
+	hideList := m.state == viewPRFilterInput || m.state == viewPRFilterTypeSelect || m.state == viewFilterTypeSelect || m.state == viewRepoFilterSelect
 	
 	if hideList {
 		visibleRows := m.height - 12
@@ -855,6 +1081,9 @@ func (m Model) renderPullsView() string {
 				prNumStr := fmt.Sprintf("#%d", pr.Number)
 				
 				prTitle := pr.Title
+				if pr.Draft {
+					prTitle = "[Draft] " + pr.Title
+				}
 				if len(prTitle) > prTitleWidth {
 					prTitle = prTitle[:prTitleWidth-3] + "..."
 				}
@@ -944,7 +1173,7 @@ func (m Model) renderPullsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"Tab:Tabs", "j/k:Navigate", "Enter:View PR", "w:Browser", "f:Filter", "s:State", "a:My PRs", "i:My Assigned", "v:My Reviewed", "x:Clear Filter"}
+	keys := []string{"?:Help", "Esc:Exit", "Tab:Tabs", "j/k:Navigate", "Enter:View PR", "w:Browser", "f:Filter", "s:State", "a:My PRs", "i:My Assigned", "v:My Reviewed", "x:Clear Filter"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
@@ -957,7 +1186,9 @@ func (m Model) renderPRDetailsView() string {
 
 	pr := m.selectedPull
 	if pr == nil {
-		return "No PR selected."
+		sb.WriteString("  " + m.theme.HelpDesc.Render("Loading PR details...") + "\n")
+		sb.WriteString(m.renderFooter([]string{"?:Help", "Esc:Back"}))
+		return sb.String()
 	}
 
 	prStateStr := "OPEN"
@@ -980,9 +1211,13 @@ func (m Model) renderPRDetailsView() string {
 		authorLogin = pr.User.Login
 	}
 
+	divWidth := m.width - 4
+	if divWidth < 10 {
+		divWidth = 10
+	}
 	sb.WriteString("  " + prStateStyle.Render(fmt.Sprintf("[%s]", prStateStr)) + " " + m.theme.LogoText.Render(fmt.Sprintf("PR #%d: %s", pr.Number, pr.Title)) + "\n")
 	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Author: @%s | Source: %s → Base: %s", pr.Repository.FullName, authorLogin, pr.Head.Ref, pr.Base.Ref)) + "\n")
-	sb.WriteString("  " + m.theme.Border.Render(strings.Repeat("─", m.width-4)) + "\n\n")
+	sb.WriteString("  " + m.theme.Border.Render(strings.Repeat("─", divWidth)) + "\n\n")
 
 	// Calculate widths dynamically
 	sidebarWidth := m.width / 5
@@ -1014,9 +1249,9 @@ func (m Model) renderPRDetailsView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"Esc:Back to PRs", "Tab:Toggle Focus", "j/k:Navigate", "Enter:Run/Browser", "D:Diff", "r:Refresh", "c:Comments", "v:Commits", "q:Quit"}
+	keys := []string{"?:Help", "Esc:Back", "Tab:Focus", "j/k:Navigate", "Enter:Run/Browser", "Shift+D:Diff", "r:Refresh", "c:Comments", "v:Commits"}
 	if m.viewerCanMerge() {
-		keys = []string{"Esc:Back", "Tab:Focus", "D:Diff", "r:Refresh", "m:Merge", "c:Comments", "v:Commits", "C:Close PR", "q:Quit"}
+		keys = []string{"?:Help", "Esc:Back", "Tab:Focus", "Shift+D:Diff", "r:Refresh", "m:Merge", "c:Comments", "v:Commits", "Shift+C:Close"}
 	}
 	sb.WriteString(m.renderFooter(keys))
 
@@ -1342,6 +1577,18 @@ func (m Model) renderPRRightSidebar(width, height int) string {
 			}
 		}
 
+		prStateStr := "OPEN"
+		if pr.Draft {
+			prStateStr = "DRAFT"
+		} else if pr.State == "closed" {
+			if pr.MergedAt != nil {
+				prStateStr = "MERGED"
+			} else {
+				prStateStr = "CLOSED"
+			}
+		}
+
+		formatRow("State", prStateStr)
 		formatRow("Author", "@"+authorLogin)
 		formatRow("Assignees", assigneesList)
 		formatRow("Reviewers", reviewersList)
@@ -1472,17 +1719,40 @@ func (m Model) renderMergeModal() string {
 	
 	switch m.mergeState {
 	case 1: // choose method
+		defMethod := "squash"
+		if m.config != nil && m.config.DefaultMergeMethod != "" {
+			defMethod = strings.ToLower(m.config.DefaultMergeMethod)
+		}
+
+		var squashLabel, mergeLabel, rebaseLabel string
+		switch defMethod {
+		case "merge":
+			squashLabel = "Squash Merge"
+			mergeLabel = "Regular Merge (Default)"
+			rebaseLabel = "Rebase Merge"
+		case "rebase":
+			squashLabel = "Squash Merge"
+			mergeLabel = "Regular Merge"
+			rebaseLabel = "Rebase Merge (Default)"
+		default:
+			squashLabel = "Squash Merge (Default)"
+			mergeLabel = "Regular Merge"
+			rebaseLabel = "Rebase Merge"
+		}
+
 		modalText.WriteString("┌──────────────────────────────────────────────┐\n")
 		modalText.WriteString("│                 MERGE METHOD                 │\n")
 		modalText.WriteString("├──────────────────────────────────────────────┤\n")
 		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("  Choose a merge method:") + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
-		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[S]")+" Squash Merge (Default)") + "│\n")
-		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[M]")+" Regular Merge") + "│\n")
-		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[R]")+" Rebase Merge") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[S]")+" "+squashLabel) + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[M]")+" "+mergeLabel) + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[R]")+" "+rebaseLabel) + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
-		modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpDesc.Render("Esc")+" or "+m.theme.HelpDesc.Render("C")+" to cancel") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpKey.Render("Enter")+" to proceed with Default") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpKey.Render("d")+" to cycle/change Default") + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpDesc.Render("Esc")+" or "+m.theme.HelpDesc.Render("c")+" to cancel") + "│\n")
 		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
 		modalText.WriteString("└──────────────────────────────────────────────┘")
 	case 2: // confirm merge
@@ -1808,8 +2078,12 @@ func renderMarkdown(content string, width int) (string, error) {
 	if content == "" {
 		return "No description provided.", nil
 	}
+	style := "dark"
+	if !lipgloss.HasDarkBackground() {
+		style = "light"
+	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStandardStyle(style),
 		glamour.WithWordWrap(width),
 	)
 	if err != nil {
@@ -1983,6 +2257,9 @@ func (m Model) renderIssuesView() string {
 	if m.filterIssueAssignee != "" {
 		filterTexts = append(filterTexts, fmt.Sprintf("Assignee: @%s", m.filterIssueAssignee))
 	}
+	if m.filterRepo != "" {
+		filterTexts = append(filterTexts, fmt.Sprintf("Repo: %s", m.filterRepo))
+	}
 	if len(filterTexts) > 0 {
 		sb.WriteString("  " + m.theme.StatusWaiting.Render("Filter active: "+strings.Join(filterTexts, ", ")+" (Press 'x' to clear)") + "\n\n")
 	}
@@ -1996,7 +2273,7 @@ func (m Model) renderIssuesView() string {
 	sb.WriteString(m.theme.TableHeader.Render(header) + "\n")
 
 	renderedCount := 0
-	hideList := m.state == viewIssueFilterInput || m.state == viewIssueFilterTypeSelect
+	hideList := m.state == viewIssueFilterInput || m.state == viewIssueFilterTypeSelect || m.state == viewFilterTypeSelect || m.state == viewRepoFilterSelect
 	
 	if hideList {
 		visibleRows := m.height - 12
@@ -2130,7 +2407,7 @@ func (m Model) renderIssuesView() string {
 		sb.WriteString("\n")
 	}
 
-	keys := []string{"Tab:Tabs", "j/k:Navigate", "Enter:View Issue", "w:Browser", "f:Filter", "s:State", "a:My Issues", "i:My Assigned", "x:Clear Filter"}
+	keys := []string{"?:Help", "Esc:Exit", "Tab:Tabs", "j/k:Navigate", "Enter:View Issue", "w:Browser", "f:Filter", "s:State", "a:My Issues", "i:My Assigned", "x:Clear Filter"}
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
@@ -2158,9 +2435,13 @@ func (m Model) renderIssueDetailsView() string {
 		authorLogin = issue.User.Login
 	}
 
+	divWidth := m.width - 4
+	if divWidth < 10 {
+		divWidth = 10
+	}
 	sb.WriteString("  " + issueStateStyle.Render(fmt.Sprintf("[%s]", issueStateStr)) + " " + m.theme.LogoText.Render(fmt.Sprintf("Issue #%d: %s", issue.Number, issue.Title)) + "\n")
 	sb.WriteString("  " + m.theme.HelpDesc.Render(fmt.Sprintf("Repo: %s | Author: @%s", issue.Repository.FullName, authorLogin)) + "\n")
-	sb.WriteString("  " + m.theme.Border.Render(strings.Repeat("─", m.width-4)) + "\n\n")
+	sb.WriteString("  " + m.theme.Border.Render(strings.Repeat("─", divWidth)) + "\n\n")
 
 	// Calculate widths dynamically
 	sidebarWidth := m.width / 5
@@ -2208,7 +2489,7 @@ func (m Model) renderIssueRightSidebar(width, height int) string {
 	styleVal := m.theme.LogoText
 	styleLabel := m.theme.Subtitle
 
-	sb.WriteString(m.theme.TableHeader.Render(fmt.Sprintf(" %-*s", width-2, "METADATA")) + "\n")
+	sb.WriteString(m.theme.TableHeader.Render(fmt.Sprintf(" %-*s", width-2, "DETAILS")) + "\n")
 
 	// State
 	stateText := "Open"
@@ -2316,5 +2597,87 @@ func (m Model) renderIssueCommentsView() string {
 	sb.WriteString(m.renderFooter(keys))
 
 	return sb.String()
+}
+
+func (m Model) renderFilterTypeSelectModal() string {
+	var modalText strings.Builder
+	lineStyle := lipgloss.NewStyle().Width(46)
+
+	modalText.WriteString("┌──────────────────────────────────────────────┐\n")
+	modalText.WriteString("│                 FILTER OPTIONS               │\n")
+	modalText.WriteString("├──────────────────────────────────────────────┤\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("  Choose a filter target:") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[U]")+" Filter by User") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("    "+m.theme.LogoText.Render("[R]")+" Filter by Repository") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpDesc.Render("Esc")+" to cancel") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("└──────────────────────────────────────────────┘")
+	return modalText.String()
+}
+
+func (m Model) renderRepoFilterSelectModal() string {
+	var modalText strings.Builder
+	lineStyle := lipgloss.NewStyle().Width(46)
+
+	modalText.WriteString("┌──────────────────────────────────────────────┐\n")
+	modalText.WriteString("│              SELECT REPOSITORY               │\n")
+	modalText.WriteString("├──────────────────────────────────────────────┤\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+
+	if len(m.repos) == 0 {
+		msg := "  No repositories found."
+		if m.isLoading {
+			msg = "  Loading repositories..."
+		}
+		modalText.WriteString("│" + lineStyle.Render(msg) + "│\n")
+		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	} else {
+		visibleRows := 8
+		if visibleRows > len(m.repos) {
+			visibleRows = len(m.repos)
+		}
+
+		if m.selectedRepoIdx < 0 {
+			m.selectedRepoIdx = 0
+		}
+		if m.selectedRepoIdx >= len(m.repos) {
+			m.selectedRepoIdx = len(m.repos) - 1
+		}
+		if m.selectedRepoIdx < m.repoStartIndex {
+			m.repoStartIndex = m.selectedRepoIdx
+		}
+		if m.selectedRepoIdx >= m.repoStartIndex+visibleRows {
+			m.repoStartIndex = m.selectedRepoIdx - visibleRows + 1
+		}
+
+		endIdx := m.repoStartIndex + visibleRows
+		for i := m.repoStartIndex; i < endIdx; i++ {
+			repo := m.repos[i]
+			displayName := repo.Name
+			if len(displayName) > 36 {
+				displayName = displayName[:33] + "..."
+			}
+
+			var lineContent string
+			if i == m.selectedRepoIdx {
+				lineContent = "  " + m.theme.TableSelected.Render(" > "+displayName+" ")
+			} else {
+				lineContent = "    " + displayName
+			}
+
+			modalText.WriteString("│" + lineStyle.Render(lineContent) + "│\n")
+		}
+		modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+		scrollerText := fmt.Sprintf("  Row %d of %d (j/k or arrows)", m.selectedRepoIdx+1, len(m.repos))
+		modalText.WriteString("│" + lineStyle.Render(m.theme.HelpDesc.Render(scrollerText)) + "│\n")
+	}
+
+	modalText.WriteString("│" + lineStyle.Render("  Press "+m.theme.HelpKey.Render("Enter")+" to select, "+m.theme.HelpDesc.Render("Esc")+" to back") + "│\n")
+	modalText.WriteString("│" + lineStyle.Render("") + "│\n")
+	modalText.WriteString("└──────────────────────────────────────────────┘")
+	return modalText.String()
 }
 
