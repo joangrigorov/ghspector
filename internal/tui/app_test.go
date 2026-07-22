@@ -1793,7 +1793,7 @@ func TestTUI_LogsSegmentRealWorldComplete(t *testing.T) {
 			if logLen > 0 {
 				t.Errorf("expected skipped step %d (%q) to have 0 log length, got %d", i, step.Name, logLen)
 			}
-		} else if i != 8 && i != 9 && i != 11 { // non-skipped main steps and final job completion step
+		} else {
 			if logLen == 0 {
 				t.Errorf("expected executed step %d (%q) to have non-empty logs", i, step.Name)
 			}

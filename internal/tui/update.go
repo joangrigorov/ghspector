@@ -3215,18 +3215,12 @@ func segmentLogs(rawLogs string, steps []gh.JobStep) map[int]string {
 		}
 
 		// 1. Check if currentStepIdx is still valid according to time t
-		if hasTime && len(activeSteps) > 0 {
+		if hasTime && len(activeSteps) > 0 && currentActiveIdx < len(activeSteps)-1 {
 			currStep := activeSteps[currentActiveIdx]
-			// If current step has completed, and t is past completedAt + 1s
-			if !currStep.completedAt.IsZero() && t.After(currStep.completedAt.Add(1*time.Second)) {
-				// Find the latest active step at time t
-				for idx := currentActiveIdx + 1; idx < len(activeSteps); idx++ {
-					as := activeSteps[idx]
-					startLimit := as.startedAt.Add(-1 * time.Second)
-					if !t.Before(startLimit) {
-						currentActiveIdx = idx
-						currentStepIdx = as.index
-					}
+			if !currStep.completedAt.IsZero() {
+				if t.After(currStep.completedAt.Add(1000*time.Millisecond)) || strings.Contains(cleanLine, "Post job cleanup.") {
+					currentActiveIdx++
+					currentStepIdx = activeSteps[currentActiveIdx].index
 				}
 			}
 		}
