@@ -1,16 +1,16 @@
-  [1mWorkflows[m                                                                                             Account: octocat
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [1mWorkflows[m                                                                                           Account: octocat  
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
   Pull Requests │[1m Workflows [m│ Issues                                                                                    
-[1m  ST  REPOSITORY       WORKFLOW RUN                                          EVENT          ACTOR            DURATION   [m
-[1m› □   api              Build 896                                             push           octocat          queued     [m
-  ■   api              Build 899                                             push           octocat          1m00s      
-  ■   api              Build 893                                             push           octocat          7m00s      
-  ◆   api              Build 900                                             push           octocat          0s         
-  ■   api              Build 898                                             push           octocat          2m00s      
-  ■   api              Build 897                                             push           octocat          2m00s      
-  ■   api              Build 895                                             push           octocat          2m00s      
-  ◆   api              Build 894                                             push           octocat          0s         
-  ■   web              Build 800                                             push           octocat          2m00s      
+[1m  ST  REPOSITORY       WORKFLOW RUN                                        EVENT          ACTOR            DURATION   [m  
+[1m› □   api              Build 896                                           push           octocat          queued     [m  
+  ■   api              Build 899                                           push           octocat          1m00s        
+  ■   api              Build 893                                           push           octocat          7m00s        
+  ◆   api              Build 900                                           push           octocat          0s           
+  ■   api              Build 898                                           push           octocat          2m00s        
+  ■   api              Build 897                                           push           octocat          2m00s        
+  ■   api              Build 895                                           push           octocat          2m00s        
+  ◆   api              Build 894                                           push           octocat          0s           
+  ■   web              Build 800                                           push           octocat          2m00s        
   [ Load More Workflow Runs... ]                                                                                        
                                                                                                                         
                                                                                                                         
@@ -36,5 +36,5 @@
                                                                                                                         
                                                                                                                         
                                                                                                                         
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
   [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mj/↓[m:Move down  [1mk/↑[m:Move up  [1mEnter[m:View jobs  [1mr/Ctrl+R[m:Refresh            

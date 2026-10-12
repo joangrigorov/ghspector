@@ -52,17 +52,18 @@ func renderHeader(deps Deps, r layout.Rect, title string, loading bool, tick int
 	indicator += renderRateLimit(deps)
 
 	const gap = 3
-	budget := r.W - lipgloss.Width(account) - lipgloss.Width(indicator) - 2*gap
+	inner := layout.ContentWidth(r.W)
+	budget := inner - lipgloss.Width(account) - lipgloss.Width(indicator) - 2*gap
 	if budget < 4 {
 		// Drop the account before dropping the trail.
-		account, budget = "", r.W-lipgloss.Width(indicator)-gap
+		account, budget = "", inner-lipgloss.Width(indicator)-gap
 	}
 	if budget < 1 {
 		budget = 1
 	}
 	page := style(theme.HeaderTitle, bold).Render(layout.Truncate(title, budget))
 
-	left := "  " + page
+	left := page
 	right := indicator
 	if account != "" {
 		if right != "" {
@@ -71,12 +72,12 @@ func renderHeader(deps Deps, r layout.Rect, title string, loading bool, tick int
 		right += account
 	}
 
-	titleRow := band(theme, r.W, joinLR(r.W, left, right))
+	titleRow := band(theme, inner, joinLR(inner, left, right))
 	if r.H < 2 {
-		return layout.Fit(titleRow, r.W, r.H)
+		return gutterBlock(titleRow, r.W, r.H)
 	}
-	rule := style(theme.HeaderRule, normal).Render(strings.Repeat("─", r.W))
-	return layout.Fit(titleRow+"\n"+rule, r.W, r.H)
+	rule := style(theme.HeaderRule, normal).Render(strings.Repeat("─", inner))
+	return gutterBlock(titleRow+"\n"+rule, r.W, r.H)
 }
 
 // renderRateLimit renders the remaining request budget, coloured by how much is
@@ -150,18 +151,19 @@ func renderFooter(deps Deps, r layout.Rect, bindings []keymap.Binding, status st
 		return ""
 	}
 	theme := deps.Theme
+	inner := layout.ContentWidth(r.W)
+	rule := style(theme.HeaderRule, normal).Render(strings.Repeat("─", inner))
 
 	if r.H < 2 {
-		return layout.Fit(style(theme.HeaderRule, normal).Render(strings.Repeat("─", r.W)), r.W, r.H)
+		return gutterBlock(rule, r.W, r.H)
 	}
-	rule := style(theme.HeaderRule, normal).Render(strings.Repeat("─", r.W))
-	hints := renderHints(deps, r, bindings, status, statusErr, mode)
-	return layout.Fit(rule+"\n"+hints, r.W, r.H)
+	hints := renderHints(deps, inner, bindings, status, statusErr, mode)
+	return gutterBlock(rule+"\n"+hints, r.W, r.H)
 }
 
 // renderHints lays the footer out with hints on the left and the status message
-// on the right.
-func renderHints(deps Deps, r layout.Rect, bindings []keymap.Binding, status string, statusErr bool, mode hintMode) string {
+// on the right, inside the content box of the given width.
+func renderHints(deps Deps, inner int, bindings []keymap.Binding, status string, statusErr bool, mode hintMode) string {
 	st := widgets.Style{Key: deps.Theme.KeyHint, Desc: deps.Theme.KeyDesc}
 
 	// The global keys are pinned first, so a narrow footer drops the active
@@ -186,15 +188,49 @@ func renderHints(deps Deps, r layout.Rect, bindings []keymap.Binding, status str
 		statusRendered = style(colour, bold).Render(marker + status)
 	}
 
-	hintWidth := r.W - lipgloss.Width(statusRendered) - 2
+	hintWidth := inner - lipgloss.Width(statusRendered) - 2
 	if hintWidth < 1 {
 		if statusRendered != "" {
-			return layout.Fit("  "+statusRendered, r.W, 1)
+			return layout.Fit(statusRendered, inner, 1)
 		}
 		hintWidth = 1
 	}
-	hints := "  " + widgets.Footer(st, bindings, hintWidth)
-	return layout.Fit(joinLR(r.W, hints, statusRendered), r.W, 1)
+	hints := widgets.Footer(st, bindings, hintWidth)
+	return layout.Fit(joinLR(inner, hints, statusRendered), inner, 1)
+}
+
+// gutterBlock shifts a rendered block into the screen's content box: the gutter
+// on the left of every line, and the block padded back out to the full width so
+// the gutter on the right is clear too.
+//
+// One screen's rows therefore share one box. The chrome draws its bars and rules
+// through here, the shell draws a route's body through here, and a route that
+// has to shift part of itself asks for a rect rather than adding spaces: the
+// only thing drawn outside the box is a list's selection marker, which sits in
+// the gutter on purpose.
+func gutterBlock(block string, width, height int) string {
+	pad := strings.Repeat(" ", layout.Gutter)
+	lines := strings.Split(block, "\n")
+	for i, line := range lines {
+		lines[i] = pad + line
+	}
+	return layout.Fit(strings.Join(lines, "\n"), width, height)
+}
+
+// gutterRows is gutterBlock for a view that joins the shifted block under rows
+// of its own.
+func gutterRows(block string, width, height int) []string {
+	return strings.Split(gutterBlock(block, width, height), "\n")
+}
+
+// paneRect is the rect a pane block renders into: the route's rect less the
+// gutter on the left, which gutterBlock writes out. Panes tile the rect they are
+// given, so a block given this rect and shifted by the gutter spans the content
+// box exactly, with nothing left over and nothing clipped.
+func paneRect(r layout.Rect) layout.Rect {
+	r.X += layout.Gutter
+	r.W -= layout.Gutter
+	return r
 }
 
 // hasAction reports whether bindings already covers action.

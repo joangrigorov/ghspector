@@ -1,40 +1,40 @@
-  [1mIssues › Issue #3[m                                                                                     Account: octocat
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [1mIssues › Issue #3[m                                                                                   Account: octocat  
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
   [1m[OPEN][m [1mIssue #3: Add the issues view[m                                                                                  
   Repo: octocat/api | Author: @octocat | Assignees: hubot                                                               
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
-[1mDESCRIPTION[m                                                                     │[1m▶ DETAILS[m                              
-                                                                                │                                       
-Issues are the third list of the app.                                           │  State:      OPEN                     
-                                                                                │  Author:     @octocat                 
-They have no reviewers and no diff, so the sidebar carries what the list cannot:│  Assignees:  @hubot                   
-the assignees, the labels and the milestone.                                    │  Milestone:  0.7.0                    
-                                                                                │  Labels:     enhancement              
-The description scrolls by one line with j and k, and by six with u and d, which│  Created:    2024-04-29 10:00         
-is the pair the pull request description uses.                                  │  Updated:    2024-05-01 10:00         
-                                                                                │  Closed:     —                        
-Press c for the conversation.                                                   │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-                                                                                │                                       
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEsc/Backspace[m:Back to list  [1mTab/Shift+Tab[m:Switch focus  [1mj/↓[m:Down  [1mk/↑[m:Up 
+  [1mDESCRIPTION[m                                                                  │ [1m▶ DETAILS[m                              
+                                                                               │                                        
+  Issues are the third list of the app.                                        │   State:      OPEN                     
+                                                                               │   Author:     @octocat                 
+  They have no reviewers and no diff, so the sidebar carries what the list     │   Assignees:  @hubot                   
+  cannot: the assignees, the labels and the milestone.                         │   Milestone:  0.7.0                    
+                                                                               │   Labels:     enhancement              
+  The description scrolls by one line with j and k, and by six with u and d,   │   Created:    2024-04-29 10:00         
+  which is the pair the pull request description uses.                         │   Updated:    2024-05-01 10:00         
+                                                                               │   Closed:     —                        
+  Press c for the conversation.                                                │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+                                                                               │                                        
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEsc/Backspace[m:Back to list  [1mTab/Shift+Tab[m:Switch focus  [1mj/↓[m:Down         

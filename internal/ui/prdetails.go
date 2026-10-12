@@ -492,18 +492,27 @@ func (p *PRDetails) clamp(deps Deps) {
 	p.checkCursor = clampIndex(p.checkCursor, len(p.checks))
 	p.commitCursor = clampIndex(p.commitCursor, len(p.commits))
 	p.fileCursor = clampIndex(p.fileCursor, len(p.files))
-	p.descScroll = clampOffset(p.descScroll, len(p.descriptionLines(deps, p.bodyWidth(deps))))
+	p.descScroll = clampOffset(p.descScroll, len(p.descriptionLines(deps, p.descriptionWidth(deps))))
 	p.commentScroll = clampOffset(p.commentScroll, len(p.commentLines(deps, p.bodyWidth(deps))))
 	p.diffScroll = clampOffset(p.diffScroll, len(diffLines(p.diffText())))
 }
 
-// bodyWidth is the width the panes are laid out in. The body rect spans the
-// whole terminal, so the terminal width is what the panes are sized from.
+// bodyWidth is the width the panes are laid out in: what a pane's rect works out
+// to, so the scroll clamps count the lines the panes actually show.
 func (p *PRDetails) bodyWidth(deps Deps) int {
 	if deps.Size.Width > 0 {
-		return deps.Size.Width
+		return layout.ContentWidth(deps.Size.Width)
 	}
 	return defaultBodyWidth
+}
+
+// descriptionWidth is the width the description pane is drawn at. The sidebar
+// takes the rest of the box, so the description is narrower than the box, and a
+// clamp that wrapped to the box instead would bound the scroll by a rendering
+// nobody sees.
+func (p *PRDetails) descriptionWidth(deps Deps) int {
+	desc, _ := detailColumns(p.bodyWidth(deps))
+	return desc
 }
 
 // description is the text the description pane shows.
@@ -738,11 +747,13 @@ func (p *PRDetails) heading(deps Deps, width int) []string {
 	detail := fmt.Sprintf("Repo: %s | Author: @%s | Source: %s → Base: %s",
 		repo, prAuthor(p.pr), refOr(p.pr.Head.Ref), refOr(p.pr.Base.Ref))
 
+	// The rect is the content box, so these lines carry the left gutter
+	// themselves and reach to the gutter on the right.
 	return []string{
 		"  " + style(colour, bold).Render("["+state+"]") + " " +
 			style(theme.Title, bold).Render(layout.Truncate(title, max(width-16, 8))),
-		"  " + style(theme.Muted, normal).Render(layout.Truncate(detail, max(width-4, 8))),
-		"  " + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-4, 1))),
+		"  " + style(theme.Muted, normal).Render(layout.Truncate(detail, max(width-layout.Gutter, 8))),
+		"  " + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-layout.Gutter, 1))),
 	}
 }
 
@@ -786,23 +797,32 @@ func (p *PRDetails) tabStrip(deps Deps) string {
 	return " " + strings.Join(parts, style(theme.HeaderRule, normal).Render("│"))
 }
 
-// body renders the active sub-tab.
+// body renders the active sub-tab inside the content box.
 func (p *PRDetails) body(deps Deps, r layout.Rect) string {
 	if r.Empty() {
 		return ""
 	}
+	// Every sub-tab is one pane or a row of them, and the panes tile the rect
+	// they are given, so the rect is inset by the gutter and the rendered block
+	// shifted into it. The headings and the tab strip above carry the same
+	// gutter as their own prefix, which is what puts the panes on their left
+	// edge.
+	inner := paneRect(r)
+
+	var block string
 	switch p.tab {
 	case prTabCommits:
-		return p.commitsView(deps, r)
+		block = p.commitsView(deps, inner)
 	case prTabFiles:
-		return p.filesView(deps, r)
+		block = p.filesView(deps, inner)
 	case prTabChecks:
-		return p.checksView(deps, r)
+		block = p.checksView(deps, inner)
 	case prTabComments:
-		return p.commentsView(deps, r)
+		block = p.commentsView(deps, inner)
 	default:
-		return p.infoView(deps, r)
+		block = p.infoView(deps, inner)
 	}
+	return gutterBlock(block, r.W, r.H)
 }
 
 // infoView renders the description beside the sidebar.
@@ -823,7 +843,7 @@ func (p *PRDetails) infoView(deps Deps, r layout.Rect) string {
 	detailsH, checksH := sideHeights(r.H)
 	sideLines := make([]string, 0, r.H)
 	if detailsH > 0 {
-		sideLines = append(sideLines, padLines(p.metadataPane(deps, sideW, detailsH), sideW, detailsH)...)
+		sideLines = append(sideLines, sidebarPane(p.metadataPane(deps, sideW-sidebarPad, detailsH), sideW, detailsH)...)
 	}
 	if checksH > 0 {
 		if detailsH > 0 {
@@ -831,7 +851,7 @@ func (p *PRDetails) infoView(deps Deps, r layout.Rect) string {
 			// of the last value in the block above.
 			sideLines = append(sideLines, "")
 		}
-		sideLines = append(sideLines, p.checksPane(deps, sideW, checksH)...)
+		sideLines = append(sideLines, sidebarPane(p.checksPane(deps, sideW-sidebarPad, checksH), sideW, checksH)...)
 	}
 
 	columns := [][]string{
@@ -857,6 +877,16 @@ func paneTitle(theme Theme, name string, focused bool) string {
 		return style(theme.Accent, bold).Render("▶ " + name)
 	}
 	return style(theme.Muted, bold).Render(name)
+}
+
+// sidebarPad is the space kept between the rule that divides the columns and the
+// sidebar's own content, so DETAILS and CHECKS do not sit on the rule.
+const sidebarPad = 1
+
+// sidebarPane shifts a sidebar pane clear of the column rule and pads it out to
+// the width the column was given.
+func sidebarPane(lines []string, width, height int) []string {
+	return padLines(indentLines(lines, strings.Repeat(" ", sidebarPad)), width, height)
 }
 
 // descriptionPane renders the pull request body, rendered as markdown and
