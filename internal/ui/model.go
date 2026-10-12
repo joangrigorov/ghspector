@@ -7,11 +7,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/auth"
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
-	"ghspector/internal/overlay"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/auth"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/overlay"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // Options configures the root model. It is built once by main and never mutated.
@@ -110,7 +110,11 @@ func New(opts Options) Model {
 		Clock:           opts.Clock,
 		MergeMethod:     auth.ResolveMergeMethod(opts.MergeMethod),
 		SaveMergeMethod: opts.SaveMergeMethod,
+		Markdown:        NewMarkdown(),
 	}
+	// The body renderer is built here, before any frame asks for it, so a view
+	// never constructs one.
+	m.deps.Markdown.Prepare(m.deps.Theme, m.deps.Size.Width)
 	return m
 }
 
@@ -170,10 +174,14 @@ func (m Model) loadIdentity() tea.Cmd {
 // Update is the single entry point for every message.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Quit is the one binding that must work from every screen and from behind
-	// every modal, so it is settled before any other routing.
+	// every modal, so it is settled before any other routing. A text box is the
+	// exception: `q` there is a character somebody is typing, and the way out of
+	// a box is Ctrl+C (spec §2.4).
 	if k, ok := msg.(tea.KeyPressMsg); ok {
 		if action, found := keymap.Lookup(keymap.Global, keymap.KeyString(k)); found && action == keymap.ActionQuit {
-			return m, tea.Quit
+			if !m.overlays.TakesText() || k.Mod.Contains(tea.ModCtrl) {
+				return m, tea.Quit
+			}
 		}
 	}
 
@@ -183,6 +191,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Routes are given the geometry rather than deriving it, so a route
 		// that sizes a modal budget knows how much room it has.
 		m.deps.Size = Size{Width: msg.Width, Height: msg.Height}
+		// The rendered bodies are wrapped to the new width, so the renderer is
+		// rebuilt here rather than inside the frame that first needs it.
+		m.deps.Markdown.Prepare(m.deps.Theme, msg.Width)
 		return m, nil
 
 	case tea.BackgroundColorMsg:
@@ -195,7 +206,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinnerMsg:
 		m.tick++
-		if m.stage == stageLoading {
+		// The animation runs while there is something to animate: the startup
+		// screen, or a screen that is waiting for data.
+		if m.stage == stageLoading || m.routeLoading() {
 			return m, m.spinnerTick()
 		}
 		return m, nil
@@ -495,6 +508,9 @@ func (m Model) withTheme(dark bool) Model {
 	m.opts.Theme = theme
 	m.deps.Theme = theme
 	m.overlays.SetChrome(overlayChrome(theme))
+	// A body is painted in the palette it is drawn on, so the renderer follows
+	// the background change.
+	m.deps.Markdown.Prepare(theme, m.width)
 	return m
 }
 
@@ -518,7 +534,7 @@ func (m Model) render() string {
 
 	frame := layout.Layout(width, height)
 
-	header := renderHeader(m.deps, frame.Header, breadcrumbs(m.routes.Titles()), false, m.tick)
+	header := renderHeader(m.deps, frame.Header, breadcrumbs(m.routes.Titles()), m.routeLoading(), m.tick)
 
 	body := layout.Fit(m.routes.Top().View(m.deps, frame.Body), frame.Body.W, frame.Body.H)
 	if !m.overlays.Empty() {
@@ -527,9 +543,30 @@ func (m Model) render() string {
 		body = m.overlays.View(body, frame.Body.W, frame.Body.H)
 	}
 
-	footer := renderFooter(m.deps, frame.Footer, m.footerBindings(), m.status, m.statusErr)
+	footer := renderFooter(m.deps, frame.Footer, m.footerBindings(), m.status, m.statusErr, m.hintMode())
 
 	return header + "\n" + body + "\n" + footer
+}
+
+// routeLoading reports whether the screen on top is waiting for data.
+func (m Model) routeLoading() bool {
+	if l, ok := m.routes.Top().(loadingRoute); ok {
+		return l.Loading()
+	}
+	return false
+}
+
+// hintMode reports what owns the keyboard, which is what the footer's pinned
+// global keys depend on.
+func (m Model) hintMode() hintMode {
+	switch {
+	case m.overlays.Empty():
+		return hintsRoute
+	case m.overlays.TakesText():
+		return hintsText
+	default:
+		return hintsModal
+	}
 }
 
 // footerBindings describes the surface that owns the keyboard: the topmost

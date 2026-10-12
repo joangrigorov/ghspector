@@ -9,10 +9,10 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
-	"ghspector/internal/overlay"
-	"ghspector/internal/ui/widgets"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/overlay"
+	"github.com/joangrigorov/ghspector/internal/ui/widgets"
 )
 
 // rate limit thresholds for the header indicator, matching the previous
@@ -94,15 +94,58 @@ func renderRateLimit(deps Deps) string {
 		colour = deps.Theme.StatusWarn
 	}
 	text := "Rate limit: " + strconv.Itoa(rl.Remaining) + "/" + strconv.Itoa(rl.Limit)
-	if !rl.Reset.IsZero() && rl.Remaining == 0 {
-		text += " resets " + rl.Reset.Format(time.Kitchen)
+	if rl.Remaining == 0 {
+		// The countdown is the API's arithmetic: the reset moment is the
+		// server's absolute time, and this machine's clock is its own.
+		if left, ok := deps.Store.RateLimitResetIn(); ok {
+			text += " resets in " + formatDuration(left)
+		}
 	}
 	return style(colour, normal).Render(text)
 }
 
+// hintMode says what owns the keyboard, because the footer advertises the keys
+// that work where they are written.
+type hintMode int
+
+const (
+	// hintsRoute is the normal case: a route on screen answering the global
+	// keys.
+	hintsRoute hintMode = iota
+	// hintsModal is an overlay that is not a text box. It eats the keys the
+	// route would act on, so only quit is still worth advertising.
+	hintsModal
+	// hintsText is an overlay with a text box. Every global key is a character
+	// somebody is typing, so the footer offers the one way out.
+	hintsText
+)
+
+// pinnedGlobals returns the global keys the footer writes ahead of the active
+// surface's own hints.
+//
+// A route gets all of them. A modal keeps quit, because the root answers it
+// from anywhere; a text box gets Ctrl+C alone, which is the same rule the model
+// applies when it gives a typed `q` to the box rather than quitting (spec §2.4).
+func pinnedGlobals(mode hintMode) []keymap.Binding {
+	globals := keymap.Documented(keymap.Global)
+	if mode == hintsRoute {
+		return globals
+	}
+	for _, b := range globals {
+		if b.Action != keymap.ActionQuit {
+			continue
+		}
+		if mode == hintsText {
+			b.Keys = []string{"ctrl+c"}
+		}
+		return []keymap.Binding{b}
+	}
+	return nil
+}
+
 // renderFooter draws the separator rule and the key hints, with the transient
 // status message right-aligned.
-func renderFooter(deps Deps, r layout.Rect, bindings []keymap.Binding, status string, statusErr bool) string {
+func renderFooter(deps Deps, r layout.Rect, bindings []keymap.Binding, status string, statusErr bool, mode hintMode) string {
 	if r.Empty() {
 		return ""
 	}
@@ -112,18 +155,18 @@ func renderFooter(deps Deps, r layout.Rect, bindings []keymap.Binding, status st
 		return layout.Fit(style(theme.HeaderRule, normal).Render(strings.Repeat("─", r.W)), r.W, r.H)
 	}
 	rule := style(theme.HeaderRule, normal).Render(strings.Repeat("─", r.W))
-	hints := renderHints(deps, r, bindings, status, statusErr)
+	hints := renderHints(deps, r, bindings, status, statusErr, mode)
 	return layout.Fit(rule+"\n"+hints, r.W, r.H)
 }
 
 // renderHints lays the footer out with hints on the left and the status message
 // on the right.
-func renderHints(deps Deps, r layout.Rect, bindings []keymap.Binding, status string, statusErr bool) string {
+func renderHints(deps Deps, r layout.Rect, bindings []keymap.Binding, status string, statusErr bool, mode hintMode) string {
 	st := widgets.Style{Key: deps.Theme.KeyHint, Desc: deps.Theme.KeyDesc}
 
 	// The global keys are pinned first, so a narrow footer drops the active
 	// surface's hints rather than the keys that work everywhere.
-	all := keymap.Documented(keymap.Global)
+	all := pinnedGlobals(mode)
 	for _, b := range bindings {
 		if b.Help == "" || hasAction(all, b.Action) {
 			continue
@@ -292,8 +335,8 @@ func renderError(theme Theme, title, detail string, width, height int) string {
 	return layout.Fit(strings.Join(lines, "\n"), width, height)
 }
 
-// statusTTL is how long a transient footer message stays on screen.
-const statusTTL = 5 * time.Second
+// statusTTL is how long a transient footer message stays on screen (spec §2.3).
+const statusTTL = 3 * time.Second
 
 // statusClearMsg expires a footer status message. The generation counter keeps
 // an earlier timer from clearing a newer message.

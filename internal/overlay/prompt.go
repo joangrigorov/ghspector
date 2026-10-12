@@ -5,8 +5,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
 )
 
 // TextInput is the single-line editor a Prompt drives. It is an interface so
@@ -37,6 +37,10 @@ type Prompt struct {
 	// OnCancel runs when the prompt is dismissed. Nil is fine: it still closes.
 	OnCancel tea.Cmd
 }
+
+// TextEntry reports that the prompt's body is a text box, so a printable key is
+// a character rather than a command.
+func (p Prompt) TextEntry() bool { return p.Input != nil }
 
 // Update gives bound keys to the prompt's own behaviour and forwards the rest to
 // the input.

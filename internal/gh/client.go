@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/joangrigorov/ghspector/internal/sanitize"
 )
 
 var (
@@ -39,6 +41,27 @@ func (c *Client) Now() time.Time {
 	offset := c.serverOffset
 	c.mu.RUnlock()
 	return time.Now().Add(offset)
+}
+
+// RateLimitResetIn reports how long the current rate-limit window has left,
+// measured on the API's clock, and whether the window's end is known at all.
+//
+// The reset moment arrives as an absolute Unix timestamp from the server, and
+// the local clock is the machine's own: a laptop five minutes fast would put a
+// countdown five minutes out. Now carries the correction the Date header
+// supplied, so the countdown is the server's arithmetic.
+func (c *Client) RateLimitResetIn() (time.Duration, bool) {
+	c.mu.RLock()
+	reset := c.rateLimit.Reset
+	c.mu.RUnlock()
+	if reset.IsZero() {
+		return 0, false
+	}
+	left := reset.Sub(c.Now())
+	if left < 0 {
+		left = 0
+	}
+	return left, true
 }
 
 // NewClient returns a new GitHub API client.
@@ -124,9 +147,11 @@ func (c *Client) checkRateLimit(ctx context.Context) error {
 	reset := c.rateLimit.Reset
 	c.mu.RUnlock()
 
-	// If rate limit is fully depleted, back off until reset
-	if remaining == 0 && !reset.IsZero() && time.Now().Before(reset) {
-		waitDur := time.Until(reset)
+	// The window's end is the server's absolute time, so the comparison is made
+	// on the server's clock.
+	now := c.Now()
+	if remaining == 0 && !reset.IsZero() && now.Before(reset) {
+		waitDur := reset.Sub(now)
 		if waitDur > 30*time.Second {
 			// Don't sleep for too long inside the TUI, return rate limited error so UI knows
 			return fmt.Errorf("%w: resets at %v (wait %v)", ErrRateLimited, reset, waitDur.Round(time.Second))
@@ -191,7 +216,14 @@ func (c *Client) doRequest(ctx context.Context, method, apiPath string, query pa
 
 	if responseVal != nil {
 		dec := json.NewDecoder(resp.Body)
-		return dec.Decode(responseVal)
+		if err := dec.Decode(responseVal); err != nil {
+			return err
+		}
+		// Every string in a response was written by somebody else, and a
+		// response body is the one place the program learns them. Cleaning it
+		// here is what lets every screen downstream treat those strings as
+		// cells.
+		sanitize.Texts(responseVal)
 	}
 	return nil
 }
@@ -203,15 +235,17 @@ func parseError(resp *http.Response, baseErr error) error {
 			Message string `json:"message"`
 		}
 		if json.Unmarshal(body, &errResp) == nil && errResp.Message != "" {
+			message := sanitize.Text(errResp.Message)
 			if baseErr != nil {
-				return fmt.Errorf("%w: %s", baseErr, errResp.Message)
+				return fmt.Errorf("%w: %s", baseErr, message)
 			}
-			return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, errResp.Message)
+			return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, message)
 		}
+		text := sanitize.Text(strings.TrimSpace(string(body)))
 		if baseErr != nil {
-			return fmt.Errorf("%w: %s", baseErr, strings.TrimSpace(string(body)))
+			return fmt.Errorf("%w: %s", baseErr, text)
 		}
-		return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return fmt.Errorf("github api error (status %d): %s", resp.StatusCode, text)
 	}
 	if baseErr != nil {
 		return baseErr
@@ -487,7 +521,10 @@ func (c *Client) doRequestWithBody(ctx context.Context, method, apiPath string, 
 
 	if responseVal != nil {
 		dec := json.NewDecoder(resp.Body)
-		return dec.Decode(responseVal)
+		if err := dec.Decode(responseVal); err != nil {
+			return err
+		}
+		sanitize.Texts(responseVal)
 	}
 	return nil
 }
@@ -548,7 +585,6 @@ func (c *Client) GetIssue(ctx context.Context, owner, repo string, number int) (
 	}
 	return &issue, nil
 }
-
 
 // GetPullRequest fetches a single pull request by number.
 func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (*PullRequest, error) {
@@ -762,5 +798,3 @@ func (c *Client) HasRequiredScopes() (bool, []string) {
 
 	return len(missing) == 0, missing
 }
-
-

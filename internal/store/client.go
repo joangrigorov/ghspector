@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"ghspector/internal/gql"
+	"github.com/joangrigorov/ghspector/internal/gql"
 )
 
 // Client is the store the app uses: the REST store for single resources, writes
@@ -65,6 +65,28 @@ func (c *Client) RateLimit() RateLimitInfo {
 		return RateLimitInfo{Limit: budget.Limit, Remaining: budget.Remaining, Reset: budget.ResetAt}
 	}
 	return rest
+}
+
+// RateLimitResetIn reports how long the window RateLimit reports has left.
+//
+// The GraphQL budget carries no response headers, so its reset is read as the
+// absolute time the API wrote into the response, and only the REST budget can be
+// corrected against the server's clock. The GraphQL window is reported when it is
+// the tighter of the two, which is the same choice RateLimit makes.
+func (c *Client) RateLimitResetIn() (time.Duration, bool) {
+	rest, restKnown := c.REST.RateLimitResetIn()
+	budget := c.gql.RateLimit()
+	if budget.ResetAt.IsZero() || c.REST.RateLimit().Limit == 0 {
+		return rest, restKnown
+	}
+	if budget.Remaining < c.REST.RateLimit().Remaining {
+		left := time.Until(budget.ResetAt)
+		if left < 0 {
+			left = 0
+		}
+		return left, true
+	}
+	return rest, restKnown
 }
 
 // ScopePRs lists pull requests across the context's repositories, most recently

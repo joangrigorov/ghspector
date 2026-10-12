@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/layout"
 )
 
 // TestHyperlinkIsGatedOnTheTheme pins the contract that makes OSC 8 links safe

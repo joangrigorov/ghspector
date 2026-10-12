@@ -240,3 +240,17 @@ func TestMatchScoreIgnoresNoiseWords(t *testing.T) {
 		t.Errorf("MatchScore = %d, want 0 for names sharing only a noise word", score)
 	}
 }
+
+// TestParseLeavesNoTerminalInstructions covers the second boundary a body from
+// somebody else crosses: a job's output is whatever the job ran, and ansi.Strip
+// removes the sequences while leaving the control characters behind.
+func TestParseLeavesNoTerminalInstructions(t *testing.T) {
+	line := ts(base) + " a\x1b]52;c;cGF5bG9hZA==\x07b\x07c\rd"
+	lines := Parse(line)
+	if len(lines) != 1 {
+		t.Fatalf("Parse returned %d lines, want 1", len(lines))
+	}
+	if want := ts(base) + " abcd"; lines[0].Display != want {
+		t.Errorf("Display = %q, want %q", lines[0].Display, want)
+	}
+}

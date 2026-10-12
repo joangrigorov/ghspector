@@ -7,9 +7,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // issueCommentsPageSize is how many comments one page of an issue's
@@ -67,6 +67,9 @@ func (d *IssueDetails) Scope() keymap.Scope { return keymap.IssueDetails }
 
 // Stop releases the requests this route has in flight.
 func (d *IssueDetails) Stop() { d.sess.Stop() }
+
+// Loading reports a fetch this route is waiting on.
+func (d *IssueDetails) Loading() bool { return d.loading }
 
 // load fetches the issue, which is where its body comes from: the list row
 // carries the title and the state but not the description.
@@ -152,7 +155,7 @@ func (d *IssueDetails) scroll(deps Deps, delta int) (Route, tea.Cmd, bool) {
 
 // clamp keeps the scroll offset inside the description.
 func (d *IssueDetails) clamp(deps Deps) {
-	d.descScroll = clampOffset(d.descScroll, len(wrapLines(d.description(), d.bodyWidth(deps))))
+	d.descScroll = clampOffset(d.descScroll, len(d.descriptionLines(deps, d.bodyWidth(deps))))
 }
 
 // bodyWidth is the width the panes are laid out in.
@@ -250,13 +253,19 @@ func (d *IssueDetails) body(deps Deps, r layout.Rect) string {
 	return layout.Fit(joinLines(rows), r.W, r.H)
 }
 
-// descriptionPane renders the issue body, wrapped and scrolled.
+// descriptionPane renders the issue body, rendered as markdown and scrolled.
 func (d *IssueDetails) descriptionPane(deps Deps, width, height int) []string {
-	lines := wrapLines(d.description(), width)
+	lines := d.descriptionLines(deps, width)
 	start := clampOffset(d.descScroll, len(lines))
 	visible := max(height-2, 0)
 	return append([]string{paneTitle(deps.Theme, "DESCRIPTION", d.descFocused), ""},
 		take(lines[start:], visible)...)
+}
+
+// descriptionLines is the description as rendered lines, at the same width
+// clamp uses, so the scroll bound and the pane cannot disagree.
+func (d *IssueDetails) descriptionLines(deps Deps, width int) []string {
+	return deps.Markdown.Lines(deps.Theme, d.description(), width)
 }
 
 // metadataPane renders the issue sidebar: what the issue is, who is on it, and
@@ -328,6 +337,9 @@ func (c *IssueComments) Scope() keymap.Scope { return keymap.IssueComments }
 // Stop releases the requests this route has in flight.
 func (c *IssueComments) Stop() { c.sess.Stop() }
 
+// Loading reports a fetch this route is waiting on.
+func (c *IssueComments) Loading() bool { return c.loading }
+
 // load fetches the comments.
 func (c *IssueComments) load(deps Deps) tea.Cmd {
 	ref, number := c.ref, c.number
@@ -387,7 +399,7 @@ func (c *IssueComments) clamp(deps Deps) {
 
 // lines is the conversation as rendered lines.
 func (c *IssueComments) lines(deps Deps) []string {
-	return commentBlockLines(deps.Theme, c.comments, c.bodyWidth(deps))
+	return commentBlockLines(deps, c.comments, c.bodyWidth(deps))
 }
 
 // bodyWidth is the width the conversation is wrapped to.

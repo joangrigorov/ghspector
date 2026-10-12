@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // The issue tests run against the same fixture server as the pull request ones,

@@ -6,9 +6,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // commitsView is the Commits sub-tab: the pull request's commits, one per row,
@@ -75,6 +75,43 @@ func commitSubject(commit store.RepositoryCommit) string {
 		return "(no message)"
 	}
 	return message
+}
+
+// commitBody is what a commit message says below its subject, which the heading
+// of the commit screen already shows. It is empty for the common one-line
+// message, and that is what keeps the message from taking rows it does not have.
+func commitBody(commit store.RepositoryCommit) string {
+	message := strings.ReplaceAll(commit.Commit.Message, "\r\n", "\n")
+	idx := strings.IndexByte(message, '\n')
+	if idx == -1 {
+		return ""
+	}
+	return strings.TrimSpace(message[idx+1:])
+}
+
+// messageLines is a commit message's body, rendered for the width the commit
+// screen's body has. Returning nil for an empty body is what tells the layout to
+// give the whole region to the files.
+func (c *CommitDetails) messageLines(deps Deps, width int) []string {
+	body := commitBody(c.commit)
+	if body == "" {
+		return nil
+	}
+	return indentLines(deps.Markdown.Lines(deps.Theme, body, max(width-2, 8)), "  ")
+}
+
+// indentLines indents every line by a prefix, keeping blank lines blank so the
+// block does not gain trailing spaces.
+func indentLines(lines []string, prefix string) []string {
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line == "" {
+			out = append(out, "")
+			continue
+		}
+		out = append(out, prefix+line)
+	}
+	return out
 }
 
 // commitAuthor is the account that authored a commit, falling back to the
@@ -260,24 +297,24 @@ func (p *PRDetails) commentsView(deps Deps, r layout.Rect) string {
 
 // commentLines renders the conversation as lines, one block per comment.
 func (p *PRDetails) commentLines(deps Deps, width int) []string {
-	return commentBlockLines(deps.Theme, p.comments, width)
+	return commentBlockLines(deps, p.comments, width)
 }
 
-// commentBlockLines renders a conversation as lines, one block per comment. The
-// pull request and issue screens both read it, so the two conversations read the
-// same.
-func commentBlockLines(theme Theme, comments []store.IssueComment, width int) []string {
+// commentBlockLines renders a conversation as lines, one block per comment.
+// Every body is rendered as markdown, so a conversation reads the way its author
+// wrote it, and the pull request and issue screens both read it.
+func commentBlockLines(deps Deps, comments []store.IssueComment, width int) []string {
 	var out []string
 	for i, comment := range comments {
 		if i > 0 {
-			out = append(out, "", style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-2, 1))), "")
+			out = append(out, "", style(deps.Theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-2, 1))), "")
 		}
-		author := style(theme.Title, bold).Render(commentAuthor(comment))
+		author := style(deps.Theme.Title, bold).Render(commentAuthor(comment))
 		if comment.HTMLURL != "" {
-			author = hyperlink(theme, author, comment.HTMLURL)
+			author = hyperlink(deps.Theme, author, comment.HTMLURL)
 		}
-		out = append(out, "  "+author+style(theme.Muted, normal).Render("  "+formatTime(comment.CreatedAt)))
-		for _, line := range wrapLines(comment.Body, max(width-4, 8)) {
+		out = append(out, "  "+author+style(deps.Theme.Muted, normal).Render("  "+formatTime(comment.CreatedAt)))
+		for _, line := range deps.Markdown.Lines(deps.Theme, comment.Body, max(width-4, 8)) {
 			out = append(out, "  "+line)
 		}
 	}
@@ -340,6 +377,9 @@ func (c *CommitDetails) Scope() keymap.Scope { return keymap.CommitDetails }
 
 // Stop releases the requests this route has in flight.
 func (c *CommitDetails) Stop() { c.sess.Stop() }
+
+// Loading reports a fetch this route is waiting on.
+func (c *CommitDetails) Loading() bool { return c.loading }
 
 // Update handles the messages this route owns.
 func (c *CommitDetails) Update(deps Deps, msg tea.Msg) (Route, tea.Cmd) {
@@ -445,18 +485,23 @@ func (c *CommitDetails) View(deps Deps, r layout.Rect) string {
 	}
 
 	_, body := r.SplitRows(len(lines))
-	fileW, diffW := fileDiffColumns(body.W)
+	// The commit message is as long as its author made it, so it takes the rows
+	// it needs up to a fair share of the region and the files keep the rest.
+	message := c.messageLines(deps, body.W)
+	msgRect, rest := body.SplitRowsFair(len(message))
+	msg := layout.Fit(joinLines(message), msgRect.W, msgRect.H)
 
-	list := commitFileList(deps, c.files, c.fileCursor, fileW, body.H)
-	patch := diffBody(deps, c.files[c.fileCursor], diffW, body.H, c.diffScroll)
+	fileW, diffW := fileDiffColumns(rest.W)
+	list := commitFileList(deps, c.files, c.fileCursor, fileW, rest.H)
+	patch := diffBody(deps, c.files[c.fileCursor], diffW, rest.H, c.diffScroll)
 
-	columns := [][]string{padLines(list, fileW, body.H), padLines(patch, diffW, body.H)}
+	columns := [][]string{padLines(list, fileW, rest.H), padLines(patch, diffW, rest.H)}
 	separator := style(theme.HeaderRule, normal).Render("│")
-	rows := make([]string, 0, body.H)
-	for row := 0; row < body.H; row++ {
+	rows := make([]string, 0, rest.H)
+	for row := 0; row < rest.H; row++ {
 		rows = append(rows, columns[0][row]+separator+columns[1][row])
 	}
-	lines = append(lines, joinLines(rows))
+	lines = append(lines, msg, joinLines(rows))
 	return layout.Fit(joinLines(lines), r.W, r.H)
 }
 

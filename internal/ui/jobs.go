@@ -7,9 +7,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // jobsPageSize is how many jobs of one attempt the list asks for. A run has a
@@ -118,6 +118,9 @@ func (j *Jobs) Scope() keymap.Scope { return keymap.Jobs }
 // Stop releases the requests this route has in flight. The root calls it as the
 // route leaves the stack.
 func (j *Jobs) Stop() { j.sess.Stop() }
+
+// Loading reports a fetch this route is waiting on.
+func (j *Jobs) Loading() bool { return j.loading }
 
 // Available narrows the footer: approve is offered only when the viewer may
 // approve this run.

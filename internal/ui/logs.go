@@ -6,10 +6,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
-	"ghspector/internal/logs"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/logs"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // Log viewer geometry. The steps sidebar is a fixed column because step names
@@ -73,6 +73,9 @@ func (l *Logs) Scope() keymap.Scope { return keymap.Logs }
 
 // Stop releases the requests this route has in flight.
 func (l *Logs) Stop() { l.sess.Stop() }
+
+// Loading reports a fetch this route is waiting on.
+func (l *Logs) Loading() bool { return l.loading }
 
 // logsMsg carries a fetched job log.
 type logsMsg struct {

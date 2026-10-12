@@ -11,15 +11,23 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/auth"
-	"ghspector/internal/store"
-	"ghspector/internal/ui"
+	"github.com/joangrigorov/ghspector/internal/auth"
+	"github.com/joangrigorov/ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/ui"
 )
 
 var (
 	version = "dev"
 	commit  = "none"
 	date    = "unknown"
+)
+
+// The credential pair is a seam. Resolving a token reads the environment, the
+// config file and the `gh` binary, and the instructions for a missing one go to
+// the real stderr, so the path that exits 1 cannot run in a test as written.
+var (
+	resolveToken          = auth.ResolveToken
+	printAuthInstructions = auth.PrintAuthInstructions
 )
 
 func main() {
@@ -51,9 +59,9 @@ func run(args []string, stdout io.Writer) int {
 		return 0
 	}
 
-	token, config, err := auth.ResolveToken()
+	token, config, err := resolveToken()
 	if err != nil {
-		auth.PrintAuthInstructions()
+		printAuthInstructions()
 		return 1
 	}
 

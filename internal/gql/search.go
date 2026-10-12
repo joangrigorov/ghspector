@@ -8,7 +8,7 @@ import (
 
 	"github.com/shurcooL/githubv4"
 
-	"ghspector/internal/gh"
+	"github.com/joangrigorov/ghspector/internal/gh"
 )
 
 // SearchKind selects the index a search reads.

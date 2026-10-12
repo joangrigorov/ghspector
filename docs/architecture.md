@@ -17,12 +17,12 @@ Companion documents:
 2. One source of truth per concern: one keymap, one overlay mechanism, one layout engine, one place that computes a view's dimensions.
 3. Each screen is a small, independently testable unit with explicit inputs.
 4. Scope-wide GitHub queries instead of per-repository fan-out, with real pagination.
-5. The existing config file, CLI flags, release pipeline, and module path keep working unchanged.
+5. The existing config file, CLI flags, release pipeline, and binary name keep working unchanged. The module path is the one exception, and it changed on purpose: it is now `github.com/joangrigorov/ghspector`, so the README's `go install` line resolves instead of naming a module only this checkout can build (see §9).
 
 **Non-goals**
 
 - Rewriting `internal/gh` (REST client) or `internal/auth`. They are correct and encode hard-won API behavior.
-- Changing the binary name, module path, entry point, or goreleaser output.
+- Changing the binary name, entry point, or goreleaser output.
 - Adding new user-facing capabilities before parity is reached, except where the architecture makes them free (scope-wide filtering).
 
 ---
@@ -56,6 +56,7 @@ Dependency direction is strictly downward. `ui` never imports `gh` or `gql`; it 
 | `internal/gh` | REST endpoints, pagination helpers, error mapping | Hold mutable application state |
 | `internal/gql` | GraphQL queries, cursor pagination, and mapping a response into the domain types | Define its own parallel types for what it returns; reach the network outside the store's limiter |
 | `internal/auth` | Token resolution, config load/save | Know about the UI |
+| `internal/sanitize` | `Text`/`Texts`: strip escape sequences and control characters out of strings the API wrote | Know what a screen looks like |
 
 ---
 
@@ -285,7 +286,7 @@ Pinned at the time of writing (verified against the module proxy):
 | `charm.land/bubbletea/v2` | v2.1.0 |
 | `charm.land/lipgloss/v2` | v2.0.6 |
 | `charm.land/bubbles/v2` | v2.2.1 (added when the first widget needs it: the log viewport and the text inputs) |
-| `charm.land/glamour/v2` | v2.0.1 (added with markdown rendering) |
+| `charm.land/glamour/v2` | v2.0.1 (direct from Phase 6: markdown rendering) |
 | `github.com/charmbracelet/x/ansi` | v0.11.9 |
 | `github.com/charmbracelet/x/exp/teatest/v2` | v2.0.0-20261011004359-2acd7e345453 (untagged; pin the pseudo-version) |
 | `github.com/charmbracelet/x/exp/golden` | v0.0.0-20251109135125-8916d276318f (test-only) |
@@ -293,6 +294,22 @@ Pinned at the time of writing (verified against the module proxy):
 | `github.com/shurcooL/graphql` | v0.0.0-20240915155400-7ee5256398cf (indirect, through `githubv4`) |
 | `golang.org/x/time` | v0.16.0 |
 | `golang.org/x/oauth2` | v0.37.0 (indirect requirement only — see below) |
+
+**What glamour brings.** Markdown rendering is the one dependency this rewrite
+added that is not Charm's own rendering stack, and it is the largest single
+addition to the module graph. `go mod why` names the path for each: through
+`charm.land/glamour/v2` come `yuin/goldmark` and `yuin/goldmark-emoji` (the
+parser); through `glamour/v2/ansi` come `alecthomas/chroma/v2` (fenced code
+blocks), `microcosm-cc/bluemonday` (sanitizing) and `golang.org/x/text`; and
+`golang.org/x/net` arrives under bluemonday for its HTML parser. All of them are
+indirect requirements. Two things follow. First, a body is untrusted input drawn
+on a terminal, so it goes through `internal/sanitize` twice — at the transport
+boundary and again in `Markdown.Lines` — and the renderer is built from glamour's
+plain ASCII style with this palette's three colours on top, so nothing glamour
+decides can introduce an escape sequence the chrome did not choose. Second, the
+module graph is worth a `govulncheck` run at each phase: `golang.org/x/net
+v0.39.0` is the version glamour pulls, and it is the one non-stdlib module in the
+tree with advisories against nearby versions.
 
 **No OAuth dependency.** The GraphQL transport authenticates with the same token
 the REST transport uses, written into the `Authorization` header by a ~20-line
@@ -337,6 +354,18 @@ These are the rules that keep the design from regressing. Each is enforceable.
     test measures the contrast. A colour that assumes a dark terminal and is
     drawn on a light one is invisible, which is the defect this rule exists to
     prevent.
+12. **Every string the API wrote is cleaned once at the boundary that receives it**,
+    and again at the boundary that turns it into cells. `gh` and `gql` clean a
+    decoded response, and `logs` cleans the raw log text; `Markdown.Lines`
+    cleans whatever it is handed, because a body reaches it through code as well
+    as through the transport. `ansi.Strip` alone is not enough: it removes escape
+    sequences and passes control characters through, so `sanitize.Text` removes
+    both. A test in each package asserts a response carrying an OSC 52 clipboard
+    write reaches the screen as text.
+13. **The footer advertises the keys that work on the surface it is drawn over.**
+    A route gets the global keys pinned; a modal that consumes them gets quit
+    alone; a text box gets Ctrl+C. Advertising a key that the surface in front of
+    it swallows is the same defect as documenting a key that does nothing.
 
 ---
 
@@ -362,10 +391,23 @@ The v1 `internal/tui/app_test.go` is deleted rather than ported: it asserts hard
 
 Unchanged and load-bearing:
 
-- Module path `ghspector`; entry point `cmd/ghspector/main.go`.
+- Entry point `cmd/ghspector/main.go`.
 - `main.version`, `main.commit`, `main.date` remain `main`-package variables, injected by goreleaser `-X` ldflags.
 - `release-please-config.json` and `.github/workflows/release.yml` stay as they are, plus `bump-minor-pre-major: true` so breaking changes move `0.x` to the next minor while the rewrite is unstable. Moving to `1.0.0` is a deliberate later act.
 - `internal/auth.Config`'s YAML keys and the config path stay byte-compatible. A `version` key is added; nothing is removed or renamed.
+
+Changed once, deliberately:
+
+- **The module path is `github.com/joangrigorov/ghspector`.** It was the bare
+  `ghspector` through Phase 4, which is a module path only a checkout at the
+  repository root can build. The README has always advertised `go install
+  github.com/joangrigorov/ghspector/cmd/ghspector@latest`, and that line was
+  false: it named a module that does not exist on the proxy. The rename touches
+  every import in the tree and nothing else — the binary name, the entry point,
+  the ldflags target and the release configuration are unaffected, because
+  goreleaser builds `cmd/ghspector` and `main`'s package is still `main`.
+  `cmd/ghspector/main_test.go` and the goreleaser `-X` flags are the places to
+  check after a rename like this; both are green.
 
 ---
 
@@ -670,6 +712,54 @@ through the runtime, one golden per screen at 80×24, 120×40 and 40×15, and
 scripted tests that assert the requests a screen sent, all of which pass
 unchanged in this phase.
 
+### Phase 6 — parity audit, stability, and 1.0 readiness (this change)
+
+The rewrite's last phase is the one that reads the specification back against the
+build. `docs/spec.md` had two groups of boxes deliberately unticked since Phase 1
+— startup, context and global chrome (§2.1–2.5) and the transport contract (§9) —
+on the grounds that they were implemented and partly tested but never read
+against their own test. They now are, every row names the test behind it, and
+every one of the document's 226 boxes is ticked or marked **Superseded** with the
+decision that replaced it.
+
+| Area | State |
+| --- | --- |
+| `internal/ui/markdown.go` | New. One `glamour/v2` renderer per (palette, width), built by `Prepare` on a resize or a palette change and reused by every frame in between. The style is glamour's plain ASCII configuration with this palette's accent, text and muted colours on top, and `WithEmoji` is on so a `:shortcode:` in a release note is drawn as the emoji it names. Four call sites: the pull request description, the issue description, a comment body, a commit message. |
+| `internal/ui/chrome.go` | The header's loading indicator is wired to the screen on top rather than to a constant; the status message's TTL is the spec's 3 s; the rate-limit band counts the window down on the API's clock; the footer pins the global keys that the surface in front of it actually answers. |
+| `internal/gh` | `RateLimitResetIn` and a corrected `Now` give the countdown and the wait decision a caller; both had none, which is how the clock offset went unnoticed. |
+| `internal/keymap`, `internal/overlay` | `overlay.TextEntry`/`Stack.TakesText`, so a `q` typed into a box is a character. |
+| `cmd/ghspector` | `resolveToken`/`printAuthInstructions` are seams, so the no-credentials path is driven rather than read. |
+
+Fixed while running that pass — five defects, each found by reading a box against
+its test rather than by a failing test:
+
+- **The header's spinner was wired to `false`.** `renderHeader` took a `loading`
+  argument and the call site passed a literal, so the header never animated while
+  a screen was fetching. It now asks the screen on top (`loadingRoute`), and the
+  spinner re-arms from the tick handler while there is something to animate.
+  Four goldens changed by one glyph, which is the size of the defect.
+- **A `q` typed into a filter box quit the program.** The root answered quit
+  before any overlay saw the key, so a login beginning with `q` — or containing
+  one — ended the session. Quit now gives way to a text box; `Ctrl+C` is the way
+  out, which is what the footer says.
+- **The footer advertised keys the surface in front of it swallows.** A modal
+  eats `?` and `o`; a text box types them. The pinned globals are now chosen from
+  what is on top (rule 13), which changed 12 goldens.
+- **The status message lived 5 s where the spec says 3.** `statusTTL` was the
+  only place the number appeared, which is why it drifted.
+- **The rate-limit countdown had no caller.** `Client.Now` existed for the
+  offset and nothing used it, so the header printed `0/5000` with no reset time
+  and the wait decision compared a server timestamp to a local clock.
+
+Verification: see the walkthrough for the phase. The same checks as the previous
+phases pass, plus `golangci-lint` with the four issues this phase introduced
+fixed rather than suppressed. There is no browser to drive for a terminal UI, so
+the substitute stands: `teatest` runs through the real runtime, 60 golden
+renders across the shells, and scripted tests that assert the requests a screen
+sent. What a golden cannot prove is that the markdown is *good* — glamour's own
+choices are pinned by the palette test instead, which asserts that every RGB
+triple in a render is one of the theme's.
+
 ### Security findings
 
 | Finding | Status |
@@ -678,7 +768,8 @@ unchanged in this phase.
 | F4 — the credential source label printed the config file's absolute path | Closed. `auth` reports the file name only; a test asserts no path separator reaches the label. |
 | F1 — `viewerCanMerge` fails open when the scope header is absent | **Closed in Phase 3.** The merge and close gate (`ui.decidePRWrite`) fails closed: repository write permission decides, an unreadable permission is a refusal, and the baseline's scope-header-only answer is gone. |
 | F3 — `io.ReadAll` on job logs is unbounded | **Closed in Phase 2.** `gh.GetJobLogs` reads through a capped reader (`maxLogBytes`, 8 MiB) and appends a truncation note on a line boundary; error bodies are capped at 64 KiB. Tested against an oversized body and for line-boundary truncation. Multiplied by per-route polling, this was a memory-exhaustion vector rather than a vulnerability. |
-| F5 — 14 stdlib advisories at `go1.26.5` | Open, standalone. Fixed by a later patch of the same series (the advisory database names `go1.26.6` for five of them and `go1.26.9` for the rest); reproduced identically on the previous `main`, so it is not introduced here. Phase 5's scan reports the same 14 plus 7 advisories in packages and modules the code does not call, all of them standard library as well — nothing from the modules this phase added. |
+| F5 — 14 stdlib advisories at `go1.26.5` | Open, standalone, and unchanged. Fixed by a later patch of the same series (the advisory database names `go1.26.6` for six of them and `go1.26.9` for the rest); reproduced identically on the previous `main`, so it is not introduced here. The phase 5 scan was run again at the end of phase 6 with the same 14 reachable findings and nothing else. The remedy is a toolchain patch: the `go` directive names `1.26.5`, so a maintainer on `1.26.9` builds with the fixes and this row closes. |
+| F6 — markdown rendering pulled in two modules with reachable advisories | **Closed in Phase 6.** Glamour's graph brought `github.com/yuin/goldmark v1.7.8` (GO-2026-5320, an XSS in the HTML renderer, reachable through `TerminalRenderer.Render`) and `golang.org/x/text v0.24.0` (GO-2026-5970, an infinite loop on invalid input), and `golang.org/x/net` with it. All three were upgraded inside the same release line — goldmark `v1.8.6`, `x/net v0.61.0`, `x/text v0.43.0` — and `govulncheck` reports no module findings afterwards. The advisory is in the HTML renderer while this program renders to a terminal, so the reachability is the weakest part of the report; the upgrade removes the need to argue about it. |
 
 **Phase 5 transport invariants.** The GraphQL endpoint is a constant, so no
 configuration value can redirect an authenticated request to another host, and

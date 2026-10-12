@@ -6,10 +6,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
-	"ghspector/internal/overlay"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/overlay"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // Deps is the shared service set handed to a route on every call. Passing it in
@@ -44,6 +44,10 @@ type Deps struct {
 	// SaveMergeMethod persists a new default merge method. Nil means there is
 	// no config file to write, and the choice then lasts for the session.
 	SaveMergeMethod func(method string) error
+	// Markdown renders the bodies the API returns. The root owns the one
+	// instance, so every route shares the renderer it caches; nil is valid and
+	// falls back to plain wrapping.
+	Markdown *Markdown
 }
 
 // Size is the terminal geometry in cells.
@@ -108,6 +112,13 @@ type Stoppable interface {
 // does nothing.
 type actionGate interface {
 	Available(action keymap.Action) bool
+}
+
+// loadingRoute is implemented by a route that is waiting for data it cannot draw
+// without. The header shows a spinner while the screen on top says so: the chrome
+// states that something is in flight, and each pane says what it is waiting for.
+type loadingRoute interface {
+	Loading() bool
 }
 
 // pushRouteThen asks the root to open a route above the current one. A route

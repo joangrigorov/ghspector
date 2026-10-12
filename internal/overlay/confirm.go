@@ -3,7 +3,7 @@ package overlay
 import (
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/keymap"
 )
 
 // Confirm is the one modal used for every yes/no decision: merge a pull

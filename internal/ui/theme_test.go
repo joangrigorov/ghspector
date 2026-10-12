@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"image/color"
 	"math"
 	"net/http"
@@ -8,12 +9,13 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/layout"
 )
 
 // namedColour pairs a palette entry with its name, so a contrast failure says
@@ -282,6 +284,77 @@ func TestHeaderPutsTheAccountAtTheRightEdge(t *testing.T) {
 	}
 	if account := strings.Index(band, "Account:"); rate > account {
 		t.Errorf("the rate limit is written after the account, so the count moves it: %q", band)
+	}
+}
+
+// TestHeaderCountsDownTheRateLimitReset covers the exhausted budget: the header
+// says how long is left, measured on the API's clock. The fixtures answer the
+// identity requests in order, so the last header of the sequence — the one the
+// band is drawn from — carries the exhausted budget.
+func TestHeaderCountsDownTheRateLimitReset(t *testing.T) {
+	fixtures := defaultFixtures()
+	reset := time.Now().Add(12 * time.Minute)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "4999")
+		if r.URL.Path == "/user/orgs" {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+			// The server's clock runs a minute ahead of this machine's, and the
+			// countdown has to follow the server.
+			w.Header().Set("Date", time.Now().Add(time.Minute).UTC().Format(http.TimeFormat))
+		}
+		body, ok := fixtures[r.URL.Path]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"no fixture"}`))
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	band := ansi.Strip(strings.Split(readyModel(t, srv, 120, 30).View().Content, "\n")[0])
+	if !strings.Contains(band, "Rate limit: 0/5000") {
+		t.Fatalf("the band does not show the exhausted budget: %q", band)
+	}
+	if !strings.Contains(band, "resets in 11m") {
+		t.Errorf("the band does not count down on the server's clock: %q", band)
+	}
+}
+
+// TestRateLimitBandColours covers the indicator's three bands: plenty is the
+// normal colour, low is amber, and exhausted is red.
+func TestRateLimitBandColours(t *testing.T) {
+	theme := DarkTheme()
+	for _, tc := range []struct {
+		name      string
+		remaining int
+		want      color.Color
+	}{
+		{"plenty", 4999, theme.StatusOK},
+		{"at the warning line", rateWarnBelow - 1, theme.StatusWarn},
+		{"at the failure line", rateFailBelow - 1, theme.StatusFail},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("X-RateLimit-Limit", "5000")
+				w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(tc.remaining))
+				_, _ = w.Write([]byte(`{"login":"octocat","id":1}`))
+			}))
+			t.Cleanup(srv.Close)
+
+			st := testStore(srv)
+			if _, err := st.Viewer(context.Background()); err != nil {
+				t.Fatalf("the fixture server did not answer: %v", err)
+			}
+
+			text := "Rate limit: " + strconv.Itoa(tc.remaining) + "/5000"
+			want := style(tc.want, normal).Render(text)
+			if got := renderRateLimit(Deps{Store: st, Theme: theme}); got != want {
+				t.Errorf("renderRateLimit = %q, want %q", got, want)
+			}
+		})
 	}
 }
 

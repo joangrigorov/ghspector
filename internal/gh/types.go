@@ -35,35 +35,35 @@ type Repository struct {
 
 // WorkflowRun represents a GitHub Actions workflow run.
 type WorkflowRun struct {
-	ID             int64       `json:"id"`
-	Name           string      `json:"name"`
-	RunNumber      int         `json:"run_number"`
-	Event          string      `json:"event"`
-	Status         string      `json:"status"`     // queued, in_progress, completed, etc.
-	Conclusion     string      `json:"conclusion"` // success, failure, cancelled, skipped, etc.
-	HeadBranch     string      `json:"head_branch"`
-	HeadSHA        string      `json:"head_sha"`
-	HTMLURL        string      `json:"html_url"`
-	CreatedAt      time.Time   `json:"created_at"`
-	UpdatedAt      time.Time   `json:"updated_at"`
-	Repository     Repository  `json:"repository"`
-	HeadRepository Repository  `json:"head_repository"`
-	DisplayTitle   string      `json:"display_title"`
-	Actor          *User       `json:"actor"`
-	RunAttempt     int         `json:"run_attempt"`
+	ID             int64      `json:"id"`
+	Name           string     `json:"name"`
+	RunNumber      int        `json:"run_number"`
+	Event          string     `json:"event"`
+	Status         string     `json:"status"`     // queued, in_progress, completed, etc.
+	Conclusion     string     `json:"conclusion"` // success, failure, cancelled, skipped, etc.
+	HeadBranch     string     `json:"head_branch"`
+	HeadSHA        string     `json:"head_sha"`
+	HTMLURL        string     `json:"html_url"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	Repository     Repository `json:"repository"`
+	HeadRepository Repository `json:"head_repository"`
+	DisplayTitle   string     `json:"display_title"`
+	Actor          *User      `json:"actor"`
+	RunAttempt     int        `json:"run_attempt"`
 }
 
 // WorkflowJob represents a job in a GitHub Actions workflow run.
 type WorkflowJob struct {
-	ID          int64      `json:"id"`
-	RunID       int64      `json:"run_id"`
-	Name        string     `json:"name"`
-	Status      string     `json:"status"`     // queued, in_progress, completed
-	Conclusion  string     `json:"conclusion"` // success, failure, etc.
-	StartedAt   time.Time  `json:"started_at"`
-	CompletedAt time.Time  `json:"completed_at"`
-	Steps       []JobStep  `json:"steps"`
-	HTMLURL     string     `json:"html_url"`
+	ID          int64     `json:"id"`
+	RunID       int64     `json:"run_id"`
+	Name        string    `json:"name"`
+	Status      string    `json:"status"`     // queued, in_progress, completed
+	Conclusion  string    `json:"conclusion"` // success, failure, etc.
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at"`
+	Steps       []JobStep `json:"steps"`
+	HTMLURL     string    `json:"html_url"`
 }
 
 // JobStep represents a single step in a workflow job.
@@ -221,5 +221,3 @@ type PendingDeployment struct {
 	} `json:"environment"`
 	CurrentUserCanApprove bool `json:"current_user_can_approve"`
 }
-
-

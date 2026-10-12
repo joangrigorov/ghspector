@@ -20,8 +20,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
 )
 
 // Overlay is one modal surface. Implementations render content only; the stack
@@ -37,6 +37,14 @@ type Overlay interface {
 	Title() string
 	// Bindings are the keys the overlay handles, for the footer.
 	Bindings() []keymap.Binding
+}
+
+// TextEntry is implemented by an overlay whose body is a text box. The root asks
+// before it acts on a printable key: a character somebody is typing is not a
+// command, so `q` quits from a menu and is a `q` in a filter box. A modified key
+// still reaches the root, which is how Ctrl+C leaves a text box.
+type TextEntry interface {
+	TextEntry() bool
 }
 
 // CloseMsg asks the stack to pop its topmost overlay. An overlay returns it
@@ -225,6 +233,14 @@ func (s Stack) Bindings() []keymap.Binding {
 		return nil
 	}
 	return top.Bindings()
+}
+
+// TakesText reports whether the topmost overlay is a text box.
+func (s Stack) TakesText() bool {
+	if e, ok := s.Top().(TextEntry); ok {
+		return e.TextEntry()
+	}
+	return false
 }
 
 // Update routes a message to the topmost overlay, handling the stack-control

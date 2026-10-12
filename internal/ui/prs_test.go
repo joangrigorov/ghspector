@@ -11,9 +11,9 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // The pull request fixtures are built from specs rather than from static JSON,
