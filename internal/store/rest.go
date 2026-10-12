@@ -166,13 +166,20 @@ func (r *REST) WorkflowRuns(ctx context.Context, repo RepoRef, q RunQuery) (List
 	}
 	number, size := pageArgs(q.Page, defaultRunPageSize)
 	key := fmt.Sprintf("runs|%s|%d|%d|%s", repo, number, size, q.Actor)
-	return fetch(ctx, r, key, func(ctx context.Context) (List[WorkflowRun], error) {
+	page, err := fetch(ctx, r, key, func(ctx context.Context) (List[WorkflowRun], error) {
 		runs, err := r.client.GetWorkflowRuns(ctx, repo.Owner, repo.Repo, number, size, q.Actor)
 		if err != nil {
 			return List[WorkflowRun]{}, err
 		}
 		return listOf(runs, size), nil
 	})
+	if err != nil {
+		return List[WorkflowRun]{}, err
+	}
+	// The API filter covers the whole list and this re-check covers the page, so
+	// a run the API matched loosely cannot appear under a filter it does not
+	// match. Filtering after the cache keeps the fetched page reusable.
+	return List[WorkflowRun]{Items: filterActor(page.Items, q.Actor), HasMore: page.HasMore}, nil
 }
 
 // WorkflowRun fetches one run.
@@ -207,6 +214,9 @@ func (r *REST) Jobs(ctx context.Context, repo RepoRef, runID int64, attempt int,
 		if err != nil {
 			return List[WorkflowJob]{}, err
 		}
+		// Jobs arrive in the order the runner created them; the view shows the
+		// ones still working first.
+		SortJobs(jobs)
 		return listOf(jobs, size), nil
 	})
 }

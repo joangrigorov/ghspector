@@ -28,6 +28,13 @@ type Options struct {
 	// DefaultOwner is the context selected by --org, --user or the config
 	// file. Nil means "the authenticated user".
 	DefaultOwner *store.OwnerRef
+	// PollWorkflows and PollPRs are the refresh intervals resolved from the
+	// config file. A non-positive value turns polling off for that tab.
+	PollWorkflows time.Duration
+	PollPRs       time.Duration
+	// Clock is the time source. Nil means the real clock; a test supplies one
+	// it can release by hand instead of sleeping.
+	Clock Clock
 	// OverlayChrome styles the modal stack.
 	OverlayChrome overlay.Chrome
 }
@@ -63,6 +70,10 @@ type Model struct {
 	statusErr        bool
 	statusGeneration int
 
+	// pollToken identifies the live polling session. A tick carrying any other
+	// token belongs to a state that has been left behind and is dropped.
+	pollToken int
+
 	// orgs backs the context switcher. Loaded with the identity so opening the
 	// switcher never stalls.
 	orgs []store.Org
@@ -81,18 +92,22 @@ func New(opts Options) Model {
 		stage:    stageLoading,
 	}
 	m.deps = Deps{
-		Store:       opts.Store,
-		Theme:       opts.Theme,
-		Version:     opts.Version,
-		ConfigPath:  opts.ConfigPath,
-		TokenSource: opts.TokenSource,
+		Store:         opts.Store,
+		Theme:         opts.Theme,
+		Ctx:           opts.Context,
+		Version:       opts.Version,
+		ConfigPath:    opts.ConfigPath,
+		TokenSource:   opts.TokenSource,
+		PollWorkflows: opts.PollWorkflows,
+		PollPRs:       opts.PollPRs,
+		Clock:         opts.Clock,
 	}
 	return m
 }
 
-// Init starts the splash animation and the identity request.
+// Init starts the splash animation, the identity request, and the poll clock.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinnerTick(), m.loadIdentity())
+	return tea.Batch(m.spinnerTick(), m.loadIdentity(), m.armPoll())
 }
 
 // spinnerMsg advances the splash animation.
@@ -148,6 +163,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		// Routes are given the geometry rather than deriving it, so a route
+		// that sizes a modal budget knows how much room it has.
+		m.deps.Size = Size{Width: msg.Width, Height: msg.Height}
 		return m, nil
 
 	case spinnerMsg:
@@ -168,27 +186,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case StatusMsg:
-		cmd := m.setStatus(msg.Text, false)
-		return m, cmd
+		return m, m.setStatus(msg.Text, msg.IsErr)
+
+	case pollMsg:
+		return m.handlePoll(msg)
 
 	case PushMsg:
 		m.routes = m.routes.Push(msg.Route)
-		return m, nil
+		return m, msg.Then
 
 	case PopMsg:
-		m.routes = m.routes.Pop()
+		m.popRoute()
 		return m, nil
 
 	case ReplaceMsg:
+		stopRoute(m.routes.Top())
 		m.routes = m.routes.Replace(msg.Route)
 		return m, nil
 
 	case PopToRootMsg:
-		m.routes = m.routes.PopToRoot()
+		m.popToRoot()
 		return m, nil
 
 	case ContextSelectedMsg:
 		return m.applyContext(msg.Owner)
+	}
+
+	// Overlay-control messages are delivered by commands, so they reach the
+	// stack whether or not it has anything open: a batch that closes an overlay
+	// and then pushes another must not lose the push.
+	switch msg.(type) {
+	case overlay.CloseMsg, overlay.CloseAllMsg, overlay.PushMsg, overlay.ReplaceMsg:
+		var cmd tea.Cmd
+		m.overlays, cmd = m.overlays.Update(msg)
+		return m, cmd
 	}
 
 	// Input is routed to the modal stack first: an open modal owns the keyboard,
@@ -261,7 +292,7 @@ func (m Model) applyAction(action keymap.Action) (tea.Model, tea.Cmd) {
 
 	case keymap.ActionHelp:
 		if _, open := m.routes.Top().(*Help); open {
-			m.routes = m.routes.PopToRoot()
+			m.popToRoot()
 			return m, nil
 		}
 		m.routes = m.routes.Push(NewHelp())
@@ -269,7 +300,7 @@ func (m Model) applyAction(action keymap.Action) (tea.Model, tea.Cmd) {
 
 	case keymap.ActionSwitchCtx:
 		if _, open := m.routes.Top().(*Switcher); open {
-			m.routes = m.routes.PopToRoot()
+			m.popToRoot()
 			return m, nil
 		}
 		m.routes = m.routes.Push(NewSwitcher(m.switcherEntries(), m.deps.Account.Owner))
@@ -277,7 +308,7 @@ func (m Model) applyAction(action keymap.Action) (tea.Model, tea.Cmd) {
 
 	case keymap.ActionBack:
 		if m.routes.Len() > 1 {
-			m.routes = m.routes.Pop()
+			m.popRoute()
 		}
 		return m, nil
 	}
@@ -287,6 +318,66 @@ func (m Model) applyAction(action keymap.Action) (tea.Model, tea.Cmd) {
 		m.routes = m.routes.Replace(route)
 	}
 	return m, cmd
+}
+
+// popRoute closes the topmost route and releases the requests it owns.
+func (m *Model) popRoute() {
+	next, gone := m.routes.PopRoute()
+	m.routes = next
+	stopRoute(gone)
+}
+
+// popToRoot closes every route above the root, releasing each.
+func (m *Model) popToRoot() {
+	for _, gone := range m.routes.AboveRoot() {
+		stopRoute(gone)
+	}
+	m.routes = m.routes.PopToRoot()
+}
+
+// handlePoll answers a poll tick: a token that is no longer live is dropped, a
+// live one re-arms the next tick and hands the tick to the route on screen.
+//
+// The root owns the cadence because it is the only layer that knows which state
+// is on screen, and the route owns what a tick means for its own data.
+func (m Model) handlePoll(msg pollMsg) (tea.Model, tea.Cmd) {
+	if msg.token == 0 || msg.token != m.pollToken {
+		return m, nil
+	}
+	if m.stage != stageReady {
+		return m, nil
+	}
+	route, cmd := m.routes.Top().Update(m.deps, msg)
+	m.routes = m.routes.Replace(route)
+	return m, tea.Batch(cmd, m.armPoll())
+}
+
+// armPoll starts a new polling session for the state on screen and returns the
+// tick that keeps it going.
+func (m *Model) armPoll() tea.Cmd {
+	interval := m.pollInterval()
+	if interval <= 0 {
+		m.pollToken = 0
+		return nil
+	}
+	m.pollToken = nextPollToken()
+	return pollTick(m.deps.clock(), interval, m.pollToken)
+}
+
+// pollInterval is the refresh cadence for the state on screen.
+//
+// The pull request tab polls on the pull request cadence and every other screen
+// on the workflows cadence, which is the rule the previous version applied and
+// spec §5.4 records. The Issues tab therefore still shares the workflows
+// cadence: an interval of its own is an explicit v2 improvement (spec §7) and
+// arrives with that tab's data layer.
+func (m Model) pollInterval() time.Duration {
+	switch m.routes.Top().Scope() {
+	case keymap.MainPRs:
+		return m.deps.PollPRs
+	default:
+		return m.deps.PollWorkflows
+	}
 }
 
 // applyIdentity finishes startup.
@@ -304,14 +395,19 @@ func (m Model) applyIdentity(msg identityMsg) (tea.Model, tea.Cmd) {
 		owner = *m.opts.DefaultOwner
 	}
 	m.deps.Account = Account{Login: msg.viewer.Login, Owner: owner}
-	return m, nil
+
+	// The routes were built before the account was known, so they are told now.
+	// This is the fetch that fills the first screen.
+	var cmd tea.Cmd
+	m.routes, cmd = m.routes.Broadcast(m.deps, AccountChangedMsg{})
+	return m, cmd
 }
 
 // applyContext switches the active owner, drops every cached read, and tells
 // the routes so they can discard data that belonged to the previous context.
 func (m Model) applyContext(owner store.OwnerRef) (tea.Model, tea.Cmd) {
 	m.deps.Account.Owner = owner
-	m.routes = m.routes.PopToRoot()
+	m.popToRoot()
 	m.opts.Store.Invalidate()
 
 	var broadcast tea.Cmd
@@ -381,9 +477,28 @@ func (m Model) render() string {
 		body = m.overlays.View(body, frame.Body.W, frame.Body.H)
 	}
 
-	footer := renderFooter(m.deps, frame.Footer, m.routes.Top().Scope(), m.status, m.statusErr)
+	footer := renderFooter(m.deps, frame.Footer, m.footerBindings(), m.status, m.statusErr)
 
 	return header + "\n" + body + "\n" + footer
+}
+
+// footerBindings describes the surface that owns the keyboard: the topmost
+// overlay when one is open, otherwise the route on screen, minus the actions
+// that are not available right now.
+func (m Model) footerBindings() []keymap.Binding {
+	if open := m.overlays.Bindings(); len(open) > 0 {
+		return open
+	}
+	top := m.routes.Top()
+	gate, gated := top.(actionGate)
+	bindings := make([]keymap.Binding, 0, 8)
+	for _, b := range keymap.For(top.Scope()) {
+		if gated && !gate.Available(b.Action) {
+			continue
+		}
+		bindings = append(bindings, b)
+	}
+	return bindings
 }
 
 // errorTitle summarises a startup failure.

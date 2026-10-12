@@ -22,21 +22,22 @@ import (
 // concrete transport stays an implementation detail. When the GraphQL transport
 // lands these aliases move with the types and no route changes.
 type (
-	User             = gh.User
-	Org              = gh.Org
-	Repository       = gh.Repository
-	WorkflowRun      = gh.WorkflowRun
-	WorkflowJob      = gh.WorkflowJob
-	JobStep          = gh.JobStep
-	PullRequest      = gh.PullRequest
-	Label            = gh.Label
-	Milestone        = gh.Milestone
-	CommitFile       = gh.CommitFile
-	RepositoryCommit = gh.RepositoryCommit
-	CheckRun         = gh.CheckRun
-	Issue            = gh.Issue
-	IssueComment     = gh.IssueComment
-	RateLimitInfo    = gh.RateLimitInfo
+	User              = gh.User
+	Org               = gh.Org
+	Repository        = gh.Repository
+	WorkflowRun       = gh.WorkflowRun
+	WorkflowJob       = gh.WorkflowJob
+	JobStep           = gh.JobStep
+	PendingDeployment = gh.PendingDeployment
+	PullRequest       = gh.PullRequest
+	Label             = gh.Label
+	Milestone         = gh.Milestone
+	CommitFile        = gh.CommitFile
+	RepositoryCommit  = gh.RepositoryCommit
+	CheckRun          = gh.CheckRun
+	Issue             = gh.Issue
+	IssueComment      = gh.IssueComment
+	RateLimitInfo     = gh.RateLimitInfo
 )
 
 // Transport errors are re-exported so callers classify a failure without
@@ -110,6 +111,9 @@ type RunQuery struct {
 	Page Page
 	// Actor narrows the list to runs started by one login. Empty means all.
 	Actor string
+	// Repo narrows the list to one repository by exact name. Empty means every
+	// repository in the context.
+	Repo string
 }
 
 // PRQuery filters a pull request list. The filter fields are applied by the
@@ -145,6 +149,10 @@ type Store interface {
 
 	// WorkflowRuns lists runs in one repository.
 	WorkflowRuns(ctx context.Context, repo RepoRef, q RunQuery) (List[WorkflowRun], error)
+	// ScopeRuns lists runs across the context's repositories, merged into one
+	// list in display order. It is what the runs view asks for; WorkflowRuns
+	// exists for the single-repository case and for tests.
+	ScopeRuns(ctx context.Context, owner OwnerRef, q RunQuery) (List[WorkflowRun], error)
 	// WorkflowRun fetches one run.
 	WorkflowRun(ctx context.Context, repo RepoRef, runID int64) (WorkflowRun, error)
 	// Jobs lists the jobs of a run attempt. A zero attempt means the latest.
@@ -179,8 +187,16 @@ type Store interface {
 	Merge(ctx context.Context, repo RepoRef, number int, method, title, message string) error
 	// ClosePR closes a pull request without merging.
 	ClosePR(ctx context.Context, repo RepoRef, number int) error
+
+	// PendingDeployments lists the deployments of a run waiting for approval.
+	PendingDeployments(ctx context.Context, repo RepoRef, runID int64) ([]PendingDeployment, error)
+	// ApproveDeployments approves the given environments of a run.
+	ApproveDeployments(ctx context.Context, repo RepoRef, runID int64, envIDs []int64, comment string) error
 	// ApproveRun approves a workflow run from a fork.
 	ApproveRun(ctx context.Context, repo RepoRef, runID int64) error
+	// RepoPermission reports the viewer's permission level on a repository:
+	// admin, maintain, write, triage, read, or none.
+	RepoPermission(ctx context.Context, repo RepoRef, login string) (string, error)
 
 	// RateLimit reports the most recent rate limit headers.
 	RateLimit() RateLimitInfo

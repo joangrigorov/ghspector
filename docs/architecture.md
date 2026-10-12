@@ -148,7 +148,7 @@ type (PushMsg struct{ Route Route }; PopMsg struct{}; ReplaceMsg struct{ Route R
 Rules:
 
 - An overlay returns content. The chrome, border, padding, and centering come from the overlay stack.
-- Composition uses `lipgloss/v2` `Canvas` and `Layer` (`NewCanvas`, `NewLayer`, `X`, `Y`, `Z`, `Compose`, `Render`), which are cell-aware. No ANSI stripping, no rune slicing.
+- Composition uses `lipgloss/v2`'s `Compositor` with `NewLayer` and its `X`, `Y`, `Z` positions, which is cell-aware. No ANSI stripping, no rune slicing. A `Compositor` matters here and a bare `Canvas` does not: composing a layer directly hands it the whole canvas as its drawing area, and drawing a styled string clears the area it is given, so a bare layer wipes the frame underneath it and lands at the origin.
 - One generic confirm covers merge, close, and run approval:
 
 ```go
@@ -162,7 +162,7 @@ type Confirm struct {
 
 - Overlays live in their own stack, so the route underneath is rendered once and never re-rendered because modal state changed.
 
-**Enforced by:** a property test that composes random backgrounds with random overlay content — including emoji, CJK, and ANSI-styled text — and asserts the result preserves exact line count and display width.
+**Enforced by:** a property test that composes random backgrounds with random overlay content — including emoji, CJK, and ANSI-styled text — and asserts the result preserves exact line count and display width, plus a test asserting the frame outside the box survives and a test pinning the box's centred position.
 
 ### 3.4 Keymap
 
@@ -348,23 +348,58 @@ Unchanged and load-bearing:
 
 ## 10. Build status
 
-### Phase 1 — foundation and shell (this change)
+### Phase 1 — foundation and shell (merged as #17)
 
 Shipped:
 
 | Package | State |
 | --- | --- |
-| `internal/layout` | `Rect`, `Frame`, `Layout`, `Fit`, `Truncate`. Swept over sizes and randomized wide-rune content. |
+| `internal/layout` | `Rect`, `Frame`, `Layout`, `Fit`, `Truncate`, `Column`, `PadRight`, `FitColumns`. Swept over sizes and randomized wide-rune content. |
 | `internal/keymap` | The binding table, `Lookup`, `KeyString`, footer and help rendering inputs, and the generated `docs/keybindings.md`. |
-| `internal/overlay` | Modal stack over a lipgloss v2 `Canvas`, the generic `Confirm`, and a property test that proves composited frames keep exact geometry. |
+| `internal/overlay` | Modal stack, the generic `Confirm`, and a property test that proves composited frames keep exact geometry. |
 | `internal/store` | The `Store` interface, a REST implementation, a keyed TTL cache with single-flight, and one shared `x/time/rate` limiter. |
 | `internal/ui` | Root model, route stack, breadcrumbs, header with rate-limit indicator, footer from the keymap, transient status message, splash, error screen, too-small screen, tabbed main route, help route, context switcher. |
 
 Deleted: the v1 `internal/tui` package and its `app_test.go`.
 
-Deliberately not in this phase: list bodies. `internal/ui` renders three tabs
-with live chrome, tabs, help, and key routing, but no rows yet. The data layer
-arrives with the routes that need it.
+Deliberately not in this phase: list bodies. Phase 1 rendered three tabs with
+live chrome, tabs, help, and key routing, but no rows. The data layer arrived
+with the routes that need it.
+
+### Phase 2 — Workflows vertical slice (this change)
+
+The Workflows tab, the Jobs route, and the Logs route are real: a run list
+aggregated across the context's repositories, per-attempt job lists, the log
+viewer with step segmentation and follow mode, and run approval with pending
+deployments.
+
+| Package | State |
+| --- | --- |
+| `internal/logs` | Log parsing, cleaning and segmentation, ported from v1's `update.go` as pure functions: `Parse`, `Clean`, `Segment`, `MatchScore`, `ParseTimestamp`. |
+| `internal/store` | `ScopeRuns` (8-repository fan-out, status sort, merged poll results), `Jobs` per attempt, `JobLogs`, `PendingDeployments`, `ApproveRun`, `ApproveDeployments`, `RepoPermission`, `MissingScopes`. |
+| `internal/gh` | Job-log reads are capped at 8 MiB with a truncation note, and error bodies at 64 KiB (finding F3). |
+| `internal/overlay` | `Menu`, `List` and `Prompt` join `Confirm`; the stack composites through a `Compositor` (see the fix below); overlays are no longer `Title`-only. |
+| `internal/keymap` | `MainWorkflows`, `Jobs`, `Logs`, `FilterType`, `RepoSelect`, `UserInput` and `ApproveRun` scopes carry every key the phase adds. |
+| `internal/ui` | `Main.runsTab` (list, filters, pagination, approval answers), the `Jobs` route (attempt cycling, step counts, approval banner), the `Logs` route (steps sidebar, viewport, follow mode), the filter menu, repository picker, actor prompt and approval overlays, and a shared table renderer. |
+
+Fixed while building this:
+
+- **Modal compositing erased the frame behind it.** `Stack.View` composed bare
+  `lipgloss` layers onto a `Canvas`. `Layer.Draw` ignores `X`/`Y` and a styled
+  string clears the area it is given, so every modal landed at the origin and
+  wiped the region it was composed into. The stack now builds a `Compositor`,
+  which hands each layer its own rectangle. Two tests were added for the
+  behaviours that were silently wrong: the frame around the box survives, and
+  the box is centred.
+- **The actor prompt rendered as `l`.** A `textinput` with no width set draws
+  only the first rune of its placeholder, so an empty filter prompt showed `l`
+  for `login` and offered no visible field. The input now has a width.
+
+Verification: see the walkthrough for the phase. In short — `go build`, `go vet`,
+`go test -race ./...`, `golangci-lint`, `govulncheck`, `actionlint` and
+`go mod tidy -diff` all pass; screens are pinned by 24 golden renders, the poll
+loop by a fake clock, and the list → jobs → logs path by a `teatest` run through
+the real Bubble Tea runtime.
 
 ### Security findings
 
@@ -373,7 +408,7 @@ arrives with the routes that need it.
 | F2 — the browser opener accepted any URL scheme | Closed. `ui.OpenBrowser` validates the scheme and host at the boundary; `ValidateBrowserURL` is unit-tested. |
 | F4 — the credential source label printed the config file's absolute path | Closed. `auth` reports the file name only; a test asserts no path separator reaches the label. |
 | F1 — `viewerCanMerge` fails open when the scope header is absent | Open, owned by the PR details phase. GitHub still enforces authorization server-side, so this is a correctness and UX issue. |
-| F3 — `io.ReadAll` on job logs is unbounded | Open, owned by the logs phase. |
+| F3 — `io.ReadAll` on job logs is unbounded | **Closed in Phase 2.** `gh.GetJobLogs` reads through a capped reader (`maxLogBytes`, 8 MiB) and appends a truncation note on a line boundary; error bodies are capped at 64 KiB. Tested against an oversized body and for line-boundary truncation. Multiplied by per-route polling, this was a memory-exhaustion vector rather than a vulnerability. |
 | F5 — 14 stdlib advisories at `go1.26.5` | Open, standalone. Fixed by the `go1.26.6` toolchain; reproduced identically on the previous `main`, so it is not introduced here. |
 
 ### Release hold

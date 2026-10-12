@@ -1,6 +1,7 @@
 package overlay
 
 import (
+	"fmt"
 	"math/rand"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"ghspector/internal/keymap"
+	"ghspector/internal/layout"
 )
 
 // stubOverlay is a minimal Overlay for exercising the stack.
@@ -121,6 +123,85 @@ func TestViewWithoutOverlaysIsIdentity(t *testing.T) {
 	bg := "line one\nline two\nline three"
 	if got := NewStack(plainChrome()).View(bg, 20, 3); got != bg {
 		t.Fatalf("empty stack altered the frame:\n%q", got)
+	}
+}
+
+// TestViewKeepsTheFrameAroundTheBox is the reason the stack draws through a
+// compositor: a modal covers the middle of the screen, and the frame it does not
+// cover has to survive. Drawing a styled string clears the area it is given, so
+// a box given the whole region erases everything behind it.
+func TestViewKeepsTheFrameAroundTheBox(t *testing.T) {
+	const w, h = 40, 12
+
+	// A background where every line is identifiable, so a wiped frame is a
+	// failing assertion rather than a subtle visual difference.
+	lines := make([]string, h)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("row %02d %s", i, strings.Repeat("-", w))
+	}
+	bg := layout.Fit(strings.Join(lines, "\n"), w, h)
+
+	o := &stubOverlay{title: "T", body: "body"}
+	out := NewStack(plainChrome()).Push(o).View(bg, w, h)
+
+	outLines := strings.Split(out, "\n")
+	if len(outLines) != h {
+		t.Fatalf("height = %d, want %d", len(outLines), h)
+	}
+	// The box is centred, so the first and last rows are never covered.
+	if !strings.Contains(outLines[0], "row 00") {
+		t.Errorf("the modal erased the row above it:\n%s", out)
+	}
+	if !strings.Contains(outLines[h-1], fmt.Sprintf("row %02d", h-1)) {
+		t.Errorf("the modal erased the row below it:\n%s", out)
+	}
+	// The box itself is still drawn.
+	if !strings.Contains(out, "T") {
+		t.Errorf("the modal is missing:\n%s", out)
+	}
+}
+
+// TestViewCentresTheBox pins the position, not just the size: a box drawn at the
+// origin looks identical in a geometry assertion and wrong on a screen.
+func TestViewCentresTheBox(t *testing.T) {
+	const w, h = 40, 10
+	o := &stubOverlay{title: "T", body: "body"}
+	st := NewStack(plainChrome()).Push(o)
+
+	box := st.renderBox(o, w)
+	wantX := (w - lipgloss.Width(box)) / 2
+	wantY := (h - lipgloss.Height(box)) / 2
+
+	blank := layout.Fit("", w, h)
+	out := strings.Split(st.View(blank, w, h), "\n")
+	top := -1
+	for i, line := range out {
+		if strings.Contains(line, "╭") {
+			top = i
+			break
+		}
+	}
+	if top != wantY {
+		t.Fatalf("box top row = %d, want %d\n%s", top, wantY, strings.Join(out, "\n"))
+	}
+	if got := strings.Index(out[top], "╭"); got != wantX {
+		t.Errorf("box left column = %d, want %d\n%q", got, wantX, out[top])
+	}
+}
+
+// TestViewDrawsTheTopmostOverlayLast keeps a chain readable: the overlay opened
+// last is the one the user is answering.
+func TestViewDrawsTheTopmostOverlayLast(t *testing.T) {
+	const w, h = 40, 12
+	base := &stubOverlay{title: "first", body: "behind"}
+	top := &stubOverlay{title: "second", body: "in front"}
+
+	out := NewStack(plainChrome()).Push(base).Push(top).View(renderBackground(rand.New(rand.NewSource(2)), w, h), w, h)
+	if !strings.Contains(out, "in front") {
+		t.Fatalf("the topmost overlay is not on screen:\n%s", out)
+	}
+	if strings.Contains(out, "behind") {
+		t.Errorf("a deeper overlay was drawn over the topmost one:\n%s", out)
 	}
 }
 
@@ -340,6 +421,8 @@ func pressFor(key string) (tea.KeyPressMsg, bool) {
 		return tea.KeyPressMsg{Code: tea.KeyEscape}, true
 	case "enter":
 		return tea.KeyPressMsg{Code: tea.KeyEnter}, true
+	case "backspace":
+		return tea.KeyPressMsg{Code: tea.KeyBackspace}, true
 	}
 	if len(key) != 1 {
 		return tea.KeyPressMsg{}, false

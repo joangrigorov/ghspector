@@ -43,6 +43,11 @@ type Overlay interface {
 // when it wants to close but has other work in the same Cmd batch.
 type CloseMsg struct{}
 
+// CloseAllMsg asks the stack to pop every overlay. It is how a choice made in a
+// nested overlay — a repository picked inside the filter menu — returns to the
+// route underneath in one step.
+type CloseAllMsg struct{}
+
 // PushMsg asks the stack to open another overlay above the current one.
 type PushMsg struct{ Overlay Overlay }
 
@@ -223,6 +228,8 @@ func (s Stack) Update(msg tea.Msg) (Stack, tea.Cmd) {
 	switch m := msg.(type) {
 	case CloseMsg:
 		return s.Pop(), nil
+	case CloseAllMsg:
+		return Stack{chrome: s.chrome}, nil
 	case PushMsg:
 		return s.Push(m.Overlay), nil
 	case ReplaceMsg:
@@ -251,11 +258,20 @@ func (s Stack) View(background string, width, height int) string {
 		return background
 	}
 
-	canvas := lipgloss.NewCanvas(width, height)
-	canvas.Compose(lipgloss.NewLayer(background))
+	// The layers go through a Compositor rather than onto a bare Canvas.
+	// Composing a layer directly hands it the whole canvas as its drawing area,
+	// and drawing a styled string clears the area it is given: a bare layer
+	// would wipe the frame underneath it and land at the origin. The compositor
+	// hands each layer its own rectangle instead, which is what makes the box
+	// land where it was placed and leaves the rest of the frame alone.
+	//
+	// Z-indexes are assigned rather than left at zero, because layers of equal
+	// depth are drawn in an unspecified order and a background drawn last would
+	// erase the modal.
+	comp := lipgloss.NewCompositor(lipgloss.NewLayer(background))
 
 	// Deeper overlays are drawn first so a chain reads bottom-up.
-	for _, o := range s.overlays {
+	for i, o := range s.overlays {
 		box := s.renderBox(o, width)
 		x := (width - lipgloss.Width(box)) / 2
 		y := (height - lipgloss.Height(box)) / 2
@@ -265,12 +281,13 @@ func (s Stack) View(background string, width, height int) string {
 		if y < 0 {
 			y = 0
 		}
-		canvas.Compose(lipgloss.NewLayer(box).X(x).Y(y))
+		comp.AddLayers(lipgloss.NewLayer(box).X(x).Y(y).Z(i + 1))
 	}
-	// The canvas is a drawing buffer: it emits nothing for cells beyond the
-	// rightmost drawn one, so rows outside the modal come back ragged. Fit
-	// restores the exact width×height contract the frame system relies on.
-	return layout.Fit(canvas.Render(), width, height)
+
+	// The compositor sizes itself to its layers: the background fills the
+	// region, so the result is already width×height. Fit keeps that contract
+	// even for a caller whose background is the wrong size.
+	return layout.Fit(comp.Render(), width, height)
 }
 
 // renderBox builds the framed content for one overlay at the given avail width.
