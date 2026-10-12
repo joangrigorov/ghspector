@@ -214,6 +214,28 @@ func TestGoldenPullRequestScreens(t *testing.T) {
 		{"pr_comments_120x40", func(t *testing.T) Model {
 			return pressAndDrive(t, opened(t, 120, 40), "5")
 		}},
+		{"pr_comments_80x24", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 80, 24), "5")
+		}},
+		// The shape that made the sub-tab look broken: nothing in the
+		// conversation comments and everything in the reviews. The second review
+		// carries no summary, so the pane has to read well without one.
+		{"pr_comments_reviews_only_120x40", func(t *testing.T) Model {
+			heavy := prServer(t,
+				withoutConversationComments(),
+				withReviews(
+					reviewSpec{
+						id: reviewFixtureID, author: "carol", state: "CHANGES_REQUESTED",
+						body: "The width needs a name before this lands.", at: workflowNow,
+					},
+					reviewSpec{
+						id: 3002, author: "dave", state: "COMMENTED",
+						at: workflowNow.Add(5 * time.Minute),
+					},
+				),
+			)
+			return pressAndDrive(t, openPRDetails(t, prsModel(t, heavy, 120, 40)), "5")
+		}},
 		{"commit_details_120x40", func(t *testing.T) Model {
 			return pressAndDrive(t, opened(t, 120, 40), "2", "enter")
 		}},

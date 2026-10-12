@@ -769,6 +769,100 @@ sent. What a golden cannot prove is that the markdown is *good* — glamour's ow
 choices are pinned by the palette test instead, which asserts that every RGB
 triple in a render is one of the theme's.
 
+### Fix — the conversation is three lists (this change)
+
+The Comments sub-tab read one endpoint. GitHub keeps a pull request's discussion
+in three: conversation comments, reviews, and the inline comments a review
+carries. A pull request that was reviewed and never discussed therefore had
+nothing in the first list and everything in the other two, and the sub-tab drew
+its empty sentence over the top of it.
+
+The route now reads all three and merges them. `internal/ui/conversation.go` is
+the whole of it: `newConversation` buckets the inline comments by the review that
+owns them, drops a review the viewer has not submitted together with the drafts
+it holds, keeps a thread whose review is not in the page as a contribution of its
+own, and sorts the result by time with an unknown time last.
+`conversationLines` renders one block per contribution with a rule between them.
+A review's state is a badge the rest of the app already knows how to draw, and
+its threads read as `path:line`, the last three lines of the hunk, and the
+exchange.
+
+| Package | State |
+| --- | --- |
+| `internal/gh` | `GetPullRequestReviews`, `GetPullRequestReviewComments`, and the `Review`/`ReviewComment` records they decode into. |
+| `internal/store` | `Reviews` and `ReviewComments`, cached under their own keys and read at `defaultConversationPageSize` (100, the API's maximum): one page per endpoint is what keeps a review-heavy pull request a fixed cost, and `List.HasMore` says when the pane is showing part of it. |
+| `internal/ui/conversation.go` | New. The merge, the ordering, and the rendering. |
+| `internal/ui/prdetails.go`, `prpanes.go` | The Comments sub-tab loads three sections instead of one; `PRDetails.failed` remembers which sections failed, so a list that never arrived is not lost when a later one succeeds; `commentBlock` is the single-comment renderer the issue conversation and the pull request conversation now share. |
+| `docs/spec.md` | The endpoint table gains the two routes, and §4.14 records the fix and its two deliberate edges. |
+
+Fixed while building it:
+
+- **One `err` could not describe three fetches.** `PRDetails.err` is set by
+  whichever section failed last and cleared by whichever succeeded last, so a
+  failed review list followed by a successful comment list left the tab unable to
+  tell "still loading" from "never arrived". `PRDetails.failed` is per section,
+  and `loadMessage` reads it. The same correction fixes the commits and files
+  panes, which had the same latent bug behind a single-section tab.
+- **A refresh kept the truncation note.** `conversationHasMore` was set and never
+  cleared, so a pane that had once seen a full page said so for the rest of the
+  session. It is reset with the sections the refresh drops.
+
+Verification: the checks the other phases list, plus a live run of the built
+binary. There is no browser to drive for a terminal UI; the substitutes are
+`teatest` through the real runtime, three new goldens (the standard conversation
+at two widths, and the review-heavy shape that was reported as broken), unit
+tests for the merge, the ordering, the draft, the orphan thread, the hunk tail
+and the truncation note, and scripted request assertions that the sub-tab reads
+all three endpoints.
+
+### Fix — the pane renders once per change (this change)
+
+Two defects were reported together against the Comments sub-tab, and both were
+reproduced before either was changed.
+
+**The arrows did nothing.** `PRComments` and `IssueComments` bound `u`/`d` and
+the page keys, and nothing else, so `j`, `k`, `Down` and `Up` — the keys every
+other list in the app answers — fell through. The route already handled the
+actions: `move`'s `prTabComments` case moves `commentScroll`, and
+`IssueComments.Act` gained the two cases. The binding was the whole of the
+missing piece. `TestPRCommentsScrollWithTheArrowKeys` and
+`TestIssueCommentsScrollWithTheArrowKeys` drive the keys through the model, and
+`TestDocumentedKeysFromSpec` pins them in both scopes.
+
+**A keystroke rendered every body on screen.** `conversationLines` renders each
+contribution's markdown from scratch, and the sub-tab called it twice per key:
+once from `clamp`, to bound the scroll, and once from `commentsView`, to draw. On
+the pull request this was reported from — 48 reviews and 41 inline remarks,
+~44 KB of markdown — one render measured 163 ms
+(`BenchmarkConversationRender`), so a keystroke paid something like 400 ms before
+the frame was drawn, and a poll tick paid the render again.
+
+`internal/ui/render.go` is the answer. `renderedLines[R]` holds the lines, keyed
+on the width and the palette the markdown renderer answers for, plus whatever the
+caller has to say what the content is: a counter a route bumps when data lands,
+or the body text itself. `PRDetails.commentLines`, `PRDetails.descriptionLines`,
+`IssueDetails.descriptionLines` and `IssueComments.lines` go through it. The
+description joined the same pass because `clamp` measures it: every keystroke on
+every sub-tab rendered the pull request body, which is 7 ms at 3 KB and grows
+with the body.
+
+The counts are pinned rather than described.
+`TestPRCommentsRenderTheConversationOnce` and its issue-side twin assert that
+seven keystrokes over the conversation cost zero markdown renders, that a refresh
+re-renders it (the data the lines came from is about to be replaced), and that a
+resize does too (every body re-wraps). `Markdown.renders` is the counter they
+read, beside the `builds` counter that keeps renderer construction out of the
+frame path. Measured on the same fixture, one key press went from ~400 ms to
+0.6 ms.
+
+What is not fixed: the render after data lands still happens synchronously on the
+UI goroutine, so the first frame of a review-heavy conversation can still stall
+briefly. One render per change is the cost the cache leaves; moving it off the
+update loop is a larger change than this one.
+
+Verification: the checks the conversation fix above lists, plus a live run of the
+built binary (arrows scroll the reported pull request; the lag is gone).
+
 ### Security findings
 
 | Finding | Status |

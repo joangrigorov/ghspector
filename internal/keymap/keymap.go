@@ -265,6 +265,8 @@ var table = map[Scope][]Binding{
 		{Action: ActionTabChecks, Keys: []string{"4"}, Help: "Checks"},
 		{Action: ActionCommits, Keys: []string{"2"}, Help: "Commits"},
 		{Action: ActionDiff, Keys: []string{"3"}, Help: "Files & diff"},
+		{Action: ActionDown, Keys: []string{"j", "down"}, Help: "Down a line"},
+		{Action: ActionUp, Keys: []string{"k", "up"}, Help: "Up a line"},
 		{Action: ActionRefresh, Keys: []string{"r", "ctrl+r"}, Help: "Refresh"},
 		{Action: ActionScrollUp, Keys: []string{"u", "pgup"}, Help: "Scroll up"},
 		{Action: ActionScrollDown, Keys: []string{"d", "pgdown"}, Help: "Scroll down"},
@@ -284,6 +286,8 @@ var table = map[Scope][]Binding{
 
 	IssueComments: {
 		{Action: ActionBack, Keys: []string{"esc", "backspace"}, Help: "Back"},
+		{Action: ActionDown, Keys: []string{"j", "down"}, Help: "Down a line"},
+		{Action: ActionUp, Keys: []string{"k", "up"}, Help: "Up a line"},
 		{Action: ActionRefresh, Keys: []string{"r", "ctrl+r"}, Help: "Refresh"},
 		{Action: ActionScrollUp, Keys: []string{"u", "pgup"}, Help: "Scroll up"},
 		{Action: ActionScrollDown, Keys: []string{"d", "pgdown"}, Help: "Scroll down"},

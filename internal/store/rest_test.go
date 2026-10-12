@@ -391,6 +391,8 @@ func TestPullRequestDetailAndPagedChildren(t *testing.T) {
 		serve("/repos/acme/one/pulls/7/commits", `[{"sha":"abc"}]`).
 		serve("/repos/acme/one/pulls/7/files", `[{"filename":"a.go"}]`).
 		serve("/repos/acme/one/issues/7/comments", `[{"id":1,"body":"hi"}]`).
+		serve("/repos/acme/one/pulls/7/reviews", `[{"id":2,"state":"APPROVED"}]`).
+		serve("/repos/acme/one/pulls/7/comments", `[{"id":3,"path":"a.go","line":4}]`).
 		serve("/repos/acme/one/commits/abc", `{"sha":"abc","files":[{"filename":"a.go"}]}`).
 		serve("/repos/acme/one/commits/abc/check-runs", `{"check_runs":[{"id":1,"name":"ci"}]}`)
 	s := newTestStore(t, rec)
@@ -419,6 +421,16 @@ func TestPullRequestDetailAndPagedChildren(t *testing.T) {
 		t.Fatalf("comments = %+v, err = %v", comments, err)
 	}
 
+	reviews, err := s.Reviews(context.Background(), repo, 7, Page{})
+	if err != nil || len(reviews.Items) != 1 || reviews.Items[0].State != "APPROVED" {
+		t.Fatalf("reviews = %+v, err = %v", reviews, err)
+	}
+
+	inline, err := s.ReviewComments(context.Background(), repo, 7, Page{})
+	if err != nil || len(inline.Items) != 1 || inline.Items[0].Path != "a.go" || inline.Items[0].Line != 4 {
+		t.Fatalf("inline review comments = %+v, err = %v", inline, err)
+	}
+
 	commit, changed, err := s.Commit(context.Background(), repo, "abc")
 	if err != nil || commit.SHA != "abc" || len(changed) != 1 {
 		t.Fatalf("commit = %+v, files = %+v, err = %v", commit, changed, err)
@@ -427,6 +439,34 @@ func TestPullRequestDetailAndPagedChildren(t *testing.T) {
 	checks, err := s.CheckRuns(context.Background(), repo, "abc")
 	if err != nil || len(checks) != 1 || checks[0].Name != "ci" {
 		t.Fatalf("checks = %+v, err = %v", checks, err)
+	}
+}
+
+// TestConversationPagesAskForTheAPIMaximum pins the page the two review lists
+// are read at: a review-heavy pull request carries dozens of each, and one page
+// per endpoint is what keeps the conversation a fixed cost.
+func TestConversationPagesAskForTheAPIMaximum(t *testing.T) {
+	rec := newRecorder().
+		serve("/repos/acme/one/pulls/7/reviews", `[]`).
+		serve("/repos/acme/one/pulls/7/comments", `[]`)
+	s := newTestStore(t, rec)
+	repo := RepoRef{Owner: "acme", Repo: "one"}
+
+	if _, err := s.Reviews(context.Background(), repo, 7, Page{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReviewComments(context.Background(), repo, 7, Page{}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{"/repos/acme/one/pulls/7/reviews", "/repos/acme/one/pulls/7/comments"} {
+		query := rec.query(path)
+		if got := query.Get("per_page"); got != "100" {
+			t.Errorf("%s asked for %s per page, want the API maximum 100", path, got)
+		}
+		if got := query.Get("page"); got != "1" {
+			t.Errorf("%s asked for page %s, want the first", path, got)
+		}
 	}
 }
 

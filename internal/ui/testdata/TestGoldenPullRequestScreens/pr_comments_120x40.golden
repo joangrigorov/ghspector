@@ -15,19 +15,19 @@
     [1moctocat[m  2024-05-01 10:01                                                                                           
     Comment 2: thanks! Merging once the checks pass.                                                                    
                                                                                                                         
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────    
                                                                                                                         
+    [1mcarol[m  [1m[approved][m  2024-05-01 10:03                                                                                 
+    Ship it once the checks pass.                                                                                       
                                                                                                                         
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
+      [1minternal/ui/table.go:12[m                                                                                           
+      -    return 40                                                                                                    
+      +    return tableWidth                                                                                            
+       }                                                                                                                
+        [1mcarol[m  2024-05-01 10:03                                                                                         
+        This width needs a name.                                                                                        
+        [1moctocat[m  2024-05-01 10:04                                                                                       
+        Named it tableWidth.                                                                                            
                                                                                                                         
                                                                                                                         
                                                                                                                         

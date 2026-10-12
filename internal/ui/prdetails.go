@@ -56,7 +56,26 @@ const (
 	prSectionCommits
 	prSectionFiles
 	prSectionComments
+	// The conversation is three lists rather than one: the API keeps
+	// conversation comments, reviews and inline review comments apart, and a
+	// review-heavy pull request has nothing in the first of them.
+	prSectionReviews
+	prSectionReviewComments
 )
+
+// conversationSections are the three lists a pull request's discussion is
+// assembled from.
+var conversationSections = []prSection{prSectionComments, prSectionReviews, prSectionReviewComments}
+
+// readsConversation reports whether a section is one of them.
+func readsConversation(section prSection) bool {
+	for _, candidate := range conversationSections {
+		if candidate == section {
+			return true
+		}
+	}
+	return false
+}
 
 // prDataMsg carries one fetched section of the pull request data.
 type prDataMsg struct {
@@ -67,7 +86,12 @@ type prDataMsg struct {
 	commits  []store.RepositoryCommit
 	files    []store.CommitFile
 	comments []store.IssueComment
-	err      error
+	// reviews and reviewComments carry the other two thirds of the
+	// conversation, and hasMore says the page they arrived in was full.
+	reviews        []store.Review
+	reviewComments []store.ReviewComment
+	hasMore        bool
+	err            error
 }
 
 // prWriteGate is the answer to "may the viewer merge or close this pull
@@ -119,6 +143,11 @@ const (
 	commitsPageSize  = 30
 	filesPageSize    = 100
 	commentsPageSize = 30
+	// conversationPageSize is the page the reviews and the inline review
+	// comments are read at. The API's maximum: a review-heavy pull request
+	// carries dozens of each, and one page per endpoint is what keeps the
+	// conversation a fixed cost.
+	conversationPageSize = 100
 	// checkRunsPageSize is how many of a repository's runs the details view
 	// holds for the check-to-run lookup. A pull request's runs are recent by
 	// construction.
@@ -154,7 +183,31 @@ type PRDetails struct {
 	files    []store.CommitFile
 	comments []store.IssueComment
 
-	loaded  map[prSection]bool
+	// reviews and reviewComments are the rest of the conversation, read from
+	// their own endpoints; conversationHasMore says one of the three pages came
+	// back full, so the pane says it truncated rather than quietly showing a
+	// fraction of the discussion.
+	reviews             []store.Review
+	reviewComments      []store.ReviewComment
+	conversationHasMore bool
+	// convVersion counts the changes to those three lists, so the rendered
+	// conversation below is dropped when one of them lands.
+	convVersion int
+	// convLines is the conversation as it was last rendered. Rendering it is
+	// the expensive part of this screen, so a frame, a keystroke and a poll
+	// tick reuse the lines rather than paying for them again.
+	convLines renderedLines[int]
+	// descLines is the description as it was last rendered, keyed on the body
+	// itself. Every clamp measures the description, so without this a keystroke
+	// on any sub-tab pays for the Info pane's markdown.
+	descLines renderedLines[string]
+
+	loaded map[prSection]bool
+	// failed remembers the sections whose fetch failed. A sub-tab that reads
+	// one list can take p.err as that list's failure; the Comments sub-tab
+	// reads three, and a later success would otherwise clear the record of a
+	// list that never arrived.
+	failed  map[prSection]error
 	loading bool
 	err     error
 
@@ -189,6 +242,7 @@ func newPRDetails(deps Deps, pr store.PullRequest) (*PRDetails, tea.Cmd) {
 		descFocused: true,
 		mergeMethod: deps.MergeMethod,
 		loaded:      map[prSection]bool{},
+		failed:      map[prSection]error{},
 		sess:        newSession(deps.Ctx),
 	}
 	return p, tea.Batch(p.loadInfo(deps), checkPRWrite(deps, p.ref, p.number))
@@ -254,7 +308,13 @@ func (p *PRDetails) load(deps Deps, section prSection) tea.Cmd {
 			return prDataMsg{section: section, files: list.Items, err: err}
 		case prSectionComments:
 			list, err := deps.Store.Comments(ctx, ref, number, store.Page{Number: 1, Size: commentsPageSize})
-			return prDataMsg{section: section, comments: list.Items, err: err}
+			return prDataMsg{section: section, comments: list.Items, hasMore: list.HasMore, err: err}
+		case prSectionReviews:
+			list, err := deps.Store.Reviews(ctx, ref, number, store.Page{Number: 1, Size: conversationPageSize})
+			return prDataMsg{section: section, reviews: list.Items, hasMore: list.HasMore, err: err}
+		case prSectionReviewComments:
+			list, err := deps.Store.ReviewComments(ctx, ref, number, store.Page{Number: 1, Size: conversationPageSize})
+			return prDataMsg{section: section, reviewComments: list.Items, hasMore: list.HasMore, err: err}
 		}
 		return prDataMsg{section: section}
 	}
@@ -276,10 +336,16 @@ func (p *PRDetails) loadTab(deps Deps) tea.Cmd {
 		}
 		return p.load(deps, prSectionFiles)
 	case prTabComments:
-		if p.loaded[prSectionComments] {
-			return nil
+		// The conversation is three lists, so the tab is loaded when all three
+		// are: a fetch that failed is retried by switching away and back, or by
+		// a refresh, which drops the sections of the active tab.
+		var cmds []tea.Cmd
+		for _, section := range p.activeSections() {
+			if !p.loaded[section] {
+				cmds = append(cmds, p.load(deps, section))
+			}
 		}
-		return p.load(deps, prSectionComments)
+		return tea.Batch(cmds...)
 	}
 	return nil
 }
@@ -361,9 +427,11 @@ func (p *PRDetails) apply(deps Deps, msg prDataMsg) (Route, tea.Cmd) {
 	p.loading = false
 	if msg.err != nil {
 		p.err = msg.err
+		p.failed[msg.section] = msg.err
 		return p, statusErr("Could not load the pull request details: " + msg.err.Error())
 	}
 	p.err = nil
+	delete(p.failed, msg.section)
 	p.loaded[msg.section] = true
 
 	switch msg.section {
@@ -379,6 +447,16 @@ func (p *PRDetails) apply(deps Deps, msg prDataMsg) (Route, tea.Cmd) {
 		p.files = msg.files
 	case prSectionComments:
 		p.comments = msg.comments
+	case prSectionReviews:
+		p.reviews = msg.reviews
+	case prSectionReviewComments:
+		p.reviewComments = msg.reviewComments
+	}
+	if readsConversation(msg.section) {
+		if msg.hasMore {
+			p.conversationHasMore = true
+		}
+		p.convVersion++
 	}
 	p.clamp(deps)
 	return p, nil
@@ -493,7 +571,7 @@ func (p *PRDetails) clamp(deps Deps) {
 	p.commitCursor = clampIndex(p.commitCursor, len(p.commits))
 	p.fileCursor = clampIndex(p.fileCursor, len(p.files))
 	p.descScroll = clampOffset(p.descScroll, len(p.descriptionLines(deps, p.descriptionWidth(deps))))
-	p.commentScroll = clampOffset(p.commentScroll, len(p.commentLines(deps, p.bodyWidth(deps))))
+	p.commentScroll = clampOffset(p.commentScroll, len(p.commentLines(deps)))
 	p.diffScroll = clampOffset(p.diffScroll, len(diffLines(p.diffText())))
 }
 
@@ -672,6 +750,13 @@ func itoa(n int) string { return strconv.Itoa(n) }
 func (p *PRDetails) refresh(deps Deps) (Route, tea.Cmd, bool) {
 	for _, section := range p.activeSections() {
 		delete(p.loaded, section)
+		delete(p.failed, section)
+		if readsConversation(section) {
+			// The pages that come back decide afresh whether they were cut, so
+			// the rendered conversation is stale either way.
+			p.conversationHasMore = false
+			p.convVersion++
+		}
 	}
 	return p, tea.Batch(status("Refreshing pull request..."), p.loadTab(deps)), true
 }
@@ -686,7 +771,7 @@ func (p *PRDetails) activeSections() []prSection {
 	case prTabFiles:
 		return []prSection{prSectionFiles}
 	case prTabComments:
-		return []prSection{prSectionComments}
+		return conversationSections
 	}
 	return nil
 }
@@ -899,10 +984,14 @@ func (p *PRDetails) descriptionPane(deps Deps, width, height int) []string {
 		take(lines[start:], visible)...)
 }
 
-// descriptionLines is the description as rendered lines, at the same width
-// clamp uses, so the scroll bound and the pane cannot disagree.
+// descriptionLines is the description as rendered lines, from the cache when the
+// body, the width and the palette are the ones it was rendered at. It is what
+// clamp measures and what the pane draws, so neither pays for the body twice.
 func (p *PRDetails) descriptionLines(deps Deps, width int) []string {
-	return deps.Markdown.Lines(deps.Theme, p.description(), width)
+	body := p.description()
+	return p.descLines.linesFrom(body, markdownKeyOf(deps.Theme, width), func() []string {
+		return deps.Markdown.Lines(deps.Theme, body, width)
+	})
 }
 
 // metadataPane renders the details sidebar.
