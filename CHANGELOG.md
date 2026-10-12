@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0](https://github.com/joangrigorov/ghspector/compare/v0.3.0...v0.4.0) (2026-10-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tui:** rebuild the shell on Bubble Tea v2 with a deterministic layout ([#17](https://github.com/joangrigorov/ghspector/issues/17))
+
+### Features
+
+* **tui:** implement the pull requests vertical slice (Phase 3) ([#19](https://github.com/joangrigorov/ghspector/issues/19)) ([34c6ad3](https://github.com/joangrigorov/ghspector/commit/34c6ad3202dab5e968ce786671c0a15293f380dd))
+* **tui:** implement the Workflows vertical slice (Phase 2) ([#18](https://github.com/joangrigorov/ghspector/issues/18)) ([0a9273a](https://github.com/joangrigorov/ghspector/commit/0a9273ad83c1d93f3db56b69b6398b740d8fc036))
+* **tui:** rebuild the shell on Bubble Tea v2 with a deterministic layout ([#17](https://github.com/joangrigorov/ghspector/issues/17)) ([536f1f8](https://github.com/joangrigorov/ghspector/commit/536f1f8818f6c72b2b6cf00cb04d2702b6c4ec29))
+
+
+### Bug Fixes
+
+* **deps:** bump the github-actions-dependencies group across 1 directory with 3 updates ([#14](https://github.com/joangrigorov/ghspector/issues/14)) ([3e64be8](https://github.com/joangrigorov/ghspector/commit/3e64be8c2a267a91c2c3d0211d6c57330e9e2085))
+* **tui:** one highlight treatment, a palette that follows the terminal ([#20](https://github.com/joangrigorov/ghspector/issues/20)) ([fb8427a](https://github.com/joangrigorov/ghspector/commit/fb8427af41c25115c1f21bb90a22fde9ecadfa0f))
+
 ## [0.3.0](https://github.com/joangrigorov/ghspector/compare/v0.2.0...v0.3.0) (2026-07-22)
 
 
