@@ -1,24 +1,24 @@
-  [1mghspector[m  │  [1mPull Requests › PR #7[m   Account: octocat                        
+  [1mPull Requests › PR #7[m                                         Account: octocat
 ────────────────────────────────────────────────────────────────────────────────
   [1m[OPEN][m [1mPR #7: Add the pull request view[m                                       
   Repo: octocat/api | Author: @octocat | Source: feat/prs → Base: main          
   ────────────────────────────────────────────────────────────────────────────  
  [1m 1:Info [m│ 2:Commits │ 3:Files │ 4:Checks │ 5:Comments                          
                                                                                 
-[1m▶ DESCRIPTION[m             │[1mDETAILS[m                   │[1mCHECKS[m                    
-                          │                          │                          
-This pull request adds the│  State:      OPEN        │  ■ lint — GitHub Actions 
-pull request view.        │  Author:     @octocat    │  ■ codecov — Codecov     
-                          │  Assignees:  @hubot      │                          
-It has two paragraphs.    │  Reviewers:  @alice      │                          
-                          │  Milestone:  0.4.0       │                          
-                          │  Labels:     enhancement │                          
-                          │  Created:    2024-04-30  │                          
-                          │              10:00       │                          
-                          │  Updated:    2024-05-01  │                          
-                          │              10:00       │                          
-                          │                          │                          
-                          │                          │                          
-                          │                          │                          
+[1m▶ DESCRIPTION[m                                        │[1mDETAILS[m                   
+                                                     │                          
+This pull request adds the pull request view.        │  State:      OPEN        
+                                                     │  Author:     @octocat    
+It has two paragraphs.                               │  Assignees:  @hubot      
+                                                     │  Reviewers:  @alice      
+                                                     │  Milestone:  0.4.0       
+                                                     │  Labels:     enhancement 
+                                                     │  Created:    2024-04-30  
+                                                     │              10:00       
+                                                     │                          
+                                                     │[1mCHECKS[m                    
+                                                     │                          
+                                                     │  ■ lint — GitHub Actions 
+                                                     │  ■ codecov — Codecov     
 ────────────────────────────────────────────────────────────────────────────────
   [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEsc/Backspace[m:Back to list       

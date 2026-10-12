@@ -90,36 +90,30 @@ func (s *Switcher) View(deps Deps, r layout.Rect) string {
 	}
 	start, end := window(len(s.entries), s.cursor, s.visible)
 	for i := start; i < end; i++ {
-		lines = append(lines, s.row(deps, i))
+		lines = append(lines, s.row(deps, i, r.W))
 	}
 	return layout.Fit(strings.Join(lines, "\n"), r.W, r.H)
 }
 
-// row renders one entry, marking the active context and the cursor.
-func (s *Switcher) row(deps Deps, i int) string {
+// row renders one entry, marking the active context and the cursor. The cursor
+// row takes the same marker and accent as the highlighted row in every list.
+func (s *Switcher) row(deps Deps, i, width int) string {
 	theme := deps.Theme
 	entry := s.entries[i]
-
-	pointer := "  "
-	if i == s.cursor {
-		pointer = style(theme.Selected, bold).Render("› ")
-	}
 
 	kind := "account"
 	if entry.IsOrg {
 		kind = "organization"
 	}
 
-	login := entry.Login
-	if i == s.cursor {
-		login = style(theme.Selected, bold).Render(entry.Login)
-	}
-
-	out := pointer + login + "  " + style(theme.Muted, normal).Render("("+kind+")")
+	row := entry.Login + "  " + style(theme.Muted, normal).Render("("+kind+")")
 	if sameOwner(entry, s.active) {
-		out += "  " + style(theme.StatusOK, normal).Render("← active")
+		row += "  " + style(theme.StatusOK, normal).Render("← active")
 	}
-	return out
+	if i == s.cursor {
+		return selectedRow(theme, row, width)
+	}
+	return tableIndent + row
 }
 
 // sameOwner compares two owner references.

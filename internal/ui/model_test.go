@@ -45,13 +45,6 @@ func defaultFixtures() map[string]string {
 	}
 }
 
-// plainOverlayChrome is the deterministic modal chrome for tests.
-func plainOverlayChrome() overlay.Chrome {
-	c := overlay.DefaultChrome()
-	c.BorderColor, c.TitleColor, c.BodyColor, c.Background = nil, nil, nil, nil
-	return c
-}
-
 // testStore is the store a UI test runs against. The outgoing rate limit paces
 // the requests a person makes one at a time, and a test drives a whole screen's
 // fetch at once, so it is lifted here; the limiter has its own tests in the
@@ -73,8 +66,7 @@ func newModel(t *testing.T, srv *httptest.Server, w, h int, tweak ...func(*Optio
 		TokenSource: "config file: config.yaml",
 		// A stopped clock keeps every rendered duration a function of the
 		// fixtures rather than of when the test ran.
-		Clock:         newFixedClock(workflowNow),
-		OverlayChrome: plainOverlayChrome(),
+		Clock: newFixedClock(workflowNow),
 	}
 	for _, fn := range tweak {
 		fn(&opts)

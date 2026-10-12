@@ -164,6 +164,11 @@ type Stack struct {
 // NewStack returns an empty stack that draws with the given chrome.
 func NewStack(chrome Chrome) Stack { return Stack{chrome: chrome} }
 
+// SetChrome replaces the stack's visual configuration. The terminal can change
+// its background while the program runs, and an overlay already on the stack has
+// to change with the theme behind it.
+func (s *Stack) SetChrome(chrome Chrome) { s.chrome = chrome }
+
 // Len is the number of open overlays.
 func (s Stack) Len() int { return len(s.overlays) }
 

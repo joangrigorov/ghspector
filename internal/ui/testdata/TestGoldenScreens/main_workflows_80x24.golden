@@ -1,8 +1,8 @@
-  [1mghspector[m  │  [1mWorkflows[m   Account: octocat                                    
+  [1mWorkflows[m                                                     Account: octocat
 ────────────────────────────────────────────────────────────────────────────────
   Pull Requests │[1m Workflows [m│ Issues                                            
 [1m  ST  REPOSITORY       WORKFLOW RUN           EVENT          DURATION   [m        
-[1m  □   api              Build 896              push           queued     [m        
+[1m› □   api              Build 896              push           queued     [m        
   ■   api              Build 899              push           1m00s              
   ■   api              Build 893              push           7m00s              
   ◆   api              Build 900              push           0s                 

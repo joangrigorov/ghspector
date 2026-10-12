@@ -225,7 +225,7 @@ func (m Main) tabStrip(deps Deps) string {
 	for i := 0; i < tabCount; i++ {
 		meta := tabMeta[Tab(i)]
 		if Tab(i) == m.tab {
-			parts = append(parts, style(theme.Selected, bold).Render(" "+meta.Name+" "))
+			parts = append(parts, style(theme.Accent, bold).Render(" "+meta.Name+" "))
 			continue
 		}
 		parts = append(parts, style(theme.Muted, normal).Render(" "+meta.Name+" "))

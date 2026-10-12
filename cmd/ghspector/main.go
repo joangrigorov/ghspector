@@ -10,10 +10,8 @@ import (
 	"path/filepath"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"ghspector/internal/auth"
-	"ghspector/internal/overlay"
 	"ghspector/internal/store"
 	"ghspector/internal/ui"
 )
@@ -64,16 +62,14 @@ func run(args []string, stdout io.Writer) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	theme := ui.DarkTheme()
-	if !lipgloss.HasDarkBackground(os.Stdin, os.Stdout) {
-		theme = ui.LightTheme()
-	}
-
 	polling := config.PollingIntervals()
 
 	model := ui.New(ui.Options{
-		Store:           store.NewREST(token, ""),
-		Theme:           theme,
+		Store: store.NewREST(token, ""),
+		// The model asks the terminal for its background and rebuilds the
+		// palette from the answer, so this is only what the first frame draws
+		// before the reply arrives.
+		Theme:           ui.DarkTheme(),
 		Context:         ctx,
 		Version:         version,
 		ConfigPath:      configLabel(),
@@ -83,7 +79,6 @@ func run(args []string, stdout io.Writer) int {
 		PollPRs:         polling.PRs,
 		MergeMethod:     config.DefaultMergeMethod,
 		SaveMergeMethod: auth.SetDefaultMergeMethod,
-		OverlayChrome:   overlayChrome(theme),
 	})
 
 	if _, err := tea.NewProgram(model, tea.WithContext(ctx)).Run(); err != nil {
@@ -137,13 +132,4 @@ func configLabel() string {
 		return ""
 	}
 	return filepath.Base(path)
-}
-
-// overlayChrome maps the theme onto the modal chrome.
-func overlayChrome(theme ui.Theme) overlay.Chrome {
-	c := overlay.DefaultChrome()
-	c.BorderColor = theme.OverlayBorder
-	c.TitleColor = theme.OverlayTitle
-	c.BodyColor = theme.OverlayBody
-	return c
 }
