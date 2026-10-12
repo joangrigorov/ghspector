@@ -270,11 +270,16 @@ func (s Stack) View(background string, width, height int) string {
 	// erase the modal.
 	comp := lipgloss.NewCompositor(lipgloss.NewLayer(background))
 
-	// Deeper overlays are drawn first so a chain reads bottom-up.
+	// Deeper overlays are drawn first so a chain reads bottom-up, and each one
+	// is offset up and to the left of the overlay above it. Without the offset
+	// the boxes land on top of each other and a chain is visible only as a
+	// doubled border, which is not a stack a person can read.
+	const layerStep = 2
 	for i, o := range s.overlays {
 		box := s.renderBox(o, width)
-		x := (width - lipgloss.Width(box)) / 2
-		y := (height - lipgloss.Height(box)) / 2
+		depth := len(s.overlays) - 1 - i
+		x := (width-lipgloss.Width(box))/2 - depth*layerStep
+		y := (height-lipgloss.Height(box))/2 - depth*layerStep
 		if x < 0 {
 			x = 0
 		}

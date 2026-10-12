@@ -37,6 +37,12 @@ type Deps struct {
 	// Size is the terminal geometry. A route that opens a modal needs it,
 	// because an overlay is given a width by the stack but never a height.
 	Size Size
+	// MergeMethod is the configured default merge method, already resolved to
+	// one of squash, merge or rebase.
+	MergeMethod string
+	// SaveMergeMethod persists a new default merge method. Nil means there is
+	// no config file to write, and the choice then lasts for the session.
+	SaveMergeMethod func(method string) error
 }
 
 // Size is the terminal geometry in cells.

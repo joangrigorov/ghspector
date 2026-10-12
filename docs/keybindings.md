@@ -70,6 +70,7 @@ This file is generated from the keymap table, so it cannot drift from the code.
 | Key | Action |
 | --- | --- |
 | `Esc` / `Backspace` | Back to list |
+| `1` | Info |
 | `Tab` / `Shift+Tab` | Switch focus |
 | `j` / `↓` | Down |
 | `k` / `↑` | Up |
@@ -78,10 +79,11 @@ This file is generated from the keymap table, so it cannot drift from the code.
 | `Enter` | Open check |
 | `w` | Open in browser |
 | `m` | Merge *(changes remote state)* |
-| `c` | Comments |
+| `5` / `c` | Comments |
 | `C` | Close PR *(changes remote state)* |
-| `v` | Commits |
-| `D` | Diff |
+| `2` / `v` | Commits |
+| `3` / `D` | Files & diff |
+| `4` | Checks |
 | `r` / `Ctrl+R` | Refresh |
 
 ## Pull request commits
@@ -89,6 +91,10 @@ This file is generated from the keymap table, so it cannot drift from the code.
 | Key | Action |
 | --- | --- |
 | `Esc` / `Backspace` | Back |
+| `1` | Info |
+| `4` | Checks |
+| `5` | Comments |
+| `3` | Files & diff |
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
 | `Enter` | View commit |
@@ -109,6 +115,10 @@ This file is generated from the keymap table, so it cannot drift from the code.
 | Key | Action |
 | --- | --- |
 | `Esc` / `Backspace` | Back |
+| `1` | Info |
+| `4` | Checks |
+| `5` | Comments |
+| `2` | Commits |
 | `j` / `↓` | Next file |
 | `k` / `↑` | Previous file |
 | `u` | Scroll up |
@@ -120,7 +130,13 @@ This file is generated from the keymap table, so it cannot drift from the code.
 | Key | Action |
 | --- | --- |
 | `Esc` / `Backspace` | Back |
+| `1` | Info |
+| `4` | Checks |
+| `2` | Commits |
+| `3` | Files & diff |
 | `r` / `Ctrl+R` | Refresh |
+| `u` / `PgUp` | Scroll up |
+| `d` / `PgDn` | Scroll down |
 
 ## Issue details
 

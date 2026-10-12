@@ -241,9 +241,10 @@ func TestRunsTabOpensJobsAndReturns(t *testing.T) {
 		t.Errorf("the jobs screen does not name the run:\n%s", out)
 	}
 
-	// Esc returns to the list with the selection intact. The root owns the
-	// back action, so it pops the stack itself.
-	back, _ := pressKey(t, m, "esc")
+	// Esc returns to the list with the selection intact. The route hands the
+	// stack a pop, which is what the runtime runs.
+	back, cmd := pressKey(t, m, "esc")
+	back = drive(t, back, cmd)
 	if back.routes.Len() != 1 {
 		t.Fatalf("stack depth after esc = %d, want 1", back.routes.Len())
 	}

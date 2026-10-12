@@ -1,0 +1,40 @@
+  [1mghspector[m  │  [1mPull Requests › PR #7[m   Account: octocat                                                                
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [1m[OPEN][m [1mPR #7: Add the pull request view[m                                                                               
+  Repo: octocat/api | Author: @octocat | Source: feat/prs → Base: main                                                  
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+  1:Info │ 2:Commits │[1m 3:Files [m│ 4:Checks │ 5:Comments                                                                  
+                                                                                                                        
+[1m▶ FILES & DIFF[m                                                                                                          
+                                                                                                                        
+[1m  ST   FILE                   +    -   [m│[1minternal/ui/prs.go[m                                                              
+[1m  A    internal/ui/prs.go     +12  -0  [m│                                                                                
+  M    internal/ui/table.go   +2   -1  │@@ -0,0 +1,3 @@                                                                 
+  M    assets/logo.png        +0   -0  │+package ui                                                                     
+                                       │+                                                                               
+                                       │+// A new file.                                                                 
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+                                       │                                                                                
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEsc/Backspace[m:Back  [1m1[m:Info  [1m4[m:Checks  [1m5[m:Comments  [1m2[m:Commits              

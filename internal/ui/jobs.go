@@ -32,6 +32,10 @@ type Jobs struct {
 	loading bool
 	err     error
 	cursor  int
+	// target is a job name to select once the list arrives. A pull request
+	// check that resolves to a run names the job it came from, and the person
+	// who followed it meant that job rather than the first one.
+	target string
 	// perms records whether the viewer may approve this run, and why not when
 	// they may not.
 	perms map[int64]approvalGate
@@ -45,15 +49,64 @@ type Jobs struct {
 // report one, which the API reads as "the latest attempt"; the display treats it
 // as the first.
 func newJobs(deps Deps, run store.WorkflowRun) (*Jobs, tea.Cmd) {
+	return newJobsTargeting(deps, run, "")
+}
+
+// newJobsTargeting is newJobs with a job name to select when the list loads.
+func newJobsTargeting(deps Deps, run store.WorkflowRun, target string) (*Jobs, tea.Cmd) {
 	j := &Jobs{
 		run:     run,
 		ref:     runRepo(run),
 		attempt: run.RunAttempt,
+		target:  target,
 		loading: true,
 		perms:   map[int64]approvalGate{},
 		sess:    newSession(deps.Ctx),
 	}
 	return j, tea.Batch(j.load(deps, false), checkApproval(deps, run))
+}
+
+// newJobsAt returns the Jobs route for a run ID whose run is not in hand, which
+// is what a pull request check with a run ID but no matching run in the list
+// produces. The run itself is fetched for the heading before the jobs are.
+func newJobsAt(deps Deps, ref store.RepoRef, runID int64, attempt int, target string) (*Jobs, tea.Cmd) {
+	j := &Jobs{
+		ref:     ref,
+		attempt: attempt,
+		target:  target,
+		loading: true,
+		perms:   map[int64]approvalGate{},
+		sess:    newSession(deps.Ctx),
+	}
+	j.run = store.WorkflowRun{
+		ID:         runID,
+		RunAttempt: attempt,
+		Repository: store.Repository{
+			Name:     ref.Repo,
+			FullName: ref.String(),
+			Owner:    &store.User{Login: ref.Owner},
+		},
+	}
+	return j, tea.Batch(j.loadRun(deps), j.load(deps, false))
+}
+
+// runMsg carries a run fetched for a route that was opened from its ID alone.
+type runMsg struct {
+	run store.WorkflowRun
+	err error
+}
+
+// loadRun fetches the run behind this route's ID.
+func (j *Jobs) loadRun(deps Deps) tea.Cmd {
+	ref, runID := j.ref, j.run.ID
+	ctx := j.sess.Ctx()
+	return func() tea.Msg {
+		run, err := deps.Store.WorkflowRun(ctx, ref, runID)
+		if err != nil {
+			return runMsg{err: err}
+		}
+		return runMsg{run: run}
+	}
 }
 
 // Title is the breadcrumb label.
@@ -103,6 +156,13 @@ func (j *Jobs) Update(deps Deps, msg tea.Msg) (Route, tea.Cmd) {
 	switch msg := msg.(type) {
 	case jobsMsg:
 		return j.apply(msg)
+	case runMsg:
+		if msg.err != nil {
+			return j, nil
+		}
+		j.run = msg.run
+		j.ref = runRepo(msg.run)
+		return j, checkApproval(deps, msg.run)
 	case approvalMsg:
 		j.perms = withAnswer(j.perms, msg.runID, msg.gate)
 		return j, nil
@@ -138,6 +198,15 @@ func (j *Jobs) apply(msg jobsMsg) (Route, tea.Cmd) {
 	j.loading = false
 	j.err = nil
 	j.jobs = msg.jobs
+
+	if j.target != "" && selected == 0 {
+		// The first arrival aims the cursor at the job the check named, so the
+		// route opens on the job the user came for.
+		j.cursor = indexOfJob(j.jobs, j.target)
+		j.clampCursor()
+		return j, nil
+	}
+
 	// A poll replaces the list in place, so the cursor follows the job it was
 	// on rather than the row number it was on.
 	j.cursor = 0
@@ -149,6 +218,28 @@ func (j *Jobs) apply(msg jobsMsg) (Route, tea.Cmd) {
 	}
 	j.clampCursor()
 	return j, nil
+}
+
+// indexOfJob finds the job a check name refers to, by an exact name match first
+// and then by a case-insensitive part match, which is how a check named after
+// its workflow meets a job named after its step.
+func indexOfJob(jobs []store.WorkflowJob, target string) int {
+	if target == "" {
+		return 0
+	}
+	want := strings.ToLower(target)
+	for i, job := range jobs {
+		if job.Name == target {
+			return i
+		}
+	}
+	for i, job := range jobs {
+		name := strings.ToLower(job.Name)
+		if name == want || strings.Contains(name, want) || strings.Contains(want, name) {
+			return i
+		}
+	}
+	return 0
 }
 
 // poll refreshes the job list while any job can still change state.
