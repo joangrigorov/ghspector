@@ -1,8 +1,8 @@
-  [1mghspector[m  │  [1mPull Requests[m   Account: octocat                                
+  [1mPull Requests[m                                                 Account: octocat
 ────────────────────────────────────────────────────────────────────────────────
  [1m Pull Requests [m│ Workflows │ Issues                                            
 [1m  ST  PR     TITLE                              AUTHOR          [m                
-[1m  ■   #100   Pull request 0                     octocat         [m                
+[1m› ■   #100   Pull request 0                     octocat         [m                
   ■   #101   Pull request 1                     octocat                         
   ■   #102   Pull request 2                     octocat                         
   ■   #103   Pull request 3                     octocat                         

@@ -775,7 +775,7 @@ func (p *PRDetails) tabStrip(deps Deps) string {
 	for i := 0; i < prTabCount; i++ {
 		label := fmt.Sprintf(" %d:%s ", i+1, prTabMeta[prTab(i)].Name)
 		if prTab(i) == p.tab {
-			parts = append(parts, style(theme.Selected, bold).Render(label))
+			parts = append(parts, style(theme.Accent, bold).Render(label))
 			continue
 		}
 		parts = append(parts, style(theme.Muted, normal).Render(label))
@@ -802,39 +802,38 @@ func (p *PRDetails) body(deps Deps, r layout.Rect) string {
 	}
 }
 
-// infoView renders the three panes: the description, the metadata, and the
-// checks.
+// infoView renders the description beside the sidebar.
 //
-// Every pane produces exactly the region's height, already padded to its own
-// width, so joining them row by row tiles the region exactly at every size.
+// The sidebar stacks the details over the checks, so the description keeps the
+// width a second sidebar would have taken and the checks get a taller list than
+// a row of three columns allows. Every pane produces exactly the height it was
+// given, already padded to its own width, so joining them row by row tiles the
+// region exactly at every size.
 func (p *PRDetails) infoView(deps Deps, r layout.Rect) string {
-	descW, metaW, checksW := infoColumns(r.W)
+	descW, sideW := infoColumns(r.W)
 
-	// A pane the width cannot hold is not drawn at all, and neither is the
-	// separator that would have introduced it. infoColumns gives the width such
-	// a pane would have taken back to the description, so the row still fills
-	// the body.
-	type pane struct {
-		width int
-		lines []string
-	}
-	drawn := make([]pane, 0, 3)
-	if descW > 0 {
-		drawn = append(drawn, pane{descW, p.descriptionPane(deps, descW, r.H)})
-	}
-	if metaW > 0 {
-		drawn = append(drawn, pane{metaW, p.metadataPane(deps, metaW, r.H)})
-	}
-	if checksW > 0 {
-		drawn = append(drawn, pane{checksW, p.checksPane(deps, checksW, r.H)})
-	}
-	if len(drawn) == 0 {
-		return layout.Fit("", r.W, r.H)
+	descLines := p.descriptionPane(deps, descW, r.H)
+	if sideW == 0 {
+		return layout.Fit(joinLines(padLines(descLines, descW, r.H)), r.W, r.H)
 	}
 
-	columns := make([][]string, len(drawn))
-	for i, pane := range drawn {
-		columns[i] = padLines(pane.lines, pane.width, r.H)
+	detailsH, checksH := sideHeights(r.H)
+	sideLines := make([]string, 0, r.H)
+	if detailsH > 0 {
+		sideLines = append(sideLines, padLines(p.metadataPane(deps, sideW, detailsH), sideW, detailsH)...)
+	}
+	if checksH > 0 {
+		if detailsH > 0 {
+			// The checks carry their own heading, and the blank row keeps it clear
+			// of the last value in the block above.
+			sideLines = append(sideLines, "")
+		}
+		sideLines = append(sideLines, p.checksPane(deps, sideW, checksH)...)
+	}
+
+	columns := [][]string{
+		padLines(descLines, descW, r.H),
+		padLines(sideLines, sideW, r.H),
 	}
 	separator := style(deps.Theme.HeaderRule, normal).Render("│")
 
@@ -938,22 +937,20 @@ func (p *PRDetails) checksView(deps Deps, r layout.Rect) string {
 }
 
 // checkRow renders one check: its state, its name, and the app that reported
-// it.
+// it. The row's text is left unstyled so the shared highlight can colour it; the
+// state marker keeps its own colour, because the marker is what says whether the
+// check passed.
 func (p *PRDetails) checkRow(deps Deps, check store.CheckRun, width int, selected bool) string {
 	name := check.Name
 	if app := checkAppName(check); app != "" {
 		name += " — " + app
 	}
-	marker := "  "
+	row := statusIndicator(deps.Theme, check.Status, check.Conclusion) + " " +
+		layout.Truncate(name, max(width-4, 4))
 	if selected {
-		marker = "> "
+		return selectedRow(deps.Theme, row, width)
 	}
-	row := marker + statusIndicator(deps.Theme, check.Status, check.Conclusion) + " " +
-		style(deps.Theme.Text, normal).Render(layout.Truncate(name, max(width-4, 4)))
-	if selected {
-		return style(deps.Theme.Selected, bold).Render(row)
-	}
-	return row
+	return tableIndent + row
 }
 
 // checksMessage describes an empty checks pane.
@@ -968,78 +965,67 @@ func (p *PRDetails) checksMessage() string {
 	}
 }
 
-// infoColumns splits the Info sub-tab's width into the description pane, the
-// metadata pane and the checks pane.
+// infoColumns splits the Info sub-tab's width into the description and the
+// sidebar. The sidebar stacks the details over the checks, so there are two
+// columns rather than three.
 //
-// The widths of the panes plus one column per separator drawn between them
-// always add up to width, so the row tiles the body exactly at every terminal
-// size. The description takes the slack, so the two sidebars get what their
-// widest rows need rather than a fraction of the screen, and the metadata pane
-// is the first to be given up when there is not enough room for all three: the
-// description is what the screen is for, and the checks are what the user acts
-// on.
-func infoColumns(width int) (desc, meta, checks int) {
+// The widths plus one separator always add up to width, so the row tiles the
+// body exactly at every terminal size. The description takes the slack, which is
+// what it is for; the sidebar gets a third of the row within its own bounds. A
+// width that cannot hold both drops the sidebar, because a sidebar too narrow to
+// show a label and its value is not an answer.
+func infoColumns(width int) (desc, side int) {
 	if width < 1 {
 		width = 1
 	}
-	if width <= 2*infoSepWidth {
-		// Room for one pane and nothing else.
-		return width, 0, 0
+	if width <= infoSepWidth {
+		// Room for one column and nothing else.
+		return width, 0
 	}
-
-	usable := width - 2*infoSepWidth
-	if usable < descMinWidth+checksMinWidth {
-		checks = usable / 2
-		desc = usable - checks
-	} else {
-		checks = min(max(usable/3, checksMinWidth), checksMaxWidth)
-		meta = min(max(usable-checks-descMinWidth, metaMinWidth), metaMaxWidth)
-		desc = usable - meta - checks
-
-		if desc < descMinWidth {
-			if cut := min(descMinWidth-desc, meta-metaMinWidth); cut > 0 {
-				meta -= cut
-			}
-			desc = usable - meta - checks
-		}
-		if desc < descMinWidth {
-			if cut := min(descMinWidth-desc, checks-checksMinWidth); cut > 0 {
-				checks -= cut
-			}
-			desc = usable - meta - checks
-		}
-		if desc < descMinWidth {
-			// Not enough room for three panes: the metadata pane gives way
-			// entirely, which leaves the description and the checks.
-			desc += meta
-			meta = 0
-		}
+	usable := width - infoSepWidth
+	if usable < descMinWidth+sideMinWidth {
+		return width, 0
 	}
-
-	// A pane that is not drawn takes its separator with it, so the description
-	// grows into the gap rather than leaving a hole.
-	if meta == 0 {
-		desc += infoSepWidth
-	}
-	if checks == 0 {
-		desc += infoSepWidth
-	}
-	return desc, meta, checks
+	side = min(max(usable/3, sideMinWidth), sideMaxWidth)
+	return usable - side, side
 }
 
-// Pane geometry: the separator, the narrowest each pane may become, and the
-// widest the two sidebars may grow.
+// sideHeights splits the sidebar's rows between the details block and the
+// checks, leaving the blank row that separates them. The details give way first
+// when the body is short, because the checks are what the route's keys act on;
+// below that the checks take the whole column.
+func sideHeights(height int) (details, checks int) {
+	if height < detailsRows+sideGapRows+checksMinRows {
+		return 0, height
+	}
+	return detailsRows, height - detailsRows - sideGapRows
+}
+
+// Pane geometry for the Info sub-tab: the separator between the description and
+// the sidebar, the narrowest each column may become, the widest the sidebar may
+// grow, and the rows the details block needs before the sidebar gives it up.
 //
-// The metadata pane's minimum is the width at which a label and a value both
-// still fit on one line. Below that the pane holds "  State:      OP" rather
-// than an answer, so it is dropped instead of squeezed.
+// The sidebar's minimum is the width at which a label and a value both still fit
+// on one line. Below that it would hold "  State:      OP" rather than an answer,
+// so it is dropped instead of squeezed.
 const (
-	infoSepWidth   = 1
-	descMinWidth   = 20
-	metaMinWidth   = 22
-	checksMinWidth = 22
-	checksMaxWidth = 38
-	metaMaxWidth   = 26
+	infoSepWidth = 1
+	descMinWidth = 20
+	sideMinWidth = 24
+	sideMaxWidth = 40
+	// detailsRows is the height the details block is drawn in: its heading, the
+	// blank line under it, and the eight label/value rows. It is also the point
+	// below which the block is dropped, so the eight rows have to fit in the
+	// height they are given. A value long enough to wrap is the one case that
+	// gets cut off, which costs less than an eight-row block that is never seen
+	// on the terminal size the layout is tuned for.
+	detailsRows = 10
+	// sideGapRows is the blank row between the details block and the checks, so
+	// the checks heading is not glued to the last value above it.
+	sideGapRows = 1
+	// checksMinRows is the fewest rows the checks list is worth drawing in: its
+	// heading, the blank under it, and one check.
+	checksMinRows = 4
 )
 
 // padLines fits lines into exactly height lines of exactly width cells, so the

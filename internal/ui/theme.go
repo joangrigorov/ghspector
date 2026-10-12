@@ -18,6 +18,13 @@ import (
 
 // Theme holds every style the UI uses. A theme with nil colours renders
 // identically on any terminal, which is what golden tests rely on.
+//
+// Two rules keep a screen readable on either terminal. Every colour is chosen
+// against the background its theme is built for, so a palette swap has to
+// accompany a terminal that changed its background (the model does that on
+// tea.BackgroundColorMsg). And no colour is the only signal for a state: the
+// highlighted row carries a marker as well as a colour, and a status carries a
+// glyph as well as green, amber or red.
 type Theme struct {
 	// Chrome.
 	HeaderBackground color.Color
@@ -29,12 +36,10 @@ type Theme struct {
 	StatusFail       color.Color
 
 	// Content.
-	Title              color.Color
-	Text               color.Color
-	Muted              color.Color
-	Accent             color.Color
-	Selected           color.Color
-	SelectedBackground color.Color
+	Title  color.Color
+	Text   color.Color
+	Muted  color.Color
+	Accent color.Color
 
 	// Footer.
 	KeyHint color.Color
@@ -61,70 +66,80 @@ type Theme struct {
 	Hyperlinks bool
 }
 
+// ThemeFor returns the theme for a terminal background. It is the one place the
+// decision lives, so a background change and the first draw cannot disagree.
+func ThemeFor(dark bool) Theme {
+	if dark {
+		return DarkTheme()
+	}
+	return LightTheme()
+}
+
 // DarkTheme returns the theme for a dark terminal background.
+//
+// The accent is a sky blue: it carries the header trail, the pane that owns the
+// keyboard, key hints and the highlighted row, and it holds its contrast on the
+// dark chrome without competing with the green, amber and red status markers.
 func DarkTheme() Theme {
 	return Theme{
 		HeaderBackground: lipgloss.Color("#303030"),
-		HeaderTitle:      lipgloss.Color("#d787ff"),
+		HeaderTitle:      lipgloss.Color("#5fd7ff"),
 		HeaderContext:    lipgloss.Color("#87d7ff"),
 		HeaderRule:       lipgloss.Color("#3a3a3a"),
-		StatusOK:         lipgloss.Color("#00af00"),
+		StatusOK:         lipgloss.Color("#5fd75f"),
 		StatusWarn:       lipgloss.Color("#d7af00"),
-		StatusFail:       lipgloss.Color("#df0000"),
+		StatusFail:       lipgloss.Color("#df5f5f"),
 
-		Title:              lipgloss.Color("#d787ff"),
-		Text:               lipgloss.Color("#e4e4e4"),
-		Muted:              lipgloss.Color("#767676"),
-		Accent:             lipgloss.Color("#87d7ff"),
-		Selected:           lipgloss.Color("#ffffff"),
-		SelectedBackground: lipgloss.Color("#5f00af"),
+		Title:  lipgloss.Color("#5fd7ff"),
+		Text:   lipgloss.Color("#e4e4e4"),
+		Muted:  lipgloss.Color("#9e9e9e"),
+		Accent: lipgloss.Color("#87d7ff"),
 
-		KeyHint: lipgloss.Color("#d787ff"),
-		KeyDesc: lipgloss.Color("#767676"),
+		KeyHint: lipgloss.Color("#5fd7ff"),
+		KeyDesc: lipgloss.Color("#9e9e9e"),
 
-		ErrorTitle: lipgloss.Color("#df0000"),
+		ErrorTitle: lipgloss.Color("#df5f5f"),
 		ErrorBody:  lipgloss.Color("#e4e4e4"),
 
-		SplashLogo: lipgloss.Color("#d787ff"),
-		SplashText: lipgloss.Color("#767676"),
+		SplashLogo: lipgloss.Color("#5fd7ff"),
+		SplashText: lipgloss.Color("#9e9e9e"),
 
 		OverlayBorder: lipgloss.Color("#3a3a3a"),
-		OverlayTitle:  lipgloss.Color("#d787ff"),
+		OverlayTitle:  lipgloss.Color("#5fd7ff"),
 		OverlayBody:   lipgloss.Color("#e4e4e4"),
 
 		Hyperlinks: true,
 	}
 }
 
-// LightTheme returns the theme for a light terminal background.
+// LightTheme returns the theme for a light terminal background. The accent is
+// the same hue as the dark theme's, deep enough to hold its contrast on white.
 func LightTheme() Theme {
 	return Theme{
 		HeaderBackground: lipgloss.Color("#eaeaea"),
-		HeaderTitle:      lipgloss.Color("#5f00af"),
+		HeaderTitle:      lipgloss.Color("#005f87"),
 		HeaderContext:    lipgloss.Color("#005f87"),
 		HeaderRule:       lipgloss.Color("#d7d7d7"),
 		StatusOK:         lipgloss.Color("#008700"),
 		StatusWarn:       lipgloss.Color("#af8700"),
 		StatusFail:       lipgloss.Color("#af0000"),
 
-		Title:              lipgloss.Color("#5f00af"),
-		Text:               lipgloss.Color("#262626"),
-		Muted:              lipgloss.Color("#8a8a8a"),
-		Accent:             lipgloss.Color("#005f87"),
-		Selected:           lipgloss.Color("#ffffff"),
-		SelectedBackground: lipgloss.Color("#5f00af"),
+		Title:  lipgloss.Color("#005f87"),
+		Text:   lipgloss.Color("#262626"),
+		Muted:  lipgloss.Color("#6c6c6c"),
+		Accent: lipgloss.Color("#005f87"),
 
-		KeyHint: lipgloss.Color("#5f00af"),
-		KeyDesc: lipgloss.Color("#8a8a8a"),
+		KeyHint: lipgloss.Color("#005f87"),
+		KeyDesc: lipgloss.Color("#6c6c6c"),
 
 		ErrorTitle: lipgloss.Color("#af0000"),
 		ErrorBody:  lipgloss.Color("#262626"),
 
-		SplashLogo: lipgloss.Color("#5f00af"),
-		SplashText: lipgloss.Color("#8a8a8a"),
+		SplashLogo: lipgloss.Color("#005f87"),
+		SplashText: lipgloss.Color("#6c6c6c"),
 
 		OverlayBorder: lipgloss.Color("#d7d7d7"),
-		OverlayTitle:  lipgloss.Color("#5f00af"),
+		OverlayTitle:  lipgloss.Color("#005f87"),
 		OverlayBody:   lipgloss.Color("#262626"),
 
 		Hyperlinks: true,

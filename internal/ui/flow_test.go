@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/teatest/v2"
 )
 
@@ -25,12 +27,25 @@ import (
 // has rendered.
 const readyMarker = "Workflows │ Issues"
 
+// waitForText waits until the rendered stream has carried a phrase.
+//
+// The match runs against the stream with its escape sequences removed, because a
+// phrase can reach it split: the renderer emits cell diffs, and a box body that
+// partly coincides with the screen behind it is written in runs separated by a
+// cursor move, so "Squash and merge" arrives as "Squash and m<move>erge". A move
+// carries no meaning for a wait that is looking for text, and the phrase still
+// has to have been drawn.
+func waitForText(t *testing.T, tm *teatest.TestModel, marker string) {
+	t.Helper()
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+		return strings.Contains(ansi.Strip(string(out)), marker)
+	}, teatest.WithDuration(10*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
+}
+
 func startProgram(t *testing.T, srv *httptest.Server, w, h int) *teatest.TestModel {
 	t.Helper()
 	tm := teatest.NewTestModel(t, newModel(t, srv, w, h), teatest.WithInitialTermSize(w, h))
-	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
-		return bytes.Contains(out, []byte(readyMarker))
-	}, teatest.WithDuration(10*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
+	waitForText(t, tm, readyMarker)
 	return tm
 }
 
@@ -157,28 +172,21 @@ func TestFlowFromTheRunListToTheLog(t *testing.T) {
 	// Each marker is text that only exists once the screen it belongs to has its
 	// data: the stream carries cell diffs, so waiting for text that is already on
 	// screen would wait forever.
-	waitFor := func(marker string) {
-		t.Helper()
-		teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
-			return bytes.Contains(out, []byte(marker))
-		}, teatest.WithDuration(10*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
-	}
-
 	// The default tab is Pull Requests, and the run list is fetched when the
 	// Workflows tab is first opened.
-	waitFor(readyMarker)
+	waitForText(t, tm, readyMarker)
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyTab})
-	waitFor("Load More Workflow Runs...")
+	waitForText(t, tm, "Load More Workflow Runs...")
 
 	// The highlighted run is the queued one, which always has a job list.
 	tm.Send(press(t, "enter"))
-	waitFor("JOB NAME")
+	waitForText(t, tm, "JOB NAME")
 
 	// The running job sorts first and has no log yet, so the finished job is the
 	// row below it, and Enter opens its log on the step that failed.
 	tm.Send(press(t, "j"))
 	tm.Send(press(t, "enter"))
-	waitFor("Job: build")
+	waitForText(t, tm, "Job: build")
 
 	final := finish(t, tm)
 
@@ -199,39 +207,33 @@ func TestFlowFromTheRunListToTheLog(t *testing.T) {
 // real runtime: the list, the details view with its sub-tabs, and the merge
 // overlays.
 //
-// Every marker is text written by a wholesale frame redraw — a route push, a
-// sub-tab switch, an overlay composite — because the v2 renderer patches a list
-// body cell by cell and a marker inside one can arrive split.
+// Every marker is text that only exists once the screen it belongs to has
+// rendered, and each match runs with the stream's escape sequences removed: the
+// renderer patches cell by cell, so a phrase whose cells partly match what is
+// behind them arrives in runs separated by a cursor move.
 func TestFlowThroughThePullRequestScreens(t *testing.T) {
 	srv := prServer(t)
 	const w, h = 120, 40
 
 	tm := teatest.NewTestModel(t, newModel(t, srv, w, h), teatest.WithInitialTermSize(w, h))
-	waitFor := func(marker string) {
-		t.Helper()
-		teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
-			return bytes.Contains(out, []byte(marker))
-		}, teatest.WithDuration(10*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
-	}
-
-	waitFor(readyMarker)
+	waitForText(t, tm, readyMarker)
 
 	// Enter pushes the details view; the pane titles are drawn with the push.
 	tm.Send(press(t, "enter"))
-	waitFor("DESCRIPTION")
+	waitForText(t, tm, "DESCRIPTION")
 
 	// The sub-tab strip switches the body; Esc steps back to Info without
 	// leaving the route.
 	tm.Send(press(t, "2"))
-	waitFor("SHA")
+	waitForText(t, tm, "SHA")
 	tm.Send(press(t, "esc"))
-	waitFor("DETAILS")
+	waitForText(t, tm, "DETAILS")
 
 	// A merge is two overlays: the method chooser, then the confirmation.
 	tm.Send(press(t, "m"))
-	waitFor("Squash and merge")
+	waitForText(t, tm, "Squash and merge")
 	tm.Send(press(t, "s"))
-	waitFor("Confirm merge")
+	waitForText(t, tm, "Confirm merge")
 
 	// n cancels the confirmation. Nothing is waited for after it: closing a
 	// modal rewrites the box's own rows, and the text underneath them was
@@ -265,14 +267,7 @@ func TestFlowTabCyclingKeepsThePullRequestList(t *testing.T) {
 	const w, h = 100, 30
 
 	tm := teatest.NewTestModel(t, newModel(t, srv, w, h), teatest.WithInitialTermSize(w, h))
-	waitFor := func(marker string) {
-		t.Helper()
-		teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
-			return bytes.Contains(out, []byte(marker))
-		}, teatest.WithDuration(10*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
-	}
-
-	waitFor(readyMarker)
+	waitForText(t, tm, readyMarker)
 
 	// The list's request is the barrier: a request that reached the server
 	// cannot be patched out of the stream the way a cell can.
@@ -291,7 +286,7 @@ func TestFlowTabCyclingKeepsThePullRequestList(t *testing.T) {
 	// whose body is a single fresh sentence, so it is the one marker here.
 	tm.Send(press(t, "tab"))
 	tm.Send(press(t, "tab"))
-	waitFor("No issues loaded yet.")
+	waitForText(t, tm, "No issues loaded yet.")
 	tm.Send(press(t, "tab"))
 
 	final := finish(t, tm)

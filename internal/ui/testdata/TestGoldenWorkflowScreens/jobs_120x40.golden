@@ -1,10 +1,10 @@
-  [1mghspector[m  │  [1mWorkflows › Jobs[m   Account: octocat                                                                     
+  [1mWorkflows › Jobs[m                                                                                      Account: octocat
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   [1mWorkflow: Build 896[m                                                                                                   
   Repo: octocat/api | Branch: main | SHA: abcdef1                                                                       
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
 [1m  ST  JOB NAME                                                                              STEPS   STARTED   DURATION  [m
-[1m  ■   lint                                                                                  1/2     10:03:00  0s        [m
+[1m› ■   lint                                                                                  1/2     10:03:00  0s        [m
   ■   build                                                                                 3/3     10:00:00  2m00s     
                                                                                                                         
                                                                                                                         

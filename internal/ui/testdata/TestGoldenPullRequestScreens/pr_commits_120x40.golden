@@ -1,4 +1,4 @@
-  [1mghspector[m  │  [1mPull Requests › PR #7[m   Account: octocat                                                                
+  [1mPull Requests › PR #7[m                                                                                 Account: octocat
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   [1m[OPEN][m [1mPR #7: Add the pull request view[m                                                                               
   Repo: octocat/api | Author: @octocat | Source: feat/prs → Base: main                                                  
@@ -8,7 +8,7 @@
 [1m▶ COMMITS[m                                                                                                               
                                                                                                                         
 [1m  SHA       MESSAGE                                                                 AUTHOR             DATE             [m
-[1m  abcdef1   Add the pull request view                                               octocat            2024-05-01 10:00 [m
+[1m› abcdef1   Add the pull request view                                               octocat            2024-05-01 10:00 [m
   0123456   Fix the tests                                                           Hubot              2024-05-01 09:00 
                                                                                                                         
                                                                                                                         

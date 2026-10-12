@@ -42,8 +42,6 @@ type Options struct {
 	// SaveMergeMethod persists a new default merge method. Nil means there is
 	// no config file to write to.
 	SaveMergeMethod func(method string) error
-	// OverlayChrome styles the modal stack.
-	OverlayChrome overlay.Chrome
 }
 
 // stage is the coarse state of the root model.
@@ -94,7 +92,7 @@ func New(opts Options) Model {
 	}
 	m := Model{
 		opts:     opts,
-		overlays: overlay.NewStack(opts.OverlayChrome),
+		overlays: overlay.NewStack(overlayChrome(opts.Theme)),
 		routes:   NewRouteStack(NewMain()),
 		stage:    stageLoading,
 	}
@@ -114,9 +112,17 @@ func New(opts Options) Model {
 	return m
 }
 
-// Init starts the splash animation, the identity request, and the poll clock.
+// Init starts the splash animation, the identity request, the poll clock, and
+// the terminal background query.
+//
+// The background query is why the palette is not decided by main: the terminal
+// answers with the colour it is actually painting, and the reply can arrive
+// again later, so the theme follows the terminal instead of being fixed at
+// startup. Asking with lipgloss.HasDarkBackground would instead block on a reply
+// read before the runtime is listening, which is the same probe the previous
+// version called from inside its render path.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinnerTick(), m.loadIdentity(), m.armPoll())
+	return tea.Batch(m.spinnerTick(), m.loadIdentity(), m.armPoll(), tea.RequestBackgroundColor)
 }
 
 // spinnerMsg advances the splash animation.
@@ -176,6 +182,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// that sizes a modal budget knows how much room it has.
 		m.deps.Size = Size{Width: msg.Width, Height: msg.Height}
 		return m, nil
+
+	case tea.BackgroundColorMsg:
+		return m.withTheme(msg.IsDark()), nil
+
+	case tea.FocusMsg:
+		// Regaining focus is when a scheme change is most likely to have
+		// happened while the program was not looking, so ask again.
+		return m, tea.RequestBackgroundColor
 
 	case spinnerMsg:
 		m.tick++
@@ -463,7 +477,21 @@ func (m Model) View() tea.View {
 	v := tea.NewView(content)
 	v.AltScreen = true
 	v.WindowTitle = "ghspector"
+	// Focus reporting is what makes the palette follow a scheme change while the
+	// program is in the background.
+	v.ReportFocus = true
 	return v
+}
+
+// withTheme rebuilds the palette for a terminal background. The theme and the
+// modal chrome are derived from the same answer, so a change reaches every
+// screen and every overlay rather than half of them.
+func (m Model) withTheme(dark bool) Model {
+	theme := ThemeFor(dark)
+	m.opts.Theme = theme
+	m.deps.Theme = theme
+	m.overlays.SetChrome(overlayChrome(theme))
+	return m
 }
 
 // render builds the screen for the current stage.
