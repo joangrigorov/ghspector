@@ -1,0 +1,40 @@
+  [1mghspector[m  │  [1mPull Requests › Help & Keybindings[m   Account: octocat                                                   
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[1mGlobal[m                                                                                                                  
+  [1m?[m         Help                                                                                                        
+  [1mo[m         Switch account/org                                                                                          
+  [1mq/Ctrl+C[m  Quit                                                                                                        
+                                                                                                                        
+[1mWorkflow runs[m                                                                                                           
+  [1mj/↓[m        Move down                                                                                                  
+  [1mk/↑[m        Move up                                                                                                    
+  [1mEnter[m      View jobs                                                                                                  
+  [1mr/Ctrl+R[m   Refresh                                                                                                    
+  [1ma[m          Approve waiting run                                                                                        
+  [1mm[m          Filter to my runs                                                                                          
+  [1mf[m          Filter                                                                                                     
+  [1mx[m          Clear filters                                                                                              
+  [1mw[m          Open in browser                                                                                            
+  [1mTab[m        Next tab                                                                                                   
+  [1mShift+Tab[m  Previous tab                                                                                               
+                                                                                                                        
+[1mPull requests[m                                                                                                           
+  [1mj/↓[m        Move down                                                                                                  
+  [1mk/↑[m        Move up                                                                                                    
+  [1mEnter[m      View details                                                                                               
+  [1mr/Ctrl+R[m   Refresh                                                                                                    
+  [1ms[m          Cycle state (open/closed/all)                                                                              
+  [1ma[m          Filter by author (me)                                                                                      
+  [1mi[m          Filter by assignee (me)                                                                                    
+  [1mv[m          Filter by reviewer (me)                                                                                    
+  [1mf[m          Filter                                                                                                     
+  [1mx[m          Clear filters                                                                                              
+  [1mw[m          Open in browser                                                                                            
+  [1mTab[m        Next tab                                                                                                   
+  [1mShift+Tab[m  Previous tab                                                                                               
+                                                                                                                        
+[1mIssues[m                                                                                                                  
+  [1mj/↓[m        Move down                                                                                                  
+  [1mk/↑[m        Move up                                                                                                    
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mj/↓[m:Scroll down  [1mk/↑[m:Scroll up  [1mEsc/?[m:Close help                         

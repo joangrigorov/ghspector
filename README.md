@@ -23,19 +23,12 @@ Monitoring GitHub Actions workflows across multiple active repositories typicall
 - [Configuration](#configuration)
 - [Usage & Keybindings](#usage--keybindings)
   - [Global Keys](#global-keys)
-  - [Dashboard View](#dashboard-view)
-  - [Workflow Runs View](#workflow-runs-view)
-  - [Pull Requests View](#pull-requests-view)
-  - [Pull Request Details View](#pull-request-details-view)
-  - [PR Merging & Closing Overlays](#pr-merging--closing-overlays)
-  - [Workflow Jobs View](#workflow-jobs-view)
-  - [Logs Viewer](#logs-viewer)
-  - [Context Switcher](#context-switcher)
+  - [Full Keybinding Reference](#full-keybinding-reference)
 
 ---
 
 ## Features
-- **Unified GitHub Operations Dashboard**: A single, clean terminal interface to manage both CI/CD workflow runs and pull requests.
+- **Unified GitHub Operations**: A single, clean terminal interface to manage both CI/CD workflow runs and pull requests.
 - **Aggregated Scopes**: View combined workflows and pull requests aggregated across a user account or an entire organization.
 - **Real-Time Polling**: Active background status updates for runs, jobs, logs, and pull requests.
 - **Workflow & Log Viewer**: Cycle through historical attempts of multi-run workflows and tail active jobs in real-time.
@@ -179,86 +172,17 @@ Below is the complete keybindings map for navigating the application. Press `?` 
 ### Global Keys
 | Key | Action |
 | --- | --- |
-| `Tab` | Switch to the **next** main tab (Dashboard → Workflows → Pull Requests) |
+| `Tab` | Switch to the **next** main tab (Pull Requests → Workflows → Issues) |
 | `Shift+Tab` | Switch to the **previous** main tab |
-| `?` | Toggle Help overlay screen |
-| `o` | Open Context Switcher to swap account/organization scope |
+| `?` | Toggle the help screen |
+| `o` | Open the context switcher to swap account/organization scope |
 | `q` or `Ctrl+C` | Quit `ghspector` |
 
-### Dashboard View
-Displays your active GitHub context, API rate limit consumption status, aggregated pull request and workflow run metrics, and navigation shortcuts.
+The tabs are **Pull Requests**, **Workflows**, **Issues**, and the app opens on
+Pull Requests.
 
-### Workflow Runs View
-| Key | Action |
-| --- | --- |
-| `j` / `Down` | Move selection down |
-| `k` / `Up` | Move selection up |
-| `Enter` | Select and fetch jobs for the highlighted run |
-| `r` | Refresh the workflow runs list |
-| `w` | Open the highlighted workflow run in your default browser |
-| `m` | Toggle filtering by your own runs (current user) |
-| `f` | Open text input to filter by specific actor username |
-
-### Pull Requests View
-| Key | Action |
-| --- | --- |
-| `j` / `Down` | Move selection down |
-| `k` / `Up` | Move selection up |
-| `Enter` | Open the detailed workspace for the highlighted pull request |
-| `r` | Refresh the pull requests list |
-| `w` | Open the highlighted pull request in your default browser |
-
-### Pull Request Details View
-Symmetric three-column layout (Checks sidebar, scrollable PR description body, Metadata details sidebar).
-| Key | Action |
-| --- | --- |
-| `Tab` / `Shift+Tab` | Toggle interactive focus between Checks sidebar and PR description viewport |
-| `j` / `k` (or `Down` / `Up`) | Navigate highlighted Check items, or scroll PR description body |
-| `u` / `d` | Scroll PR description body up/down |
-| `Enter` | Open selected Actions check run job in-app, or open non-actions check in browser |
-| `w` | Open the pull request (or selected check) page in your default browser |
-| `m` | Initiate Merge process (available only with repository write permissions) |
-| `c` | Initiate Close process (available only with repository write permissions) |
-| `Esc` / `Backspace` | Return to the Pull Requests list |
-
-### PR Merging & Closing Overlays
-Available when repository write scopes exist.
-| Key | Action |
-| --- | --- |
-| **Merge Selection (`m`):** | |
-| `s` / `S` | Select Squash Merge (default) and go to confirmation screen |
-| `m` / `M` | Select Normal Merge (create merge commit) and go to confirmation screen |
-| `r` / `R` | Select Rebase Merge and go to confirmation screen |
-| `esc` / `c` / `C` | Cancel merge process |
-| **Confirm Action:** | |
-| `y` / `Y` | Confirm merge or close execution |
-| `n` / `N` / `Esc` | Cancel confirmation and return |
-
-### Workflow Jobs View
-| Key | Action |
-| --- | --- |
-| `j` / `Down` | Move selection down |
-| `k` / `Up` | Move selection up |
-| `Enter` | View logs for the highlighted job |
-| `[` | Cycle to the **previous** workflow run attempt (if multiple exist) |
-| `]` | Cycle to the **next** workflow run attempt |
-| `w` | Open the parent workflow run in your default browser |
-| `v` | Open the highlighted job page in your default browser |
-| `Esc` / `Backspace` | Return to the parent list (runs or PR checks) |
-| `r` | Refresh the jobs list for the active attempt |
-
-### Logs Viewer
-| Key | Action |
-| --- | --- |
-| `u` | Scroll logs Up |
-| `d` | Scroll logs Down |
-| `r` | Refresh logs (tails active jobs in real-time) |
-| `Esc` / `Backspace` | Return to the jobs list |
-
-### Context Switcher
-| Key | Action |
-| --- | --- |
-| `j` / `Down` | Navigate down the accounts/organizations list |
-| `k` / `Up` | Navigate up the list |
-| `Enter` | Confirm context switch and load runs for the selected scope |
-| `Esc` | Close context switcher |
+### Full Keybinding Reference
+Every key, grouped by the view it applies in, is in
+[docs/keybindings.md](docs/keybindings.md). That file is generated from the
+keymap table the app itself dispatches from, so the reference and the behaviour
+cannot drift apart. Press `?` in the app for the same content.

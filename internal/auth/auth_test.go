@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -223,3 +224,48 @@ func TestConfigVersion(t *testing.T) {
 	})
 }
 
+// TestConfigFileTokenSourceHidesThePath pins the fix for the credential source
+// label: it is rendered on screen, so it must not carry the user's home
+// directory.
+func TestConfigFileTokenSourceHidesThePath(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "ghspector-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	defer os.Unsetenv("XDG_CONFIG_HOME")
+	os.Setenv("APPDATA", tmpDir)
+	defer os.Unsetenv("APPDATA")
+	os.Unsetenv("GH_TOKEN")
+	os.Unsetenv("GITHUB_TOKEN")
+
+	if saveErr := SaveConfig(&Config{GitHubToken: "config_token_abc"}); saveErr != nil {
+		t.Fatalf("failed to save config: %v", saveErr)
+	}
+
+	token, cfg, err := ResolveTokenWithCliGetter(func() (string, error) {
+		return "", errors.New("gh cli not logged in")
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "config_token_abc" {
+		t.Fatalf("expected the config token, got %q", token)
+	}
+	if cfg == nil {
+		t.Fatal("expected a config")
+	}
+
+	source := cfg.TokenSource
+	if !strings.Contains(source, "config.yaml") {
+		t.Errorf("expected the file name in the source label, got %q", source)
+	}
+	if strings.Contains(source, tmpDir) {
+		t.Errorf("the source label leaks the config directory: %q", source)
+	}
+	if strings.ContainsAny(source, `/\`) {
+		t.Errorf("the source label contains a path separator: %q", source)
+	}
+}

@@ -470,6 +470,22 @@ The field comment lists `3: completed`, which no handler produces.
 
 **Decision for v2:** modeled states are `Method`, `ConfirmMerge`, `ConfirmClose`, with no phantom completed state.
 
+### Recorded resolutions
+
+Each drift item is resolved by construction: the new code has one place to
+express the fact, and a test that fails when the two drift apart again.
+
+| Item | Resolution | Enforced by |
+| --- | --- | --- |
+| D1 | No Dashboard route. The dead counter fields and `dashboardStatsLoadedMsg` are gone with `internal/tui`. | `internal/ui` has three tabs and no dashboard scope. |
+| D2 | Tab order is PRs → Workflows → Issues, PRs first. The README global-keys table now says so. | `TestTabCyclingOrder`, `TestEveryScreenHasExactGeometry`. |
+| D3 | `w`/`W` opens the highlighted job, `v`/`V` opens the parent run, matching the code. | `keymap.Jobs` plus `TestDocumentedKeysFromSpec`, which pins both keys to their actions. |
+| D4 | `c` is comments, `C` is close. | `keymap.PRDetails` plus `TestDocumentedKeysFromSpec`. |
+| D5 | Every list-view filter key is in the table, so the footer and the help overlay show them. | `TestFooterRendersTheActiveScope`, `keymap.Documented`. |
+| D6 | Logs keeps `j`/`k` steps, `u`/`d` and `PgUp`/`PgDn` scroll, `w` opens the job. | `keymap.Logs`. |
+| D7 | The unreachable `case "q"` is gone: quit is handled once, before any routing. | `TestQuitWorksFromEveryStage`, `TestCtrlCQuitsFromBehindAModal`. |
+| D8 | No phantom completed merge state. | `keymap.MergeMethod`, `keymap.MergeConfirm`. |
+
 ---
 
 ## 9. Data and API map
