@@ -92,6 +92,18 @@ screens, and live runs of the built binary in tmux.
   list, so the issue-comment author line is covered by the shared code path and
   the unit tests rather than by a live sample.
 
+## This branch replaces the closed #28, and its history was rewritten
+
+An earlier revision of these commits carried identifiers of a private project —
+its name, a repository path, a bot login, an internal source path and a quoted
+private code review — in a benchmark fixture, in `docs/spec.md` and
+`docs/architecture.md`, and in the archived walkthroughs, and the same
+identifiers reached two commit messages. They are now generic placeholders, the
+commit messages were rewritten with them, and `main` was rewritten and
+force-pushed before this pull request was opened. The record of what was done and
+of what a force-push cannot remove is in
+`.agents/history/2026-10-12-leak-remediation/walkthrough.md`.
+
 ## Files
 
 - `internal/ui/conversation.go` — grouping by root, attribution to the root's
