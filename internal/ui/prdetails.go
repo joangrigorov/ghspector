@@ -820,9 +820,14 @@ func (p *PRDetails) infoView(deps Deps, r layout.Rect) string {
 	detailsH, checksH := sideHeights(r.H)
 	sideLines := make([]string, 0, r.H)
 	if detailsH > 0 {
-		sideLines = append(sideLines, p.metadataPane(deps, sideW, detailsH)...)
+		sideLines = append(sideLines, padLines(p.metadataPane(deps, sideW, detailsH), sideW, detailsH)...)
 	}
 	if checksH > 0 {
+		if detailsH > 0 {
+			// The checks carry their own heading, and the blank row keeps it clear
+			// of the last value in the block above.
+			sideLines = append(sideLines, "")
+		}
 		sideLines = append(sideLines, p.checksPane(deps, sideW, checksH)...)
 	}
 
@@ -986,13 +991,14 @@ func infoColumns(width int) (desc, side int) {
 }
 
 // sideHeights splits the sidebar's rows between the details block and the
-// checks. The details give way first when the body is short, because the checks
-// are what the route's keys act on; below that the checks take the whole column.
+// checks, leaving the blank row that separates them. The details give way first
+// when the body is short, because the checks are what the route's keys act on;
+// below that the checks take the whole column.
 func sideHeights(height int) (details, checks int) {
-	if height < detailsRows+checksMinRows {
+	if height < detailsRows+sideGapRows+checksMinRows {
 		return 0, height
 	}
-	return detailsRows, height - detailsRows
+	return detailsRows, height - detailsRows - sideGapRows
 }
 
 // Pane geometry for the Info sub-tab: the separator between the description and
@@ -1014,8 +1020,12 @@ const (
 	// gets cut off, which costs less than an eight-row block that is never seen
 	// on the terminal size the layout is tuned for.
 	detailsRows = 10
-	// checksMinRows is the fewest rows the checks list is worth drawing in.
-	checksMinRows = 5
+	// sideGapRows is the blank row between the details block and the checks, so
+	// the checks heading is not glued to the last value above it.
+	sideGapRows = 1
+	// checksMinRows is the fewest rows the checks list is worth drawing in: its
+	// heading, the blank under it, and one check.
+	checksMinRows = 4
 )
 
 // padLines fits lines into exactly height lines of exactly width cells, so the

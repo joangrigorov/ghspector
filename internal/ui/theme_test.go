@@ -3,12 +3,15 @@ package ui
 import (
 	"image/color"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"ghspector/internal/layout"
 )
@@ -225,8 +228,9 @@ func TestSelectedRowLeavesAPlainThemeUncoloured(t *testing.T) {
 }
 
 // TestHeaderCarriesNoWordmark pins the header the review asked for: the trail
-// names the screen and nothing above it names the program, which the splash and
-// the window title already do.
+// names the screen on the left and the account is the last thing on the row,
+// and nothing above them names the program, which the splash and the window title
+// already do.
 func TestHeaderCarriesNoWordmark(t *testing.T) {
 	m := readyModel(t, ghServer(t, defaultFixtures()), 80, 24)
 	first := strings.Split(m.View().Content, "\n")[0]
@@ -237,8 +241,47 @@ func TestHeaderCarriesNoWordmark(t *testing.T) {
 	if !strings.Contains(first, "Pull Requests") {
 		t.Errorf("the header lost the trail: %q", first)
 	}
-	if !strings.Contains(first, "Account: octocat") {
-		t.Errorf("the header lost the account: %q", first)
+	// The band is painted to the full width, so the account is the last content
+	// on the row rather than the last cell.
+	content := strings.TrimRight(ansi.Strip(first), " ")
+	if !strings.HasSuffix(content, "Account: octocat") {
+		t.Errorf("the account is not the right-hand end of the band: %q", first)
+	}
+}
+
+// TestHeaderPutsTheAccountAtTheRightEdge covers the band with a rate limit on it,
+// which no fixture normally provides: the count is written before the account, so
+// a count that changes width — a remaining request crossing a power of ten, or
+// the reset time appearing — does not move the name it belongs to.
+func TestHeaderPutsTheAccountAtTheRightEdge(t *testing.T) {
+	fixtures := defaultFixtures()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "4999")
+		body, ok := fixtures[r.URL.Path]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"no fixture"}`))
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	band := strings.TrimRight(ansi.Strip(strings.Split(readyModel(t, srv, 100, 30).View().Content, "\n")[0]), " ")
+
+	if !strings.HasPrefix(band, "  Pull Requests") {
+		t.Errorf("the trail is not at the left edge: %q", band)
+	}
+	if !strings.HasSuffix(band, "Account: octocat") {
+		t.Errorf("the account is not the right-hand end of the band: %q", band)
+	}
+	rate := strings.Index(band, "Rate limit: 4999/5000")
+	if rate < 0 {
+		t.Fatalf("the band is missing the rate limit: %q", band)
+	}
+	if account := strings.Index(band, "Account:"); rate > account {
+		t.Errorf("the rate limit is written after the account, so the count moves it: %q", band)
 	}
 }
 

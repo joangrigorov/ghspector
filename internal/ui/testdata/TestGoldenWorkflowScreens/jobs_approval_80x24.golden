@@ -1,4 +1,4 @@
-  [1mWorkflows › Jobs[m   Account: octocat                                           
+  [1mWorkflows › Jobs[m                                              Account: octocat
 ────────────────────────────────────────────────────────────────────────────────
   [1mWorkflow: Build 900[m                                                           
   Repo: octocat/api | Branch: main | SHA: abcdef1                               

@@ -1,4 +1,4 @@
-  [1mPull Requests › PR #7[m   Account: octocat                                      
+  [1mPull Requests › PR #7[m                                         Account: octocat
 ────────────────────────────────────────────────────────────────────────────────
   [1m[OPEN][m [1mPR #7: Add the pull request view[m                                       
   Repo: octocat/api | Author: @octocat | Source: feat/prs → Base: main          
@@ -15,10 +15,10 @@ It has two paragraphs.                               │  Assignees:  @hubot
                                                      │  Labels:     enhancement 
                                                      │  Created:    2024-04-30  
                                                      │              10:00       
+                                                     │                          
                                                      │[1mCHECKS[m                    
                                                      │                          
                                                      │  ■ lint — GitHub Actions 
                                                      │  ■ codecov — Codecov     
-                                                     │                          
 ────────────────────────────────────────────────────────────────────────────────
   [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEsc/Backspace[m:Back to list       

@@ -1,4 +1,4 @@
-  [1mPull Requests › PR #7[m   Account: octocat                                                                              
+  [1mPull Requests › PR #7[m                                                                                 Account: octocat
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   [1m[OPEN][m [1mPR #7: Add the pull request view[m                                                                               
   Repo: octocat/api | Author: @octocat | Source: feat/prs → Base: main                                                  
@@ -17,9 +17,9 @@ It has two paragraphs.                                                          
                        │                                                                        │24-05-01 10:00         
                        │  Choose how to merge this pull request.                                │                       
                        │                                                                        │                       
-                       │  s/S   Squash and merge  (default)                                     │b Actions              
-                       │  m/M   Create a merge commit                                           │decov                  
-                       │  r/R   Rebase and merge                                                │                       
+                       │  s/S   Squash and merge  (default)                                     │                       
+                       │  m/M   Create a merge commit                                           │b Actions              
+                       │  r/R   Rebase and merge                                                │decov                  
                        │                                                                        │                       
                        │  Current default: squash. Enter uses it, d changes and saves it.       │                       
                        │                                                                        │                       

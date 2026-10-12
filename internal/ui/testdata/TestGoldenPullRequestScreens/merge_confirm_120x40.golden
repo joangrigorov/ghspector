@@ -1,4 +1,4 @@
-  [1mPull Requests › PR #7[m   Account: octocat                                                                              
+  [1mPull Requests › PR #7[m                                                                                 Account: octocat
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   [1m[OPEN][m [1mPR #7: Add the pull request view[m                                                                               
   Repo: octocat/api | Author: @octocat | Source: feat/prs → Base: main                                                  
@@ -17,9 +17,9 @@ It has two paragraphs.                                                          
                        │                                                                        │24-05-01 10:00         
                        │  [1mConfirm merge[m                                                         │                       
                        │                                                                        │                       
-                       │  Merge pull request #7 with a squash commit?                           │b Actions              
-                       │                                                                        │decov                  
-                       │  The branch is combined into a single commit on the base.              │                       
+                       │  Merge pull request #7 with a squash commit?                           │                       
+                       │                                                                        │b Actions              
+                       │  The branch is combined into a single commit on the base.              │decov                  
                        │                                                                        │                       
                        ╰────────────────────────────────────────────────────────────────────────╯                       
                                                                                 │                                       

@@ -32,9 +32,11 @@ var (
 //
 // The trail gives way first when the row is tight, because the account and the
 // rate limit are what the user needs on a small screen; the account then gives
-// way, and the rate limit last. The band carries no product name: the splash
-// and the window title already say what is running, and the columns are worth
-// more to the trail.
+// way, and the rate limit last. The trail takes the left, and the account takes
+// the right-hand edge, where it stays put: the trail grows and the rate limit
+// changes width, and neither should move the name the band belongs to. The band
+// carries no product name: the splash and the window title already say what is
+// running, and the columns are worth more to the trail.
 func renderHeader(deps Deps, r layout.Rect, title string, loading bool, tick int) string {
 	if r.Empty() {
 		return ""
@@ -61,11 +63,15 @@ func renderHeader(deps Deps, r layout.Rect, title string, loading bool, tick int
 	page := style(theme.HeaderTitle, bold).Render(layout.Truncate(title, budget))
 
 	left := "  " + page
+	right := indicator
 	if account != "" {
-		left += strings.Repeat(" ", gap) + account
+		if right != "" {
+			right += strings.Repeat(" ", gap)
+		}
+		right += account
 	}
 
-	titleRow := band(theme, r.W, joinLR(r.W, left, indicator))
+	titleRow := band(theme, r.W, joinLR(r.W, left, right))
 	if r.H < 2 {
 		return layout.Fit(titleRow, r.W, r.H)
 	}

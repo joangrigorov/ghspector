@@ -58,6 +58,37 @@ old code.
    of the header saying what the splash and the window title already say. The
    header starts with the trail now; the account and the rate limit keep the room.
 
+## The two tweaks from the second pass
+
+A second, smaller read of the same screens produced two layout notes and one
+fragile test.
+
+1. **The checks heading was glued to the details block.** The sidebar stacked the
+   two blocks with nothing between them, so `CHECKS` sat immediately under the
+   last value above it — and under a value that wraps, immediately under its
+   second line. The column now holds a blank row between the blocks
+   (`sideGapRows`), and `checksMinRows` came down from five to four so that
+   80×24 still fits all three parts: ten rows of details, the blank, four rows of
+   checks. Fifteen is exactly the Info body at 80×24, which is why the two
+   constants and the gap have to be read together.
+2. **The account moved to the right-hand edge.** `Account: <owner>` sat directly
+   after the trail, where its position moved whenever the trail grew. It is now
+   the last thing on the band, with the rate limit written before it — so the
+   account stays put as the trail changes length, and the count's own width
+   changes (a remaining request crossing a power of ten, or the reset time
+   appearing) move the count instead of the name.
+3. **A flow test's marker arrived split.** With the sidebar changed, the merge
+   method overlay's body partly coincided with the screen behind it, so the
+   renderer wrote `Squash and merge` in two runs separated by a cursor move and
+   the test's literal match timed out. The product was correct — the box and its
+   text are both in the stream — but the marker was. The three copies of the wait
+   closure are now one `waitForText` helper that matches against the stream with
+   its escape sequences removed, which is what the file's own comment said the
+   markers needed and what the diff renderer makes unreliable.
+
+Named plainly: the third item is a test fix. It was found by this change, and it
+would have failed eventually on any screen whose patches lined up that way.
+
 ## A note on the accent and on "no colour is the only signal"
 
 The purple is gone with `Selected`. Both palettes now use one accent — a sky blue
@@ -104,7 +135,7 @@ highlight, which is the reader's step.
 | --- | --- |
 | `go build ./...` | pass |
 | `go vet ./...` | pass |
-| `go test -race -count=1 ./...` | pass — 292 test functions, 422 leaf runs, in the 9 packages that have tests |
+| `go test -race -count=1 ./...` | pass — 293 test functions, 423 leaf runs, in the 9 packages that have tests |
 | `golangci-lint run` | 0 issues |
 | `govulncheck ./...` | 14 findings, all standard library (F5, pre-existing; identical on `main`) |
 | `actionlint` | pass |
@@ -128,9 +159,15 @@ Screen and flow coverage for this change:
   goldens readable.
 - **The header**: the first line of a live render names the screen and the
   account and does not name the program.
-- **The Info row**: DETAILS, State and CHECKS are all present at 80×24, and the
-  existing property test still tiles every width from 12 to 200 and every height
-  from 6 to 20 with no doubled separator.
+- **The Info row**: DETAILS, State and CHECKS are all present at 80×24, the row
+  above the CHECKS heading is blank in the sidebar, and the existing property
+  test still tiles every width from 12 to 200 and every height from 6 to 20 with
+  no doubled separator.
+- **The header band**: the trail is the left-hand end, the account is the
+  right-hand end, and with a rate limit on the band (a fixture that sends
+  `X-RateLimit-*`, which the shared fixtures do not) the count is written before
+  the account. The placement assertion was checked against the old layout, where
+  it fails.
 
 The renders read during this change, with the real palettes:
 
@@ -140,10 +177,12 @@ The renders read during this change, with the real palettes:
 | Job list | marker `› ` accent, the failing `■` in `#af0000`, the row text accent and bold | same shape, `■` in `#df5f5f` |
 | Log viewer steps | selected step `› ■ Run tests`, the only background in the program is the header band | same |
 | PR Info | values `#262626` on white, checks `#5fd75f` in the dark scheme | values `#e4e4e4`, checks `#5fd75f` |
+| Header, 100 wide with `Rate limit: 4999/5000` | trail left, count, then `Account: octocat` at the edge | same |
 
 All 38 goldens were regenerated, and every changed line was read: the wordmark
-gone from the header, the `› ` marker in place of the old gutters, the Info row
-two columns wide, and the log step gutter aligned with the tables.
+gone from the header and the account moved to its right-hand edge, the `› ` marker
+in place of the old gutters, the Info row two columns wide with a blank row before
+CHECKS, and the log step gutter aligned with the tables.
 
 ## Notes for the review
 

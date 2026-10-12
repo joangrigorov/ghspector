@@ -1168,19 +1168,25 @@ func TestInfoColumnsDropsTheSidebarWhenItCannotAnswer(t *testing.T) {
 
 // TestSideHeightsGivesUpTheDetailsFirst pins the vertical priority: the checks
 // are what the route's keys act on, so the details block gives way when the body
-// is short and the checks keep the column.
+// is short and the checks keep the column. The blank row that separates the two
+// blocks is part of what the column has to hold.
 func TestSideHeightsGivesUpTheDetailsFirst(t *testing.T) {
-	if details, checks := sideHeights(detailsRows + checksMinRows); details != detailsRows || checks != checksMinRows {
+	full := detailsRows + sideGapRows + checksMinRows
+	if details, checks := sideHeights(full); details != detailsRows || checks != checksMinRows {
 		t.Errorf("sideHeights(%d) = (%d, %d), want (%d, %d)",
-			detailsRows+checksMinRows, details, checks, detailsRows, checksMinRows)
+			full, details, checks, detailsRows, checksMinRows)
 	}
-	if details, checks := sideHeights(detailsRows + checksMinRows - 1); details != 0 || checks != detailsRows+checksMinRows-1 {
+	if details, checks := sideHeights(full - 1); details != 0 || checks != full-1 {
 		t.Errorf("a short body kept the details block: (%d, %d)", details, checks)
 	}
 	for height := 0; height <= 60; height++ {
 		details, checks := sideHeights(height)
-		if details+checks != height {
-			t.Fatalf("height %d: (%d, %d) does not fill the column", height, details, checks)
+		used := details + checks
+		if details > 0 {
+			used += sideGapRows
+		}
+		if used != height {
+			t.Fatalf("height %d: (%d, %d) and a %d-row gap do not fill the column", height, details, checks, sideGapRows)
 		}
 	}
 }
@@ -1261,6 +1267,24 @@ func TestInfoViewKeepsTheDetailsOnTheCanonicalScreen(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Errorf("the sidebar does not show %q at 80x24:\n%s", want, view)
 		}
+	}
+
+	// The blank row between the blocks, so the checks heading is not glued to the
+	// last value above it.
+	lines := splitLines(ansi.Strip(view))
+	checksAt := -1
+	for i, line := range lines {
+		if strings.Contains(line, "CHECKS") {
+			checksAt = i
+		}
+	}
+	if checksAt < 1 {
+		t.Fatalf("the sidebar has no CHECKS heading:\n%s", view)
+	}
+	_, side := infoColumns(80)
+	above := []rune(lines[checksAt-1])
+	if got := strings.TrimSpace(string(above[len(above)-side:])); got != "" {
+		t.Errorf("the row above CHECKS is not blank: %q", got)
 	}
 }
 
