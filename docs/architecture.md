@@ -512,6 +512,49 @@ phases pass; the palette is pinned by the contrast test and the background-chang
 equivalence test, the highlight by a unit test on `selectedRow` and by every list
 golden, and the header by a test that reads the first line of a live render.
 
+### Phase 4 — Issues vertical slice (this change)
+
+The Issues tab, the issue detail route, and the conversation are real: an issue
+list aggregated across the context's repositories with the pull requests the
+endpoint returns alongside them dropped, a detail screen with the description
+beside its metadata sidebar, and a comments view. The three top-level lists now
+have the same shape — filters, pagination, polling, a Load More sentinel — and
+the two description-beside-a-sidebar screens share one column split.
+
+| Package | State |
+| --- | --- |
+| `internal/store` | `ScopeIssues` over the same `repoTargets` fan-out the runs and pull request lists use, `MergeIssues` and `SortIssues` (`updated_at` descending, then the higher number), `IssueQuery.{Repo,Author,Assignee}` applied over the merged page, and `HasMore` read from the raw page before pull requests are dropped. |
+| `internal/gh` | `GetIssuesWithState` keeps its pull-request filter, and the filter now has a transport test of its own: the page's raw length decides `HasMore`. |
+| `internal/ui` | `Main.issuesTab`, the `IssueDetails` route (description and sidebar with the Tab toggle), the `IssueComments` route, the issue filter menu, the login prompt and the two-role picker. |
+| `internal/keymap` | `IssueComments` gains `u`/`d`, so a thread scrolls the way the pull request conversation does; `docs/keybindings.md` is regenerated. |
+| `internal/auth` | `polling.issues_interval_seconds` (default 10 s); the legacy `polling_interval_seconds` now sets all three intervals. |
+
+Fixed while building this:
+
+- **The Issues tab owned no interval.** Spec §5.4 recorded the defect: the
+  interval selector special-cased the Pull Requests scope, so the Issues tab rode
+  the workflows cadence. `pollInterval` now selects on `keymap.MainIssues`, and
+  the tab has a key of its own in the config file. A poll test releases the tick
+  and asserts the interval the tab asked for.
+- **The issue filters could not be reused as they were.** `milestoneTitle` and
+  `labelNames` took a `store.PullRequest`, and the conversation renderer was a
+  method on `PRDetails`, so neither could serve the issue screen. They are now
+  `milestoneName`, `labelList` and `commentBlockLines`, and the pull request
+  screens call the same functions. `infoColumns` became `detailColumns`, since
+  two screens now split a row the same way.
+- **The tab-strip placeholder had no reason to exist.** `Main`'s third tab drew a
+  "this list arrives with the data layer" sentence; with the tab real, the
+  `tabMeta.Empty` field and the fallback body were deleted rather than left
+  unreachable.
+
+Verification: see the walkthrough for the phase. The same seven checks as the
+previous phases pass; the new screens are pinned by 16 goldens at three widths,
+the filter and pagination paths by scripted tests that assert the queries the tab
+sent, the exclusion of pull requests by a transport test and by a list test that
+counts rows on screen, and the tab, its fetch and its return by a `teatest` run
+through the runtime. The issue store gets its own tests for the fan-out, the
+sort, the merge, the filters, `HasMore` and the partial-failure rule.
+
 ### Security findings
 
 | Finding | Status |

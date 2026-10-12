@@ -29,10 +29,11 @@ type Options struct {
 	// DefaultOwner is the context selected by --org, --user or the config
 	// file. Nil means "the authenticated user".
 	DefaultOwner *store.OwnerRef
-	// PollWorkflows and PollPRs are the refresh intervals resolved from the
-	// config file. A non-positive value turns polling off for that tab.
+	// PollWorkflows, PollPRs and PollIssues are the refresh intervals resolved
+	// from the config file. A non-positive value turns polling off for that tab.
 	PollWorkflows time.Duration
 	PollPRs       time.Duration
+	PollIssues    time.Duration
 	// Clock is the time source. Nil means the real clock; a test supplies one
 	// it can release by hand instead of sleeping.
 	Clock Clock
@@ -105,6 +106,7 @@ func New(opts Options) Model {
 		TokenSource:     opts.TokenSource,
 		PollWorkflows:   opts.PollWorkflows,
 		PollPRs:         opts.PollPRs,
+		PollIssues:      opts.PollIssues,
 		Clock:           opts.Clock,
 		MergeMethod:     auth.ResolveMergeMethod(opts.MergeMethod),
 		SaveMergeMethod: opts.SaveMergeMethod,
@@ -398,15 +400,17 @@ func (m *Model) armPoll() tea.Cmd {
 
 // pollInterval is the refresh cadence for the state on screen.
 //
-// The pull request tab polls on the pull request cadence and every other screen
-// on the workflows cadence, which is the rule the previous version applied and
-// spec §5.4 records. The Issues tab therefore still shares the workflows
-// cadence: an interval of its own is an explicit v2 improvement (spec §7) and
-// arrives with that tab's data layer.
+// Each list tab polls on its own interval, and every other screen on the
+// workflows cadence, which is the rule the previous version applied and spec
+// §5.4 records. The Issues tab used to share the workflows cadence because the
+// selector only special-cased the Pull Requests tab; it now has an interval of
+// its own, which is the v2 fix spec §5.4 asks for.
 func (m Model) pollInterval() time.Duration {
 	switch m.routes.Top().Scope() {
 	case keymap.MainPRs:
 		return m.deps.PollPRs
+	case keymap.MainIssues:
+		return m.deps.PollIssues
 	default:
 		return m.deps.PollWorkflows
 	}

@@ -258,6 +258,58 @@ func TestFlowThroughThePullRequestScreens(t *testing.T) {
 	assertGeometry(t, "final frame", final.View().Content, w, h)
 }
 
+// TestFlowThroughTheIssueScreens drives the issue path through the real
+// runtime: the tab, the list, the details view, the conversation, and the way
+// back out.
+func TestFlowThroughTheIssueScreens(t *testing.T) {
+	srv := prServer(t)
+	const w, h = 120, 40
+
+	tm := teatest.NewTestModel(t, newModel(t, srv, w, h), teatest.WithInitialTermSize(w, h))
+	waitForText(t, tm, readyMarker)
+
+	// The Issues tab fetches when it first appears, so its list is the marker
+	// that the tab is real rather than a placeholder.
+	tm.Send(press(t, "tab"))
+	tm.Send(press(t, "tab"))
+	waitForText(t, tm, "Add the issues view")
+
+	// Enter pushes the details. The Tab toggle moves the keyboard to the
+	// sidebar, and nothing is waited for after it: it changes the pane titles'
+	// styling and not their text, and the cell-diff renderer can write a styled
+	// run in pieces. The scripted test asserts the toggle; here the queued keys
+	// only have to reach the screen.
+	tm.Send(press(t, "enter"))
+	waitForText(t, tm, "DESCRIPTION")
+	tm.Send(press(t, "tab"))
+
+	// c opens the conversation over the details. Nothing is waited for after the
+	// keys that follow: the details screen's text is already in the stream, so a
+	// wait would match what was written before the conversation opened. The keys
+	// are queued in order and the assertions below say what happened — the
+	// breadcrumb is the Issues list only if the first Esc closed the conversation
+	// and the second left the details. A key sent between the two Escs could be
+	// read before the pop the first one asked for, which is why the strip is not
+	// stepped here; it has its own flow test.
+	tm.Send(press(t, "c"))
+	waitForText(t, tm, "Comment 1 looks good to me.")
+	tm.Send(press(t, "esc"))
+	tm.Send(press(t, "esc"))
+
+	final := finish(t, tm)
+
+	if got := final.routes.Titles(); !slices.Equal(got, []string{"Issues"}) {
+		t.Fatalf("breadcrumb = %v, want the Issues list alone", got)
+	}
+	if final.overlays.Len() != 0 {
+		t.Errorf("%d overlays are open at the end, want none", final.overlays.Len())
+	}
+	if got := len(issuesTabOf(t, final).issues); got != 1 {
+		t.Errorf("the issue list holds %d issues, want the one open fixture", got)
+	}
+	assertGeometry(t, "final frame", final.View().Content, w, h)
+}
+
 // TestFlowTabCyclingKeepsThePullRequestList checks the tab strip through the
 // runtime: walking all the way around comes back to the list the session
 // started on, and a tab that already has its data is not fetched again.
@@ -282,17 +334,23 @@ func TestFlowTabCyclingKeepsThePullRequestList(t *testing.T) {
 	before := log.count(listPath)
 
 	// The tabs are walked in one go: the keys are queued in order, so the model
-	// sees them in this order before the quit. The Issues tab is the only tab
-	// whose body is a single fresh sentence, so it is the one marker here.
+	// sees them in this order before the quit. The Issues tab's marker is a
+	// fixture issue, which is only on screen once that tab has fetched its own
+	// list.
 	tm.Send(press(t, "tab"))
 	tm.Send(press(t, "tab"))
-	waitForText(t, tm, "No issues loaded yet.")
+	waitForText(t, tm, "Add the issues view")
 	tm.Send(press(t, "tab"))
 
 	final := finish(t, tm)
 
 	if got := tab(t, final); got != TabPRs {
 		t.Fatalf("after a full cycle the active tab is %v, want Pull Requests", got)
+	}
+	// The issue list was fetched once, when the tab was first opened, and the
+	// pull request list was not fetched again on the way back.
+	if got := log.count("/repos/octocat/" + fixtureRepo + "/issues"); got != 1 {
+		t.Errorf("the issue list was fetched %d times, want once", got)
 	}
 	if got := len(prsTabOf(t, final).prs); got != len(fixturePRs()) {
 		t.Errorf("the recycled tab holds %d pull requests, want %d", got, len(fixturePRs()))

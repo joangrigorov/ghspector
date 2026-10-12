@@ -28,12 +28,13 @@ Monitoring GitHub Actions workflows across multiple active repositories typicall
 ---
 
 ## Features
-- **Unified GitHub Operations**: A single, clean terminal interface to manage both CI/CD workflow runs and pull requests.
-- **Aggregated Scopes**: View combined workflows and pull requests aggregated across a user account or an entire organization.
-- **Real-Time Polling**: Active background status updates for runs, jobs, logs, and pull requests.
+- **Unified GitHub Operations**: A single, clean terminal interface to manage CI/CD workflow runs, pull requests and issues.
+- **Aggregated Scopes**: View combined workflows, pull requests and issues aggregated across a user account or an entire organization.
+- **Real-Time Polling**: Active background status updates for runs, jobs, logs, pull requests and issues.
 - **Workflow & Log Viewer**: Cycle through historical attempts of multi-run workflows and tail active jobs in real-time.
 - **Keyboard-Driven PR Management**: Read PR descriptions, inspect Action checks/comments, and merge (Squash, Normal, Rebase) or close PRs directly.
-- **Actor Filtering**: Quick text filtering to isolate workflow runs or PRs by specific users.
+- **Issue Browser**: Read issue descriptions and metadata, and follow a thread's comments, with author/assignee filters.
+- **Actor Filtering**: Quick text filtering to isolate workflow runs, PRs or issues by specific users.
 - **Context Switcher**: Swap between user profiles and organization scopes on the fly.
 - **Terminal Hyperlinks**: Support for clickable OSC 8 links and quick keys to open runs, jobs, and PRs in your default browser.
 
@@ -161,6 +162,7 @@ default_merge_method: "squash"
 polling:
   workflows_interval_seconds: 5
   prs_interval_seconds: 10
+  issues_interval_seconds: 10
 ```
 
 ---

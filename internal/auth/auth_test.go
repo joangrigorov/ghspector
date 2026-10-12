@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResolveTokenWithCliGetter(t *testing.T) {
@@ -139,6 +140,7 @@ func TestPollingConfig(t *testing.T) {
 		Polling: PollingConfig{
 			WorkflowsIntervalSeconds: 15,
 			PRsIntervalSeconds:       25,
+			IssuesIntervalSeconds:    35,
 		},
 	}
 
@@ -162,6 +164,62 @@ func TestPollingConfig(t *testing.T) {
 	}
 	if loaded.Polling.PRsIntervalSeconds != 25 {
 		t.Errorf("expected PRsIntervalSeconds 25, got %d", loaded.Polling.PRsIntervalSeconds)
+	}
+	if loaded.Polling.IssuesIntervalSeconds != 35 {
+		t.Errorf("expected IssuesIntervalSeconds 35, got %d", loaded.Polling.IssuesIntervalSeconds)
+	}
+}
+
+// TestPollingIntervals pins the resolution rule spec §5.4 records: the per-tab
+// keys win, the legacy single key covers all three when they are absent, and the
+// defaults cover the rest. A non-positive value means "unset" rather than "off",
+// which is how the previous version read the file.
+func TestPollingIntervals(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  Config
+		want PollingIntervals
+	}{
+		{
+			"defaults",
+			Config{},
+			PollingIntervals{
+				Workflows: DefaultWorkflowsIntervalSeconds * time.Second,
+				PRs:       DefaultPRsIntervalSeconds * time.Second,
+				Issues:    DefaultIssuesIntervalSeconds * time.Second,
+			},
+		},
+		{
+			"the legacy key sets all three",
+			Config{PollingIntervalSeconds: 7},
+			PollingIntervals{7 * time.Second, 7 * time.Second, 7 * time.Second},
+		},
+		{
+			"a per-tab key wins over the legacy one",
+			Config{PollingIntervalSeconds: 7, Polling: PollingConfig{IssuesIntervalSeconds: 45}},
+			PollingIntervals{7 * time.Second, 7 * time.Second, 45 * time.Second},
+		},
+		{
+			"each tab can be retimed on its own",
+			Config{Polling: PollingConfig{WorkflowsIntervalSeconds: 3, PRsIntervalSeconds: 4, IssuesIntervalSeconds: 5}},
+			PollingIntervals{3 * time.Second, 4 * time.Second, 5 * time.Second},
+		},
+		{
+			"a zero or negative value is unset, not off",
+			Config{Polling: PollingConfig{WorkflowsIntervalSeconds: -1, IssuesIntervalSeconds: 0}},
+			PollingIntervals{
+				Workflows: DefaultWorkflowsIntervalSeconds * time.Second,
+				PRs:       DefaultPRsIntervalSeconds * time.Second,
+				Issues:    DefaultIssuesIntervalSeconds * time.Second,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.PollingIntervals(); got != tc.want {
+				t.Errorf("PollingIntervals() = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
 }
 

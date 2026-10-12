@@ -371,8 +371,29 @@ func (r *REST) Issues(ctx context.Context, repo RepoRef, q IssueQuery) (List[Iss
 		}
 		// The transport reports HasMore from the raw page, before pull requests
 		// are filtered out, which is the behaviour the Load More row expects.
-		return List[Issue]{Items: issues, HasMore: hasMore}, nil
+		// Filtering after the cache keeps the fetched page reusable.
+		return List[Issue]{Items: filterIssues(issues, q), HasMore: hasMore}, nil
 	})
+}
+
+// filterIssues applies the login filters a REST list request cannot carry.
+func filterIssues(issues []Issue, q IssueQuery) []Issue {
+	if q.Author == "" && q.Assignee == "" {
+		return issues
+	}
+	out := make([]Issue, 0, len(issues))
+	for _, issue := range issues {
+		if q.Author != "" {
+			if issue.User == nil || !equalLogin(issue.User.Login, q.Author) {
+				continue
+			}
+		}
+		if q.Assignee != "" && !anyLogin(issue.Assignees, q.Assignee) {
+			continue
+		}
+		out = append(out, issue)
+	}
+	return out
 }
 
 // Issue fetches one issue.

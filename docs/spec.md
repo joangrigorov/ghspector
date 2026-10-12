@@ -119,7 +119,7 @@ Two modal machines are **not** in the enum and are stored as integer fields:
 
 One input route is a **bool** rather than a state: the workflow actor filter uses `showFilterInput`. v2 must unify this with the other filter inputs ([Fix in v2](#7-fix-in-v2)).
 
-**v2 note.** Fifteen of the nineteen states are on the stack today: the nine routes up to and including `PRComments`, plus the switcher, help, filter type, repository select, and both pull request filter routes. The four Issue routes (`IssueDetails`, `IssueComments`, its filter input and its filter type) arrive with the Issues tab in Phase 4. The enum is gone; `RouteStack` gives a pushed route its own identity and `ActionBack` is route-authoritative, so a route steps inside itself before the stack pops.
+**v2 note.** All nineteen states are on the stack: the nine routes up to and including `PRComments`, the four Issue routes (`IssueDetails`, `IssueComments`, its filter input and its filter type), plus the switcher, help, filter type, and repository select. The enum is gone; `RouteStack` gives a pushed route its own identity and `ActionBack` is route-authoritative, so a route steps inside itself before the stack pops.
 
 ---
 
@@ -160,19 +160,21 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 ### 4.3 Main — Issues tab
 
-- [ ] `j` / `k` / `Down` / `Up` navigate, with the Load More sentinel rule.
-- [ ] `Enter` on the sentinel loads the next issue page; `Enter` on an issue pushes Issue Details with the description focused.
-- [ ] `r` / `Ctrl+R` resets and refetches.
-- [ ] `s` cycles the state filter open → closed → all, then refetches.
-- [ ] `a` filters by author = current user.
-- [ ] `i` filters by assignee = current user.
-- [ ] `f` opens the filter type overlay (free-text user, then pick author/assignee).
-- [ ] `x` clears author, assignee and repo filters and resets the state filter to `open`, then refetches.
-- [ ] `w` opens the selected issue's `HTMLURL` **browser**.
+- [x] `j` / `k` / `Down` / `Up` navigate, with the Load More sentinel rule.
+- [x] `Enter` on the sentinel loads the next issue page; `Enter` on an issue pushes Issue Details with the description focused.
+- [x] `r` / `Ctrl+R` resets and refetches.
+- [x] `s` cycles the state filter open → closed → all, then refetches.
+- [x] `a` filters by author = current user.
+- [x] `i` filters by assignee = current user.
+- [x] `f` opens the filter type overlay (free-text user, then pick author/assignee).
+- [x] `x` clears author, assignee and repo filters and resets the state filter to `open`, then refetches.
+- [x] `w` opens the selected issue's `HTMLURL` **browser**.
+
+**v2 note on the two login keys.** As on the PRs tab, `a` and `i` are two views of the same question, so setting one clears the other and pressing the active one clears it. The tab starts on `open`, the page size is 50, the list is aggregated across the context's repositories and merged by `updated_at` descending, and the rows the endpoint returns that are really pull requests are dropped by the transport before the tab ever sees them. The `x` key scopes to this tab, so it never changes what another list is showing (spec §4.2).
 
 ### 4.4 Filter type overlay
 
-- [x] `u` / `U` opens the user filter text input. On the Workflows tab it is pre-filled with the current actor filter; on the other tabs it starts empty. v2 delivers the Workflows and PRs prompts; the Issue prompt arrives with its tab (Phase 4).
+- [x] `u` / `U` opens the user filter text input. On the Workflows tab it is pre-filled with the current actor filter; on the other tabs it starts empty. All three prompts are delivered.
 - [x] `r` / `R` opens the repository select overlay; if the repo list is empty it is fetched first (with a loading message).
 - [x] `Esc` returns to the main view.
 - [x] `Ctrl+C` quits.
@@ -186,7 +188,7 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 ### 4.6 User filter text input (PRs and Issues)
 
-- [x] `Enter` accepts the typed username and advances to the filter type overlay. Delivered for the PRs tab; the Issues tab arrives with its data layer (Phase 4).
+- [x] `Enter` accepts the typed username and advances to the filter type overlay. Delivered for the PRs and Issues tabs.
 - [x] `Esc` returns to the main view.
 - [x] `Ctrl+C` quits.
 - [x] All other keys are forwarded to the text input.
@@ -194,7 +196,7 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 ### 4.7 Filter type overlay — PRs and Issues
 
 - [x] PRs: `a` sets author, `i` sets assignee, `r` sets reviewer to the typed username, returns to the main view, and refetches.
-- [ ] Issues: `a` sets author, `i` sets assignee to the typed username, returns to the main view, and refetches.
+- [x] Issues: `a` sets author, `i` sets assignee to the typed username, returns to the main view, and refetches. The issue picker offers two roles rather than three, because an issue has no requested reviewer.
 - [x] `Esc` / `c` / `C` cancels back to the main view.
 
 ### 4.8 Jobs
@@ -276,19 +278,22 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 ### 4.15 Issue Details
 
-- [ ] `Esc` / `Backspace` returns to the issue list.
-- [ ] `Tab` / `Shift+Tab` toggles focus between the description and the metadata sidebar.
-- [ ] `j` / `k` scroll the description by 1 when focused.
-- [ ] `u` / `d` scroll the description by 6 when focused.
-- [ ] `w` opens the issue in the **browser**.
-- [ ] `c` opens the comments view.
-- [ ] `r` / `Ctrl+R` refreshes the issue details.
-- [ ] The metadata sidebar shows state, author, assignees, labels, milestone, and timestamps.
+- [x] `Esc` / `Backspace` returns to the issue list.
+- [x] `Tab` / `Shift+Tab` toggles focus between the description and the metadata sidebar.
+- [x] `j` / `k` scroll the description by 1 when focused.
+- [x] `u` / `d` scroll the description by 6 when focused.
+- [x] `w` opens the issue in the **browser**.
+- [x] `c` opens the comments view.
+- [x] `r` / `Ctrl+R` refreshes the issue details.
+- [x] The metadata sidebar shows state, author, assignees, labels, milestone, and timestamps.
+
+**v2 note.** The sidebar holds no selection, so a scroll key while it has the focus changes nothing; the toggle is what says which pane the keys act on. The route arrives with the issue the list row already carries, so the heading and the sidebar are populated before the fetch lands, and the description is where the fetch lands. A tick refreshes the issue, as the pull request screen's does for its checks.
 
 ### 4.16 Issue Comments
 
-- [ ] `Esc` / `Backspace` returns to Issue Details.
-- [ ] `r` / `Ctrl+R` refreshes the comments.
+- [x] `Esc` / `Backspace` returns to Issue Details.
+- [x] `r` / `Ctrl+R` refreshes the comments.
+- [x] The conversation scrolls with `u` / `d`, the same pair the pull request conversation uses (§4.14).
 
 ### 4.17 Context switcher overlay
 
@@ -354,7 +359,7 @@ Confirm close (`mergeState == 4`):
 | State (issue) | Issues | Server-side | Defaults to `open` |
 
 - [x] PRs are filtered client-side after fetching, so a filter only sees the current page of the first 8 repositories.
-- [ ] Issues are filtered client-side after fetching, same limitation.
+- [x] Issues are filtered client-side after fetching, same limitation.
 - [x] The repo filter clears when switching context.
 
 ### 5.2 Pagination
@@ -366,7 +371,8 @@ Confirm close (`mergeState == 4`):
 | Pull requests | 8 | Load More sentinel | empty page |
 | Issues | 50 | Load More sentinel | `len(page) == per_page` |
 
-- [x] Each list exposes a "Load More" row as the final selectable row while more pages exist. Delivered for workflow runs and pull requests; the Issue list arrives with its tab.
+- [x] Each list exposes a "Load More" row as the final selectable row while more pages exist. Delivered for workflow runs, pull requests and issues.
+- [x] On the issues endpoint `HasMore` is read from the raw page, before pull requests are dropped, so a full page keeps the sentinel even when the filtered list is short.
 - [x] Pull requests are sorted by `updated_at` descending, then by the higher number, so two pull requests touched in the same second have a stable order.
 - [x] Workflow runs are sorted by a status priority, then recency.
 - [x] Jobs are sorted by a job-specific priority.
@@ -388,15 +394,15 @@ Confirm close (`mergeState == 4`):
 
 - [x] A tick drives the spinner every 300 ms.
 - [x] A poll tick drives data refresh. Interval by state: main + PRs tab → PRs interval; every other state → workflows interval.
-- [x] Default intervals: workflows 5 s, PRs 10 s.
-- [x] `polling.workflows_interval_seconds` and `polling.prs_interval_seconds` override them individually.
-- [x] The legacy `polling_interval_seconds` sets both, and takes effect before the per-tab keys.
-- [x] Polling targets: main + Workflows → runs; main + PRs → pull requests; main + Issues → issues; Jobs → active jobs; Logs → logs. v2 delivers the Workflows, Jobs, Logs and Pull Requests targets; the Issues target arrives with its tab.
+- [x] Default intervals: workflows 5 s, PRs 10 s, issues 10 s.
+- [x] `polling.workflows_interval_seconds`, `polling.prs_interval_seconds` and `polling.issues_interval_seconds` override them individually.
+- [x] The legacy `polling_interval_seconds` sets all three, and takes effect before the per-tab keys.
+- [x] Polling targets: main + Workflows → runs; main + PRs → pull requests; main + Issues → issues; Jobs → active jobs; Logs → logs.
 - [x] Polling does not run on other routes.
 
-**v2 note.** The root owns the cadence and the route owns what a tick means for its own data. A pull request detail screen posts its own tick handler: it refreshes the checks section, which is the part that changes while a pull request is open, rather than reloading the whole screen.
+**v2 note.** The root owns the cadence and the route owns what a tick means for its own data. A pull request detail screen posts its own tick handler: it refreshes the checks section, which is the part that changes while a pull request is open, rather than reloading the whole screen. The issue detail screen posts one too, and refreshes the issue itself.
 
-**Fix in v2:** the Issues tab currently polls on the workflows interval because the interval selector only special-cases the PRs tab.
+**Fix delivered in v2:** the Issues tab has an interval of its own. The selector special-cases the Issues scope, so the tab no longer rides the workflows cadence, and `polling.issues_interval_seconds` retimes it.
 
 ---
 
@@ -417,9 +423,10 @@ Path: `<os.UserConfigDir()>/ghspector/config.yaml` (Linux/macOS `~/.config/ghspe
 - [x] `github_token` — token
 - [x] `default_org` — org selected at startup
 - [x] `default_account` — user selected at startup
-- [x] `polling_interval_seconds` — legacy, sets both intervals
+- [x] `polling_interval_seconds` — legacy, sets all three intervals
 - [x] `polling.workflows_interval_seconds`
 - [x] `polling.prs_interval_seconds`
+- [x] `polling.issues_interval_seconds` — added by the rewrite, so an existing file keeps working unchanged
 - [x] `default_merge_method` — `squash` | `merge` | `rebase`, and is rewritten by the `d` key in the merge overlay
 - [x] A warning is printed to stderr when the config file permissions allow group or other access.
 - [x] The config file is written with mode `0600` and its directory with `0700`.
@@ -446,7 +453,7 @@ These are behavior changes the rewrite is expected to make. They are not parity 
 - [ ] Replace the 8-repository cap with scope-wide aggregation via GraphQL, with real cursor pagination and `total_count`. **Open:** the GraphQL transport is Phase 5; the REST fan-out is now one cap (`store.maxAggregateRepos`) behind one helper, so the replacement is a single swap.
 - [ ] Move PR author/assignee/reviewer and issue author/assignee filters server-side (GraphQL supports all of them), so filtering is truthful across the whole scope rather than only the current page. **Open:** it rides with the GraphQL transport.
 - [x] Unify the workflow actor filter with the other user filters: today it is a `bool` flag plus a prefilled text input, while PRs and Issues use dedicated states.
-- [ ] Poll the Issues tab on its own interval. **Open:** the Issues tab is Phase 4, and the selector that special-cases the PRs scope extends with it.
+- [x] Poll the Issues tab on its own interval. **Delivered:** `keymap.MainIssues` selects the Issues interval, and `polling.issues_interval_seconds` sets it.
 - [ ] Replace the merge-method default cycle, which persists config on a keystroke, with an explicit save or an in-memory default that is written once. **Decided:** the cycle stays, because the method select is the only place it is chosen and a save key would duplicate the `Enter` that already advances. What the item was really about — the write clobbering the file — is fixed: `d` edits the file as a YAML document (`auth.SetDefaultMergeMethod`), so a key this build does not know survives and the token is never re-encoded; a session with no writable path cycles in memory and says "this session only".
 - [x] Give the Jobs route an explicit origin instead of the `prevState` field, and give every pushed route an explicit `(owner, repo, number, runID)` rather than reading it back out of shared model fields.
 - [x] Define and test a minimum terminal width with a graceful "terminal too small" state.
