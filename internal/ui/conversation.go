@@ -34,9 +34,14 @@ type conversationEntry struct {
 	threads []reviewThread
 }
 
-// reviewThread is one file's worth of inline comments from one review: where
-// they are, the lines they were written against, and the exchange itself.
+// reviewThread is one exchange of inline comments: where it was written, the
+// lines it was written against, and the remarks themselves in the order they
+// were made.
 type reviewThread struct {
+	// review is the review that carried the comment the thread started from,
+	// which is where the thread is drawn. A reply carries the review that
+	// posted it, so the two are usually different.
+	review   int64
 	path     string
 	line     int
 	hunk     []string
@@ -63,18 +68,34 @@ const truncatedNote = "The API returned a full page; the rest is on GitHub (w op
 // rather than standing in as orphans.
 func newConversation(comments []store.IssueComment, reviews []store.Review, reviewComments []store.ReviewComment, truncated bool) conversation {
 	byID := make(map[int64]store.Review, len(reviews))
+	drafts := make(map[int64]bool, len(reviews))
 	for _, review := range reviews {
 		byID[review.ID] = review
+		if isPendingReview(review) {
+			drafts[review.ID] = true
+		}
 	}
 
-	grouped := map[int64][]store.ReviewComment{}
-	var orphans []store.ReviewComment
+	submitted := make([]store.ReviewComment, 0, len(reviewComments))
 	for _, comment := range reviewComments {
-		if _, ok := byID[comment.PullRequestReviewID]; !ok {
-			orphans = append(orphans, comment)
+		if drafts[comment.PullRequestReviewID] {
 			continue
 		}
-		grouped[comment.PullRequestReviewID] = append(grouped[comment.PullRequestReviewID], comment)
+		submitted = append(submitted, comment)
+	}
+
+	// Threads belong to the review their first comment came from; a thread
+	// whose review is not in the page — it was submitted after the page was
+	// cut, or the token cannot see the review — is still something somebody
+	// wrote, so it is drawn on its own rather than dropped.
+	owned := make(map[int64][]reviewThread, len(reviews))
+	var loose []reviewThread
+	for _, thread := range groupThreads(submitted) {
+		if _, ok := byID[thread.review]; !ok {
+			loose = append(loose, thread)
+			continue
+		}
+		owned[thread.review] = append(owned[thread.review], thread)
 	}
 
 	conv := conversation{truncated: truncated}
@@ -90,13 +111,10 @@ func newConversation(comments []store.IssueComment, reviews []store.Review, revi
 		conv.entries = append(conv.entries, conversationEntry{
 			at:      reviewTime(review),
 			review:  &review,
-			threads: groupThreads(grouped[review.ID]),
+			threads: owned[review.ID],
 		})
 	}
-	// A thread whose review is not in the page — it was submitted after the page
-	// was cut, or the token cannot see the review — is still something somebody
-	// wrote, so it is drawn on its own rather than dropped.
-	for _, thread := range groupThreads(orphans) {
+	for _, thread := range loose {
 		conv.entries = append(conv.entries, conversationEntry{at: threadTime(thread), threads: []reviewThread{thread}})
 	}
 	sortByTime(conv.entries)
@@ -143,28 +161,101 @@ func sortByTime(entries []conversationEntry) {
 	})
 }
 
-// groupThreads splits one review's inline comments into the threads they belong
-// to, keeping the order the API returned them in: a comment, and its replies
-// after it.
+// groupThreads gathers the inline comments into the exchanges they were written
+// in, in the order the threads were opened.
+//
+// A thread is identified by the comment it started from, not by the review that
+// carried each remark. GitHub posts a reply as part of a *new* review, so the
+// reply names the review that posted it while in_reply_to_id names the comment
+// it answers; on the pull request this was reported from, all 25 replies arrived
+// in a later review than the comment they answer and 13 of the 16 threads
+// spanned more than one review. Grouping one review at a time therefore drew
+// those 41 comments as 41 threads, each with its own location and hunk excerpt.
+//
+// A reply whose root is not in the page — the page was cut, or the token cannot
+// see the comment — is gathered under the comment it names, so an exchange stays
+// together even when what it started from is missing.
 func groupThreads(comments []store.ReviewComment) []reviewThread {
-	var threads []reviewThread
-	index := make(map[int64]int, len(comments))
+	byID := make(map[int64]store.ReviewComment, len(comments))
 	for _, comment := range comments {
-		if comment.InReplyToID != 0 {
-			if at, ok := index[comment.InReplyToID]; ok {
-				threads[at].comments = append(threads[at].comments, comment)
-				continue
-			}
+		byID[comment.ID] = comment
+	}
+
+	grouped := make(map[int64][]store.ReviewComment, len(comments))
+	var roots []int64
+	for _, comment := range comments {
+		root := threadRoot(comment, byID)
+		if _, ok := grouped[root]; !ok {
+			roots = append(roots, root)
+		}
+		grouped[root] = append(grouped[root], comment)
+	}
+
+	threads := make([]reviewThread, 0, len(roots))
+	for _, root := range roots {
+		exchange := grouped[root]
+		sortCommentsByTime(exchange)
+		// The comment the thread started from names where it is; a reply says
+		// where it was written, which is not the same place once the lines have
+		// moved.
+		head := exchange[0]
+		if first, ok := byID[root]; ok {
+			head = first
 		}
 		threads = append(threads, reviewThread{
-			path:     comment.Path,
-			line:     commentLocation(comment),
-			hunk:     hunkLines(comment.DiffHunk),
-			comments: []store.ReviewComment{comment},
+			review:   head.PullRequestReviewID,
+			path:     head.Path,
+			line:     commentLocation(head),
+			hunk:     hunkLines(head.DiffHunk),
+			comments: exchange,
 		})
-		index[comment.ID] = len(threads) - 1
 	}
+	sortThreadsByTime(threads)
 	return threads
+}
+
+// threadRoot is the comment an exchange started from: the ancestor of a reply,
+// or the reply's own parent when that comment is not in the page, so replies to
+// the same missing comment still read as one exchange.
+func threadRoot(comment store.ReviewComment, byID map[int64]store.ReviewComment) int64 {
+	root := comment
+	for step := 0; step < len(byID); step++ {
+		if root.InReplyToID == 0 {
+			return root.ID
+		}
+		parent, ok := byID[root.InReplyToID]
+		if !ok {
+			// The comment being answered is not on the page, so the answer is
+			// as close to the root as this page can get.
+			return root.InReplyToID
+		}
+		root = parent
+	}
+	// A page of comments that answers its own ancestors in a cycle is not
+	// something the API produces; stopping here keeps the walk bounded.
+	return root.ID
+}
+
+// sortCommentsByTime puts an exchange in the order it was written.
+func sortCommentsByTime(comments []store.ReviewComment) {
+	sort.SliceStable(comments, func(i, j int) bool {
+		return comments[i].CreatedAt.Before(comments[j].CreatedAt)
+	})
+}
+
+// sortThreadsByTime puts the threads of one review in the order they were
+// opened, with a thread of unknown time last.
+func sortThreadsByTime(threads []reviewThread) {
+	sort.SliceStable(threads, func(i, j int) bool {
+		a, b := threadTime(threads[i]), threadTime(threads[j])
+		if a.IsZero() {
+			return false
+		}
+		if b.IsZero() {
+			return true
+		}
+		return a.Before(b)
+	})
 }
 
 // commentLocation is the line a comment is attached to. GitHub reports the line
@@ -243,15 +334,18 @@ func reviewLines(deps Deps, review store.Review, threads []reviewThread, width i
 }
 
 // threadLines renders one inline thread: where it is, the lines it was written
-// against, then the exchange itself.
+// against, then the exchange itself. The location is a link to the thread on
+// GitHub, which is what a reader wants from it: the remark, in the diff it was
+// written against.
 func threadLines(deps Deps, thread reviewThread, width int) []string {
 	theme := deps.Theme
 	place := thread.path
 	if thread.line > 0 {
 		place = fmt.Sprintf("%s:%d", thread.path, thread.line)
 	}
+	place = hyperlink(theme, style(theme.Muted, bold).Render(place), threadURL(thread))
 
-	out := []string{"", threadIndent + style(theme.Muted, bold).Render(layout.Truncate(place, max(width-len(threadIndent), 8)))}
+	out := []string{"", threadIndent + layout.Truncate(place, max(width-len(threadIndent), 8))}
 	for _, line := range thread.hunk {
 		out = append(out, threadIndent+diffStyled(theme, []string{line})[0])
 	}
@@ -265,18 +359,17 @@ func threadLines(deps Deps, thread reviewThread, width int) []string {
 }
 
 // authorLine is the heading of a contribution: who wrote it, the conclusion a
-// review came to when there is one, and when it arrived. The name is a link to
-// the contribution when the API supplied a URL for it.
+// review came to when there is one, and when it arrived. Both the name and the
+// time are links to the contribution when the API supplied a URL for it, so the
+// whole of what names it opens it.
 func authorLine(deps Deps, author, url string, at time.Time, state string) string {
-	name := style(deps.Theme.Title, bold).Render(author)
-	if url != "" {
-		name = hyperlink(deps.Theme, name, url)
-	}
+	name := hyperlink(deps.Theme, style(deps.Theme.Title, bold).Render(author), url)
 	out := "  " + name
 	if state != "" {
 		out += "  " + state
 	}
-	return out + style(deps.Theme.Muted, normal).Render("  "+formatTime(at))
+	stamp := style(deps.Theme.Muted, normal).Render("  " + formatTime(at))
+	return out + hyperlink(deps.Theme, stamp, url)
 }
 
 // reviewStateLabel is a review's conclusion in the badge vocabulary the rest of

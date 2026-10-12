@@ -203,6 +203,121 @@ func TestConversationGroupsRepliesUnderTheirThread(t *testing.T) {
 	}
 }
 
+// TestConversationGroupsAThreadAcrossReviews is the shape GitHub actually
+// returns: a reply is posted as part of a new review, so the remarks of one
+// thread name different reviews. Grouped one review at a time, the reply was
+// drawn as a thread of its own, with its own location and its own hunk excerpt,
+// while the comment it answered sat alone in the earlier review.
+func TestConversationGroupsAThreadAcrossReviews(t *testing.T) {
+	root := anInline(100, 10, "carol", "internal/ui/table.go", 12, conversationNow)
+	reply := anInline(101, 11, "octocat", "internal/ui/table.go", 12, conversationNow.Add(time.Minute))
+	reply.InReplyToID = 100
+
+	conv := newConversation(
+		nil,
+		[]store.Review{
+			aReview(10, "carol", "CHANGES_REQUESTED", conversationNow),
+			aReview(11, "octocat", "COMMENTED", conversationNow.Add(time.Minute)),
+		},
+		[]store.ReviewComment{root, reply},
+		false,
+	)
+
+	want := []string{"review:carol", "review:octocat"}
+	if got := conversationKinds(conv); !slices.Equal(got, want) {
+		t.Fatalf("conversation reads %v, want %v", got, want)
+	}
+	threads := conv.entries[0].threads
+	if len(threads) != 1 {
+		t.Fatalf("the review that opened the thread carries %d threads, want 1", len(threads))
+	}
+	if got := len(threads[0].comments); got != 2 {
+		t.Fatalf("the thread holds %d comments, want the reply under it too", got)
+	}
+	if got := threads[0].comments[1].ID; got != 101 {
+		t.Errorf("the remark under the thread is %d, want the reply 101", got)
+	}
+	if got := threads[0].review; got != 10 {
+		t.Errorf("the thread belongs to review %d, want the review that opened it (10)", got)
+	}
+	if got := conv.entries[1].threads; len(got) != 0 {
+		t.Errorf("the review that only replied carries %d threads, want none: the thread lives where it was written", len(got))
+	}
+}
+
+// TestConversationFollowsAChainOfReplies covers an answer to an answer: the
+// exchange is one thread however deep it goes, it reads from the comment it
+// started from, and its remarks are in the order they were made whatever order
+// the API returned them in.
+func TestConversationFollowsAChainOfReplies(t *testing.T) {
+	root := anInline(100, 10, "carol", "internal/ui/table.go", 12, conversationNow)
+	first := anInline(101, 11, "octocat", "internal/ui/table.go", 12, conversationNow.Add(time.Minute))
+	first.InReplyToID = 100
+	second := anInline(102, 11, "carol", "internal/ui/table.go", 12, conversationNow.Add(2*time.Minute))
+	second.InReplyToID = 101
+
+	conv := newConversation(
+		nil,
+		[]store.Review{
+			aReview(10, "carol", "COMMENTED", conversationNow),
+			aReview(11, "octocat", "COMMENTED", conversationNow.Add(time.Minute)),
+		},
+		[]store.ReviewComment{second, root, first},
+		false,
+	)
+
+	if len(conv.entries) != 2 || len(conv.entries[0].threads) != 1 {
+		t.Fatalf("conversation reads %v, want one thread under the first review", conversationKinds(conv))
+	}
+	thread := conv.entries[0].threads[0]
+	if got := len(thread.comments); got != 3 {
+		t.Fatalf("the thread holds %d comments, want the whole exchange", got)
+	}
+	for i, want := range []int64{100, 101, 102} {
+		if got := thread.comments[i].ID; got != want {
+			t.Errorf("remark %d of the thread is %d, want %d", i, got, want)
+		}
+	}
+	if thread.line != 12 || thread.path != "internal/ui/table.go" {
+		t.Errorf("the thread is placed at %s:%d, want where it was written", thread.path, thread.line)
+	}
+}
+
+// TestConversationGathersRepliesToAMissingComment covers the page that was cut
+// below the comment an exchange started from: the replies that name the same
+// absent remark still read as one thread, placed by the earliest of them, rather
+// than as a thread each.
+func TestConversationGathersRepliesToAMissingComment(t *testing.T) {
+	firstReply := anInline(101, 11, "octocat", "internal/ui/table.go", 12, conversationNow.Add(time.Minute))
+	firstReply.InReplyToID = 404
+	secondReply := anInline(102, 11, "carol", "internal/ui/table.go", 20, conversationNow.Add(2*time.Minute))
+	secondReply.InReplyToID = 404
+
+	conv := newConversation(
+		nil,
+		[]store.Review{aReview(11, "octocat", "COMMENTED", conversationNow)},
+		[]store.ReviewComment{secondReply, firstReply},
+		false,
+	)
+
+	if len(conv.entries) != 1 {
+		t.Fatalf("conversation reads %v, want the one review", conversationKinds(conv))
+	}
+	threads := conv.entries[0].threads
+	if len(threads) != 1 {
+		t.Fatalf("the replies to one absent remark read as %d threads, want 1", len(threads))
+	}
+	if got := len(threads[0].comments); got != 2 {
+		t.Errorf("the thread holds %d comments, want both replies", got)
+	}
+	if got := threads[0].comments[0].ID; got != 101 {
+		t.Errorf("the thread opens with %d, want the earliest reply 101", got)
+	}
+	if threads[0].line != 12 {
+		t.Errorf("the thread is placed at line %d, want the first reply's line 12", threads[0].line)
+	}
+}
+
 // TestCommentLocationFallsBackToTheOriginalLine covers the comment the diff has
 // moved past: the API reports no current line and keeps the original one, which
 // is where the remark still belongs.

@@ -239,23 +239,34 @@ func fixtureChecks() []checkSpec {
 // reviewFixtureID is the standard review's id, which the standard thread names.
 const reviewFixtureID = 3001
 
+// replyReviewFixtureID is the second standard review, the one that posted the
+// reply. GitHub posts a reply as part of a new review, so the remarks of one
+// thread name different reviews; the fixture carries that shape rather than the
+// same-review shape the API never returns.
+const replyReviewFixtureID = 3002
+
 // fixtureHunk is the diff context the standard inline comment was written
 // against: one removed line, one added line, and the line between them.
 const fixtureHunk = "@@ -10,4 +10,5 @@\n func width() int {\n-    return 40\n+    return tableWidth\n }\n"
 
-// fixtureReviews is the standard review: an approval with a summary, submitted
-// after both conversation comments.
+// fixtureReviews is the standard pair: an approval with a summary, submitted
+// after both conversation comments, and the review that carried the reply to its
+// thread, which has no summary of its own.
 func fixtureReviews() []reviewSpec {
 	return []reviewSpec{
 		{
 			id: reviewFixtureID, author: "carol", state: "APPROVED",
 			body: "Ship it once the checks pass.", at: workflowNow.Add(3 * time.Minute),
 		},
+		{
+			id: replyReviewFixtureID, author: "octocat", state: "COMMENTED",
+			at: workflowNow.Add(4 * time.Minute),
+		},
 	}
 }
 
 // fixtureInline is the standard inline thread: two remarks on one file, the
-// second answering the first.
+// second answering the first from the review that came after.
 func fixtureInline() []inlineSpec {
 	return []inlineSpec{
 		{
@@ -264,7 +275,7 @@ func fixtureInline() []inlineSpec {
 			body: "This width needs a name.",
 		},
 		{
-			id: 4002, review: reviewFixtureID, author: "octocat", path: "internal/ui/table.go",
+			id: 4002, review: replyReviewFixtureID, author: "octocat", path: "internal/ui/table.go",
 			line: 12, hunk: fixtureHunk, at: workflowNow.Add(4 * time.Minute), replyTo: 4001,
 			body: "Named it tableWidth.",
 		},
@@ -512,6 +523,11 @@ func prDetailBody(t *testing.T, prs []prSpec, repo string) string {
 			continue
 		}
 		detail := prJSON(t, spec)
+		// The detail response names the repository only under head and base, so
+		// the screen has to draw and link it from the reference it was opened
+		// with. Keeping the top-level field here would hide a heading that links
+		// nothing on a real pull request.
+		delete(detail, "repository")
 		detail["body"] = "This pull request adds the pull request view.\n\nIt has two paragraphs."
 		detail["head"] = map[string]any{"ref": "feat/prs", "sha": "abcdef1234567890", "label": "octocat:feat/prs"}
 		detail["base"] = map[string]any{"ref": "main", "sha": "0123456789abcdef", "label": "octocat:main"}
@@ -647,11 +663,8 @@ func issueDetailBody(t *testing.T, issues []issueSpec, repo string) string {
 			"",
 			"Press c for the conversation.",
 		}, "\n")
-		detail["repository"] = map[string]any{
-			"name":      spec.repo,
-			"full_name": "octocat/" + spec.repo,
-			"owner":     map[string]any{"login": "octocat"},
-		}
+		// As with a pull request, the issue detail response carries no
+		// repository object: the screen names the reference it was opened with.
 		return jsonBody(t, detail)
 	}
 	t.Fatalf("no fixture issue in %s", repo)
@@ -1297,6 +1310,32 @@ func TestPRCommentsSayWhenAPageWasCut(t *testing.T) {
 	}
 	if out := ansi.Strip(screen(t, m, 120, 40)); !strings.Contains(out, truncatedNote) {
 		t.Errorf("the end of a cut conversation does not say so:\n%s", out)
+	}
+}
+
+// TestPRCommentsKeepAThreadTogetherAcrossReviews covers the screen the defect
+// was reported on: GitHub posts a reply as part of a new review, and the
+// exchange still reads as one thread — one location, one hunk excerpt, the reply
+// under the comment it answers — while the review that only carried the reply
+// draws its own heading and nothing under it.
+func TestPRCommentsKeepAThreadTogetherAcrossReviews(t *testing.T) {
+	srv := prServer(t)
+	m := openPRDetails(t, prsModel(t, srv, 120, 40))
+	m = pressAndDrive(t, m, "5")
+
+	out := ansi.Strip(screen(t, m, 120, 40))
+	if got := strings.Count(out, "internal/ui/table.go:12"); got != 1 {
+		t.Errorf("the thread's location is drawn %d times, want one thread:\n%s", got, out)
+	}
+	root, reply := strings.Index(out, "This width needs a name."), strings.Index(out, "Named it tableWidth.")
+	if root < 0 || reply < 0 {
+		t.Fatalf("the thread is not on screen:\n%s", out)
+	}
+	if reply < root {
+		t.Errorf("the reply reads above the comment it answers:\n%s", out)
+	}
+	if got := strings.Count(out, "octocat  [reviewed]"); got != 1 {
+		t.Errorf("the review that carried the reply is drawn %d times, want once:\n%s", got, out)
 	}
 }
 
