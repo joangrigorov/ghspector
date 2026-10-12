@@ -119,6 +119,12 @@ The seven checks, on the final commit of the branch:
 | `go mod tidy -diff` | pass (no change) |
 | `gofmt -l .` | clean |
 
+**CI.** The `Test and Lint` workflow passed on the branch's code commit
+`35aafe2` in 2m06s (run
+[38287725969](https://github.com/joangrigorov/ghspector/actions/runs/38287725969)) —
+the same steps as the table above, plus the new formatting check, run by the
+workflow itself rather than by hand.
+
 **CI gain.** `.github/workflows/ci.yml` now checks formatting. `golangci-lint` is
 configured here with an explicit linter list that contains no formatter, so
 `gofmt` drift was invisible to CI — and the tree had drifted on `main` (struct
