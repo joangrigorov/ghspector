@@ -50,12 +50,15 @@ func plainOverlayChrome() overlay.Chrome {
 func newModel(t *testing.T, srv *httptest.Server, w, h int, tweak ...func(*Options)) Model {
 	t.Helper()
 	opts := Options{
-		Store:         store.NewREST("test-token", srv.URL),
-		Theme:         PlainTheme(),
-		Context:       context.Background(),
-		Version:       "test",
-		ConfigPath:    "config.yaml",
-		TokenSource:   "config file: config.yaml",
+		Store:       store.NewREST("test-token", srv.URL),
+		Theme:       PlainTheme(),
+		Context:     context.Background(),
+		Version:     "test",
+		ConfigPath:  "config.yaml",
+		TokenSource: "config file: config.yaml",
+		// A stopped clock keeps every rendered duration a function of the
+		// fixtures rather than of when the test ran.
+		Clock:         newFixedClock(workflowNow),
 		OverlayChrome: plainOverlayChrome(),
 	}
 	for _, fn := range tweak {

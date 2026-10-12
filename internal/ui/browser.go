@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // OpenBrowser opens a URL in the user's default browser.
@@ -56,4 +58,22 @@ func openWithSystemHandler(raw string) error {
 		cmd = exec.Command("xdg-open", raw)
 	}
 	return cmd.Start()
+}
+
+// browserCmd opens a URL and reports the outcome in the footer. done is the
+// message shown on success.
+//
+// A missing URL is reported rather than silently ignored: every caller gets its
+// URL from the API or assembles it, so an empty one means the run or job the
+// user is looking at cannot be located, which is worth saying.
+func browserCmd(raw, done string) tea.Cmd {
+	if raw == "" {
+		return statusErr("No GitHub URL is known for this item.")
+	}
+	return func() tea.Msg {
+		if err := OpenBrowser(raw); err != nil {
+			return StatusMsg{Text: "Could not open the browser: " + err.Error(), IsErr: true}
+		}
+		return StatusMsg{Text: done}
+	}
 }

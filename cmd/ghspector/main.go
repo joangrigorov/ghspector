@@ -64,6 +64,8 @@ func run() int {
 		theme = ui.LightTheme()
 	}
 
+	polling := config.PollingIntervals()
+
 	model := ui.New(ui.Options{
 		Store:         store.NewREST(token, ""),
 		Theme:         theme,
@@ -72,6 +74,8 @@ func run() int {
 		ConfigPath:    configLabel(),
 		TokenSource:   config.TokenSource,
 		DefaultOwner:  defaultOwner(config),
+		PollWorkflows: polling.Workflows,
+		PollPRs:       polling.PRs,
 		OverlayChrome: overlayChrome(theme),
 	})
 

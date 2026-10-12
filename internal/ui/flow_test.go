@@ -3,6 +3,7 @@ package ui
 import (
 	"bytes"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -132,4 +133,56 @@ func TestFlowTooSmallThenRecovered(t *testing.T) {
 	if !bytes.Contains([]byte(final.View().Content), []byte("No pull requests loaded yet.")) {
 		t.Error("the list did not come back after the terminal grew")
 	}
+}
+
+// TestFlowFromTheRunListToTheLog drives the whole workflow path through the real
+// runtime: the runs table, the job list and the log viewer are three stacked
+// routes, and each one has to hand the next its fetch. The driver tests reach
+// the same screens by running commands by hand, so this is where the wiring
+// between Init, the command loop and the stack is exercised rather than assumed.
+func TestFlowFromTheRunListToTheLog(t *testing.T) {
+	srv := workflowServer(t, fixtureRuns(8))
+	const w, h = 120, 40
+
+	tm := teatest.NewTestModel(t, newModel(t, srv, w, h), teatest.WithInitialTermSize(w, h))
+
+	// Each marker is text that only exists once the screen it belongs to has its
+	// data: the stream carries cell diffs, so waiting for text that is already on
+	// screen would wait forever.
+	waitFor := func(marker string) {
+		t.Helper()
+		teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+			return bytes.Contains(out, []byte(marker))
+		}, teatest.WithDuration(10*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
+	}
+
+	// The default tab is Pull Requests, and the run list is fetched when the
+	// Workflows tab is first opened.
+	waitFor("No pull requests loaded yet.")
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyTab})
+	waitFor("Load More Workflow Runs...")
+
+	// The highlighted run is the queued one, which always has a job list.
+	tm.Send(press(t, "enter"))
+	waitFor("JOB NAME")
+
+	// The running job sorts first and has no log yet, so the finished job is the
+	// row below it, and Enter opens its log on the step that failed.
+	tm.Send(press(t, "j"))
+	tm.Send(press(t, "enter"))
+	waitFor("Job: build")
+
+	final := finish(t, tm)
+
+	if got := final.routes.Titles(); !slices.Equal(got, []string{"Workflows", "Jobs", "Logs"}) {
+		t.Fatalf("breadcrumb = %v, want [Workflows Jobs Logs]", got)
+	}
+	logs, ok := final.routes.Top().(*Logs)
+	if !ok {
+		t.Fatalf("the top route is %T, want *ui.Logs", final.routes.Top())
+	}
+	if logs.step != 1 || logs.job.Name != "build" {
+		t.Errorf("the viewer opened on step %d of %q, want step 1 of build", logs.step, logs.job.Name)
+	}
+	assertGeometry(t, "final frame", final.View().Content, w, h)
 }

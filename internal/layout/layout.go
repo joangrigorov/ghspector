@@ -191,6 +191,122 @@ func Width(s string) int {
 	return ansi.StringWidth(s)
 }
 
+// PadRight pads s with spaces to exactly w cells. A string already at or past w
+// is returned unchanged: padding never truncates.
+func PadRight(s string, w int) string {
+	if n := ansi.StringWidth(s); n < w {
+		return s + strings.Repeat(" ", w-n)
+	}
+	return s
+}
+
+// Column is one column of a table: its preferred width, the narrowest it may
+// become, and whether it absorbs spare width.
+//
+// A column with a zero minimum is dropped when the row does not fit, which is
+// how a table degrades on a narrow terminal. Dropping is better than clipping:
+// a half-drawn column reads as a rendering fault, while a missing optional
+// column reads as a smaller table.
+type Column struct {
+	Width int
+	Min   int
+	Flex  bool
+}
+
+// FitColumns allocates column widths for a row of width cells, with indent
+// cells before the first column and sep cells between each pair.
+//
+// Spare width goes to the flexible column. When the row does not fit, columns
+// that may be dropped are dropped from the right, and then the rest shrink
+// towards their minimums, right to left. The result always fits unless every
+// column is already at its minimum.
+func FitColumns(cols []Column, width, indent, sep int) []Column {
+	out := make([]Column, len(cols))
+	copy(out, cols)
+	for i := range out {
+		if out[i].Min < 0 {
+			out[i].Min = 0
+		}
+		if out[i].Min > 0 && out[i].Width < out[i].Min {
+			out[i].Width = out[i].Min
+		}
+	}
+
+	total := func() int {
+		n := indent
+		first := true
+		for _, c := range out {
+			if c.Width <= 0 {
+				continue
+			}
+			if !first {
+				n += sep
+			}
+			n += c.Width
+			first = false
+		}
+		return n
+	}
+
+	if slack := width - total(); slack > 0 {
+		for i := range out {
+			if out[i].Flex && out[i].Width > 0 {
+				out[i].Width += slack
+				break
+			}
+		}
+	}
+
+	for total() > width {
+		dropped := false
+		for i := len(out) - 1; i >= 0; i-- {
+			if out[i].Width > 0 && out[i].Min == 0 {
+				out[i].Width = 0
+				dropped = true
+				break
+			}
+		}
+		if !dropped {
+			break
+		}
+	}
+
+	for total() > width {
+		shrunk := false
+		for i := len(out) - 1; i >= 0; i-- {
+			if out[i].Width > out[i].Min {
+				out[i].Width--
+				shrunk = true
+				break
+			}
+		}
+		if !shrunk {
+			break
+		}
+	}
+	return out
+}
+
+// Window returns the slice of length items to show around cursor, so that the
+// cursor is visible in a viewport of visible rows. The range returned is
+// half-open: [start, end). A list that fits is shown whole, and the window
+// never runs past the end of the list, so the last row of a long list sits at
+// the bottom of the viewport instead of on a half-empty one.
+func Window(length, cursor, visible int) (start, end int) {
+	if length <= 0 {
+		return 0, 0
+	}
+	if visible < 1 {
+		visible = 1
+	}
+	if length <= visible {
+		return 0, length
+	}
+	cursor = clamp(cursor, 0, length-1)
+	start = clamp(cursor-visible/2, 0, length-visible)
+	return start, start + visible
+}
+
 func clamp(v, lo, hi int) int {
 	if v < lo {
 		return lo

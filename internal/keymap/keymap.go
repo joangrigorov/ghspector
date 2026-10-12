@@ -82,12 +82,16 @@ const (
 	ActionPrevAttempt Action = "prev-attempt"
 	ActionToggleFocus Action = "toggle-focus"
 	ActionOpenBrowser Action = "open-browser"
-	ActionApprove     Action = "approve"
-	ActionMerge       Action = "merge"
-	ActionClose       Action = "close-pr"
-	ActionComments    Action = "comments"
-	ActionCommits     Action = "commits"
-	ActionDiff        Action = "diff"
+	// ActionOpenRunBrowser opens the run a job belongs to. It is separate from
+	// ActionOpenBrowser because the Jobs scope uses both: `w` opens the job and
+	// `v` opens the run (spec D3).
+	ActionOpenRunBrowser Action = "open-run-browser"
+	ActionApprove        Action = "approve"
+	ActionMerge          Action = "merge"
+	ActionClose          Action = "close-pr"
+	ActionComments       Action = "comments"
+	ActionCommits        Action = "commits"
+	ActionDiff           Action = "diff"
 
 	ActionFilterType     Action = "filter-type"
 	ActionFilterMine     Action = "filter-mine"
@@ -182,7 +186,7 @@ var table = map[Scope][]Binding{
 		// The code's mapping is authoritative here (spec D3): w opens the
 		// highlighted job, v opens the parent run.
 		{Action: ActionOpenBrowser, Keys: []string{"w", "W"}, Help: "Open job in browser"},
-		{Action: ActionOpen, Keys: []string{"v", "V"}, Help: "Open run in browser"},
+		{Action: ActionOpenRunBrowser, Keys: []string{"v", "V"}, Help: "Open run in browser"},
 		{Action: ActionPrevAttempt, Keys: []string{"["}, Help: "Previous attempt"},
 		{Action: ActionNextAttempt, Keys: []string{"]"}, Help: "Next attempt"},
 	},
