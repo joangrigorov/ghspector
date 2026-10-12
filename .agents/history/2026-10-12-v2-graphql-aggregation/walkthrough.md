@@ -192,9 +192,12 @@ implied:
 
 ## For the review gate
 
-Release numbering is settled: one `0.4.0` for the whole rewrite, so PR #15
-(`chore(main): release 0.4.0`) stays open and unmerged and release-please keeps
-refreshing it as phases land. Nothing in this branch should be released on its own.
+Release numbering is settled: one `0.4.0` for the whole rewrite, so the release
+pull request stays open and unmerged and release-please keeps refreshing it as
+phases land. It renumbers itself when it refreshes — the open one is #22, and #15
+is the instance it replaced when Phase 4 merged — so the number is worth reading
+from the pull requests rather than from this paragraph. Nothing in this branch
+should be released on its own.
 
 Two things worth a look on the review pass: whether the search index's extra
 couple of hundred milliseconds per page is worth the scope-wide truth (it is a
