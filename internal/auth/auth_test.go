@@ -163,3 +163,63 @@ func TestPollingConfig(t *testing.T) {
 	}
 }
 
+func TestConfigVersion(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "ghspector-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+	defer os.Unsetenv("XDG_CONFIG_HOME")
+	os.Setenv("APPDATA", tmpDir)
+	defer os.Unsetenv("APPDATA")
+
+	path, err := ResolveConfigPath()
+	if err != nil {
+		t.Fatalf("failed to resolve config path: %v", err)
+	}
+
+	t.Run("SaveConfig stamps the current version", func(t *testing.T) {
+		cfg := &Config{GitHubToken: "test"}
+		if err := SaveConfig(cfg); err != nil {
+			t.Fatalf("failed to save config: %v", err)
+		}
+		if cfg.Version != CurrentConfigVersion {
+			t.Errorf("expected saved config version %d, got %d", CurrentConfigVersion, cfg.Version)
+		}
+
+		loaded, err := LoadConfig(path)
+		if err != nil {
+			t.Fatalf("failed to load config: %v", err)
+		}
+		if loaded.Version != CurrentConfigVersion {
+			t.Errorf("expected loaded config version %d, got %d", CurrentConfigVersion, loaded.Version)
+		}
+		if loaded.GitHubToken != "test" {
+			t.Errorf("expected token to survive round trip, got %q", loaded.GitHubToken)
+		}
+	})
+
+	t.Run("A config without a version key is reported as legacy", func(t *testing.T) {
+		legacy := []byte("github_token: legacy_token\ndefault_org: my-org\n")
+		if err := os.WriteFile(path, legacy, 0600); err != nil {
+			t.Fatalf("failed to write legacy config: %v", err)
+		}
+
+		loaded, err := LoadConfig(path)
+		if err != nil {
+			t.Fatalf("failed to load legacy config: %v", err)
+		}
+		if loaded.Version != legacyConfigVersion {
+			t.Errorf("expected legacy config version %d, got %d", legacyConfigVersion, loaded.Version)
+		}
+		if loaded.GitHubToken != "legacy_token" {
+			t.Errorf("expected legacy_token, got %q", loaded.GitHubToken)
+		}
+		if loaded.DefaultOrg != "my-org" {
+			t.Errorf("expected default_org my-org, got %q", loaded.DefaultOrg)
+		}
+	})
+}
+
