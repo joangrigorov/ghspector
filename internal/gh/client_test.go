@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -252,6 +253,48 @@ func TestClient_GetCheckRunsDuplicateFiltering(t *testing.T) {
 	// Second should be run-tests (failure, which is the higher ID with same started_at)
 	if runs[1].Name != "run-tests" || runs[1].Conclusion != "failure" || runs[1].ID != 4 {
 		t.Errorf("expected latest run-tests failure, got: %+v", runs[1])
+	}
+}
+
+// TestClient_GetIssuesWithStateDropsPullRequests pins the rule the issues view
+// depends on: the GitHub issues endpoint returns pull requests as well, and only
+// the issues are returned. HasMore is reported from the raw page, before the
+// drop, so a full page keeps the Load More row even when the filtered list is
+// short.
+func TestClient_GetIssuesWithStateDropsPullRequests(t *testing.T) {
+	var gotQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/owner/repo/issues" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]Issue{
+			{ID: 1, Number: 1, Title: "an issue"},
+			{ID: 2, Number: 2, Title: "a pull request", PullRequest: &struct {
+				URL string `json:"url"`
+			}{URL: "https://api.github.com/repos/owner/repo/pulls/2"}},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	issues, hasMore, err := client.GetIssuesWithState(context.Background(), "owner", "repo", "open", 1, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(issues) != 1 || issues[0].Number != 1 {
+		t.Fatalf("expected just the issue, got: %+v", issues)
+	}
+	if !hasMore {
+		t.Error("HasMore = false for a page that filled the requested size")
+	}
+	for _, want := range []string{"state=open", "page=1", "per_page=2"} {
+		if !strings.Contains(gotQuery, want) {
+			t.Errorf("the request asked %q, missing %q", gotQuery, want)
+		}
 	}
 }
 

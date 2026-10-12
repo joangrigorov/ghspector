@@ -158,6 +158,8 @@ This file is generated from the keymap table, so it cannot drift from the code.
 | --- | --- |
 | `Esc` / `Backspace` | Back |
 | `r` / `Ctrl+R` | Refresh |
+| `u` / `PgUp` | Scroll up |
+| `d` / `PgDn` | Scroll down |
 
 ## Workflow jobs
 

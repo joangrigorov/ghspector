@@ -62,7 +62,7 @@ func TestGoldenScreens(t *testing.T) {
 			return workflowsModel(t, wfSrv, 80, 24)
 		}},
 		{"main_issues_80x24", func(t *testing.T) Model {
-			return typeKeys(t, readyModel(t, srv, 80, 24), "tab", "tab")
+			return issuesModel(t, prServer(t), 80, 24)
 		}},
 		{"help_80x24", func(t *testing.T) Model {
 			return typeKeys(t, readyModel(t, srv, 80, 24), "?")
@@ -231,6 +231,82 @@ func TestGoldenPullRequestScreens(t *testing.T) {
 		{"pr_details_read_only_80x24", func(t *testing.T) Model {
 			readOnly := prServer(t, withPRPermission("read"))
 			return openPRDetails(t, prsModel(t, readOnly, 80, 24))
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			golden.RequireEqual(t, tc.build(t).View().Content)
+		})
+	}
+}
+
+// TestGoldenIssueScreens pins the screens the issue phase adds: the list with
+// data at three widths, its filters and overlays, the details screen with the
+// description beside the sidebar, and the conversation.
+//
+// Regenerate with:
+//
+//	go test ./internal/ui -run TestGoldenIssueScreens -update
+func TestGoldenIssueScreens(t *testing.T) {
+	srv := prServer(t)
+	opened := func(t *testing.T, w, h int) Model {
+		return openIssueDetails(t, issuesModel(t, srv, w, h))
+	}
+
+	cases := []struct {
+		name  string
+		build func(t *testing.T) Model
+	}{
+		{"issues_120x40", func(t *testing.T) Model { return issuesModel(t, srv, 120, 40) }},
+		{"issues_80x24", func(t *testing.T) Model { return issuesModel(t, srv, 80, 24) }},
+		// The narrow frame is where the list has to give up its rightmost
+		// columns rather than overlap them.
+		{"issues_60x16", func(t *testing.T) Model { return issuesModel(t, srv, 60, 16) }},
+		{"issues_filtered_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, issuesModel(t, srv, 120, 40), "a")
+		}},
+		{"issues_state_closed_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, issuesModel(t, srv, 120, 40), "s")
+		}},
+		{"issues_load_more_80x24", func(t *testing.T) Model {
+			m := issuesModel(t, prServer(t, withIssues(manyIssues(issuesPageSize)...)), 80, 24)
+			// The sentinel is the last row of a full page, so the cursor walks
+			// to the bottom of the list before the frame is taken.
+			keys := make([]string, 0, issuesPageSize)
+			for range manyIssues(issuesPageSize) {
+				keys = append(keys, "down")
+			}
+			return pressAndDrive(t, m, keys...)
+		}},
+		{"issues_filter_menu_80x24", func(t *testing.T) Model {
+			return pressAndDrive(t, issuesModel(t, srv, 80, 24), "f")
+		}},
+		{"issues_user_prompt_80x24", func(t *testing.T) Model {
+			return pressAndDrive(t, issuesModel(t, srv, 80, 24), "f", "u")
+		}},
+		// The picker the issue prompt leads to offers two roles, where the pull
+		// request one offers three.
+		{"issues_filter_type_80x24", func(t *testing.T) Model {
+			m := pressAndDrive(t, issuesModel(t, srv, 80, 24), "f", "u")
+			m = typeKeys(t, m, "a", "l", "i", "c", "e")
+			return pressAndDrive(t, m, "enter")
+		}},
+		{"issues_repo_picker_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, issuesModel(t, srv, 120, 40), "f", "r")
+		}},
+		{"issue_details_120x40", func(t *testing.T) Model { return opened(t, 120, 40) }},
+		{"issue_details_80x24", func(t *testing.T) Model { return opened(t, 80, 24) }},
+		// Below the width two columns need, the sidebar is given up.
+		{"issue_details_60x16", func(t *testing.T) Model { return opened(t, 60, 16) }},
+		{"issue_details_sidebar_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 120, 40), "tab")
+		}},
+		{"issue_comments_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 120, 40), "c")
+		}},
+		{"issue_comments_80x24", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 80, 24), "c")
 		}},
 	}
 

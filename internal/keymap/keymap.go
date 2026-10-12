@@ -285,6 +285,8 @@ var table = map[Scope][]Binding{
 	IssueComments: {
 		{Action: ActionBack, Keys: []string{"esc", "backspace"}, Help: "Back"},
 		{Action: ActionRefresh, Keys: []string{"r", "ctrl+r"}, Help: "Refresh"},
+		{Action: ActionScrollUp, Keys: []string{"u", "pgup"}, Help: "Scroll up"},
+		{Action: ActionScrollDown, Keys: []string{"d", "pgdown"}, Help: "Scroll down"},
 	},
 
 	Switcher: {

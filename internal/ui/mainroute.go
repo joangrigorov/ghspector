@@ -28,31 +28,28 @@ const tabCount = 3
 var tabMeta = [tabCount]struct {
 	Name  string
 	Scope keymap.Scope
-	// Empty is the placeholder a tab without a data layer shows. The Pull
-	// Request and Workflow tabs have a data layer and render their own loading,
-	// failure and empty states, so they have no placeholder.
-	Empty string
 }{
 	TabPRs:       {Name: "Pull Requests", Scope: keymap.MainPRs},
 	TabWorkflows: {Name: "Workflows", Scope: keymap.MainWorkflows},
-	TabIssues:    {Name: "Issues", Scope: keymap.MainIssues, Empty: "No issues loaded yet."},
+	TabIssues:    {Name: "Issues", Scope: keymap.MainIssues},
 }
 
 // Main is the primary screen: a tab strip over the active list.
 //
 // It owns the tab strip, the key routing that is common to the tabs, and each
-// tab's state. A tab's data and behaviour live in a value of its own — prsTab
-// and runsTab — so this route stays a host rather than growing a field per
-// screen, which is what the previous version's single model did.
+// tab's state. A tab's data and behaviour live in a value of its own — prsTab,
+// runsTab and issuesTab — so this route stays a host rather than growing a
+// field per screen, which is what the previous version's single model did.
 type Main struct {
-	tab  Tab
-	runs runsTab
-	prs  prsTab
+	tab    Tab
+	runs   runsTab
+	prs    prsTab
+	issues issuesTab
 }
 
 // NewMain returns the main route on its default tab.
 func NewMain() Main {
-	return Main{tab: TabPRs, runs: newRunsTab(), prs: newPRsTab()}
+	return Main{tab: TabPRs, runs: newRunsTab(), prs: newPRsTab(), issues: newIssuesTab()}
 }
 
 // Title is the breadcrumb label for the active tab.
@@ -79,11 +76,14 @@ func (m Main) Update(deps Deps, msg tea.Msg) (Route, tea.Cmd) {
 		// dropped. A tab that is not on screen fetches when it is next opened.
 		m.runs = newRunsTab()
 		m.prs = newPRsTab()
+		m.issues = newIssuesTab()
 		switch m.tab {
 		case TabWorkflows:
 			return m.startRuns(deps, true)
 		case TabPRs:
 			return m.startPRs(deps)
+		case TabIssues:
+			return m.startIssues(deps)
 		}
 		return m, nil
 	case pollMsg:
@@ -93,6 +93,8 @@ func (m Main) Update(deps Deps, msg tea.Msg) (Route, tea.Cmd) {
 			m.runs, cmd = m.runs.poll(deps)
 		case TabPRs:
 			m.prs, cmd = m.prs.poll(deps)
+		case TabIssues:
+			m.issues, cmd = m.issues.poll(deps)
 		}
 		return m, cmd
 	}
@@ -105,6 +107,10 @@ func (m Main) Update(deps Deps, msg tea.Msg) (Route, tea.Cmd) {
 	case TabPRs:
 		var cmd tea.Cmd
 		m.prs, cmd = m.prs.update(deps, msg)
+		return m, cmd
+	case TabIssues:
+		var cmd tea.Cmd
+		m.issues, cmd = m.issues.update(deps, msg)
 		return m, cmd
 	}
 	return m, nil
@@ -130,16 +136,13 @@ func (m Main) Act(deps Deps, action keymap.Action) (Route, tea.Cmd, bool) {
 		var handled bool
 		m.prs, cmd, handled = m.prs.act(deps, action)
 		return m, cmd, handled
+	case TabIssues:
+		var cmd tea.Cmd
+		var handled bool
+		m.issues, cmd, handled = m.issues.act(deps, action)
+		return m, cmd, handled
 	}
 
-	// The Issues tab arrives with its data layer (Phase 4). Until then its keys
-	// are accepted and do nothing beyond a status line.
-	switch action {
-	case keymap.ActionRefresh:
-		return m, status("Refreshed"), true
-	case keymap.ActionClearFilters:
-		return m, status("Filters cleared"), true
-	}
 	return m, nil, false
 }
 
@@ -164,6 +167,12 @@ func (m Main) switchTab(deps Deps, tab Tab) (Route, tea.Cmd, bool) {
 		}
 		next, cmd := m.startPRs(deps)
 		return next, cmd, true
+	case TabIssues:
+		if m.issues.loaded || m.issues.loading {
+			return m, nil, true
+		}
+		next, cmd := m.startIssues(deps)
+		return next, cmd, true
 	}
 	return m, nil, true
 }
@@ -181,6 +190,13 @@ func (m Main) startRuns(deps Deps, dropApprovals bool) (Main, tea.Cmd) {
 func (m Main) startPRs(deps Deps) (Main, tea.Cmd) {
 	next, cmd := m.prs.start(deps)
 	m.prs = next
+	return m, cmd
+}
+
+// startIssues begins the Issues tab's fetch, clearing what it replaces.
+func (m Main) startIssues(deps Deps) (Main, tea.Cmd) {
+	next, cmd := m.issues.start(deps)
+	m.issues = next
 	return m, cmd
 }
 
@@ -204,18 +220,10 @@ func (m Main) content(deps Deps, body layout.Rect) string {
 		return m.runs.view(deps, body)
 	case TabPRs:
 		return m.prs.view(deps, body)
+	case TabIssues:
+		return m.issues.view(deps, body)
 	}
-	muted := func(s string) string { return "  " + style(deps.Theme.Muted, normal).Render(s) }
-	lines := []string{
-		"",
-		muted(tabMeta[m.tab].Empty),
-		"",
-		// Two short lines rather than one long one, so a narrow terminal does
-		// not clip the sentence mid-word.
-		muted("The list for this tab arrives with the data layer."),
-		muted("The chrome, tabs, help and key handling are live."),
-	}
-	return layout.Fit(strings.Join(lines, "\n"), body.W, body.H)
+	return ""
 }
 
 // tabStrip renders the tab labels with the active one highlighted.
