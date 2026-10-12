@@ -1,24 +1,24 @@
-  [1mIssues › Issue #3[m                                             Account: octocat
-────────────────────────────────────────────────────────────────────────────────
+  [1mIssues › Issue #3[m                                           Account: octocat  
+  ────────────────────────────────────────────────────────────────────────────  
   [1m[OPEN][m [1mIssue #3: Add the issues view[m                                          
   Repo: octocat/api | Author: @octocat | Assignees: hubot                       
   ────────────────────────────────────────────────────────────────────────────  
-[1m▶ DESCRIPTION[m                                        │[1mDETAILS[m                   
-                                                     │                          
-Issues are the third list of the app.                │  State:      OPEN        
-                                                     │  Author:     @octocat    
-They have no reviewers and no diff, so the sidebar   │  Assignees:  @hubot      
-carries what the list cannot: the assignees, the     │  Milestone:  0.7.0       
-labels and the milestone.                            │  Labels:     enhancement 
-                                                     │  Created:    2024-04-29  
-The description scrolls by one line with j and k, and│              10:00       
-by six with u and d, which is the pair the pull      │  Updated:    2024-05-01  
-request description uses.                            │              10:00       
-                                                     │  Closed:     —           
-Press c for the conversation.                        │                          
-                                                     │                          
-                                                     │                          
-                                                     │                          
-                                                     │                          
-────────────────────────────────────────────────────────────────────────────────
+  [1m▶ DESCRIPTION[m                                     │ [1mDETAILS[m                   
+                                                    │                           
+  Issues are the third list of the app.             │   State:      OPEN        
+                                                    │   Author:     @octocat    
+  They have no reviewers and no diff, so the sidebar│   Assignees:  @hubot      
+  carries what the list cannot: the assignees, the  │   Milestone:  0.7.0       
+  labels and the milestone.                         │   Labels:     enhancemen  
+                                                    │               t           
+  The description scrolls by one line with j and k, │   Created:    2024-04-29  
+  and by six with u and d, which is the pair the    │               10:00       
+  pull request description uses.                    │   Updated:    2024-05-01  
+                                                    │               10:00       
+  Press c for the conversation.                     │   Closed:     —           
+                                                    │                           
+                                                    │                           
+                                                    │                           
+                                                    │                           
+  ────────────────────────────────────────────────────────────────────────────  
   [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEsc/Backspace[m:Back to list       

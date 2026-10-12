@@ -155,15 +155,23 @@ func (d *IssueDetails) scroll(deps Deps, delta int) (Route, tea.Cmd, bool) {
 
 // clamp keeps the scroll offset inside the description.
 func (d *IssueDetails) clamp(deps Deps) {
-	d.descScroll = clampOffset(d.descScroll, len(d.descriptionLines(deps, d.bodyWidth(deps))))
+	d.descScroll = clampOffset(d.descScroll, len(d.descriptionLines(deps, d.descriptionWidth(deps))))
 }
 
-// bodyWidth is the width the panes are laid out in.
+// bodyWidth is the width the panes are laid out in: what a pane's rect works out
+// to, so the scroll clamp counts the lines the pane actually shows.
 func (d *IssueDetails) bodyWidth(deps Deps) int {
 	if deps.Size.Width > 0 {
-		return deps.Size.Width
+		return layout.ContentWidth(deps.Size.Width)
 	}
 	return defaultBodyWidth
+}
+
+// descriptionWidth is the width the description pane is drawn at, with the
+// sidebar taking the rest of the box.
+func (d *IssueDetails) descriptionWidth(deps Deps) int {
+	desc, _ := detailColumns(d.bodyWidth(deps))
+	return desc
 }
 
 // description is the text the description pane shows.
@@ -209,8 +217,8 @@ func (d *IssueDetails) heading(deps Deps, width int) []string {
 	return []string{
 		"  " + style(colour, bold).Render("["+state+"]") + " " +
 			style(theme.Title, bold).Render(layout.Truncate(title, max(width-16, 8))),
-		"  " + style(theme.Muted, normal).Render(layout.Truncate(detail, max(width-4, 8))),
-		"  " + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-4, 1))),
+		"  " + style(theme.Muted, normal).Render(layout.Truncate(detail, max(width-layout.Gutter, 8))),
+		"  " + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-layout.Gutter, 1))),
 	}
 }
 
@@ -233,24 +241,28 @@ func issueStateLabel(theme Theme, issue store.Issue) (string, color.Color) {
 // cannot hold both drops the sidebar, because a sidebar too narrow to show a
 // label and its value is not an answer.
 func (d *IssueDetails) body(deps Deps, r layout.Rect) string {
-	descW, sideW := detailColumns(r.W)
+	// The panes tile the rect they are given, so the rect is inset by the gutter
+	// and the rendered block shifted into it, which puts the panes on the same
+	// left edge as the heading above them.
+	inner := paneRect(r)
+	descW, sideW := detailColumns(inner.W)
 
-	descLines := d.descriptionPane(deps, descW, r.H)
+	descLines := d.descriptionPane(deps, descW, inner.H)
 	if sideW == 0 {
-		return layout.Fit(joinLines(padLines(descLines, descW, r.H)), r.W, r.H)
+		return gutterBlock(layout.Fit(joinLines(padLines(descLines, descW, inner.H)), inner.W, inner.H), r.W, r.H)
 	}
 
 	columns := [][]string{
-		padLines(descLines, descW, r.H),
-		padLines(d.metadataPane(deps, sideW, r.H), sideW, r.H),
+		padLines(descLines, descW, inner.H),
+		sidebarPane(d.metadataPane(deps, sideW-sidebarPad, inner.H), sideW, inner.H),
 	}
 	separator := style(deps.Theme.HeaderRule, normal).Render("│")
 
-	rows := make([]string, 0, r.H)
-	for row := 0; row < r.H; row++ {
+	rows := make([]string, 0, inner.H)
+	for row := 0; row < inner.H; row++ {
 		rows = append(rows, columns[0][row]+separator+columns[1][row])
 	}
-	return layout.Fit(joinLines(rows), r.W, r.H)
+	return gutterBlock(layout.Fit(joinLines(rows), inner.W, inner.H), r.W, r.H)
 }
 
 // descriptionPane renders the issue body, rendered as markdown and scrolled.
@@ -402,10 +414,11 @@ func (c *IssueComments) lines(deps Deps) []string {
 	return commentBlockLines(deps, c.comments, c.bodyWidth(deps))
 }
 
-// bodyWidth is the width the conversation is wrapped to.
+// bodyWidth is the width the conversation is wrapped to: the pane it is drawn
+// in, which is the screen's content box.
 func (c *IssueComments) bodyWidth(deps Deps) int {
 	if deps.Size.Width > 0 {
-		return deps.Size.Width
+		return layout.ContentWidth(deps.Size.Width)
 	}
 	return defaultBodyWidth
 }
@@ -424,7 +437,7 @@ func (c *IssueComments) View(deps Deps, r layout.Rect) string {
 	_, body := r.SplitRows(len(lines))
 	content := c.lines(deps)
 	start := clampOffset(c.scroll, len(content))
-	lines = append(lines, take(content[start:], body.H)...)
+	lines = append(lines, gutterRows(joinLines(take(content[start:], body.H)), body.W, body.H)...)
 	return layout.Fit(joinLines(lines), r.W, r.H)
 }
 
@@ -436,8 +449,8 @@ func (c *IssueComments) heading(deps Deps, width int) []string {
 		title += ": " + c.title
 	}
 	return []string{
-		"  " + style(theme.Title, bold).Render(layout.Truncate(title, max(width-4, 8))),
-		"  " + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-4, 1))),
+		"  " + style(theme.Title, bold).Render(layout.Truncate(title, max(width-layout.Gutter, 8))),
+		"  " + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-layout.Gutter, 1))),
 	}
 }
 

@@ -43,6 +43,38 @@ const (
 	MinHeight = 12
 )
 
+// Gutter is the space every screen keeps clear at the left and right edge.
+//
+// It is one number for the whole program so the chrome and the content it
+// frames share one box: a bar's text, a rule, a table row and a pane all start
+// at Gutter and end at width-Gutter-1. The one thing drawn outside the box is a
+// list's selection marker, which sits in the gutter itself.
+const Gutter = 2
+
+// ContentWidth is the width of the text area of a screen width cells wide: the
+// screen less one gutter on each edge. The chrome measures itself with this, and
+// a route that has to know a pane's width without being handed its rect — the
+// scroll clamps, which run outside a render — measures the same text area.
+func ContentWidth(width int) int {
+	if inner := width - 2*Gutter; inner > 0 {
+		return inner
+	}
+	return 1
+}
+
+// BoxWidth is the width of a block that spans a screen width cells wide and
+// carries its own left gutter: the screen less the gutter on the right.
+//
+// A route's rect is this wide. The left gutter is the surface's own business —
+// a table row reserves it for the selection marker, a heading and a pane write
+// it out — so it is not taken away twice.
+func BoxWidth(width int) int {
+	if inner := width - Gutter; inner > 0 {
+		return inner
+	}
+	return 1
+}
+
 // TooSmall reports whether the terminal is below the supported minimum.
 func TooSmall(width, height int) bool {
 	return width < MinWidth || height < MinHeight

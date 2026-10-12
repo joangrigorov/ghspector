@@ -437,8 +437,8 @@ func (j *Jobs) heading(deps Deps, width int) []string {
 	}
 	return []string{
 		"  " + title,
-		"  " + style(theme.Muted, normal).Render(layout.Truncate(detail, width-4)),
-		"  " + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-4, 1))),
+		"  " + style(theme.Muted, normal).Render(layout.Truncate(detail, width-layout.Gutter)),
+		"  " + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-layout.Gutter, 1))),
 	}
 }
 

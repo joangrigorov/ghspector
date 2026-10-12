@@ -1,16 +1,16 @@
-  [1mPull Requests › PR #7[m                     Account: octocat
-────────────────────────────────────────────────────────────
+  [1mPull Requests › PR #7[m                   Account: octocat  
+  ────────────────────────────────────────────────────────  
   [1m[OPEN][m [1mPR #7: Add the pull request view[m                   
   Repo: octocat/api | Author: @octocat | Source: feat/prs…  
   ────────────────────────────────────────────────────────  
  [1m 1:Info [m│ 2:Commits │ 3:Files │ 4:Checks │ 5:Comments      
                                                             
-[1m▶ DESCRIPTION[m                      │[1mCHECKS[m                  
-                                   │                        
-This pull request adds the pull    │  ■ lint — GitHub Actio…
-request view.                      │  ■ codecov — Codecov   
-                                   │                        
-It has two paragraphs.             │                        
-                                   │                        
-────────────────────────────────────────────────────────────
+  [1m▶ DESCRIPTION[m                  │ [1mCHECKS[m                   
+                                 │                          
+  This pull request adds the pull│   ■ lint — GitHub Acti…  
+  request view.                  │   ■ codecov — Codecov    
+                                 │                          
+  It has two paragraphs.         │                          
+                                 │                          
+  ────────────────────────────────────────────────────────  
   [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit               

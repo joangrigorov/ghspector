@@ -536,7 +536,12 @@ func (m Model) render() string {
 
 	header := renderHeader(m.deps, frame.Header, breadcrumbs(m.routes.Titles()), m.routeLoading(), m.tick)
 
-	body := layout.Fit(m.routes.Top().View(m.deps, frame.Body), frame.Body.W, frame.Body.H)
+	// A route renders into the content box: the terminal less the gutter on the
+	// right, which the Fit below fills with spaces. The left gutter stays with
+	// the surface, because a list draws its selection marker in it.
+	content := frame.Body
+	content.W = layout.BoxWidth(content.W)
+	body := layout.Fit(m.routes.Top().View(m.deps, content), frame.Body.W, frame.Body.H)
 	if !m.overlays.Empty() {
 		// The modal is composited into the body so the chrome stays visible and
 		// the user keeps their bearings.

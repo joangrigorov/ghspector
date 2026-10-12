@@ -1,8 +1,8 @@
-  [1mIssues[m                                                                                                Account: octocat
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [1mIssues[m                                                                                              Account: octocat  
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
   Pull Requests │ Workflows │[1m Issues [m                                                                                   
-[1m  ST  ISSUE   TITLE                                    AUTHOR           REPOSITORY       ASSIGNEES        LABELS        [m
-[1m› ■   #4      Ship the old thing                       hubot            web              —                —             [m
+[1m  ST  ISSUE   TITLE                                  AUTHOR           REPOSITORY       ASSIGNEES        LABELS        [m  
+[1m› ■   #4      Ship the old thing                     hubot            web              —                —             [m  
                                                                                                                         
                                                                                                                         
                                                                                                                         
@@ -36,5 +36,5 @@
                                                                                                                         
                                                                                                                         
                                                                                                                         
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mj/↓[m:Move down  [1mk/↑[m:Move up  [1mEnter[m:View details            [1mℹ State: closed[m
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mj/↓[m:Move down  [1mk/↑[m:Move up  [1mEnter[m:View details          [1mℹ State: closed[m  

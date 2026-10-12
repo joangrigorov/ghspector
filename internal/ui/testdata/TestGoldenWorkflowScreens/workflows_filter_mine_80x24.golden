@@ -1,5 +1,5 @@
-  [1mWorkflows[m                                                     Account: octocat
-────────────────────────────────────────────────────────────────────────────────
+  [1mWorkflows[m                                                   Account: octocat  
+  ────────────────────────────────────────────────────────────────────────────  
   Pull Requests │[1m Workflows [m│ Issues                                            
   Filter: actor @octocat (x clears)                                             
                                                                                 
@@ -20,5 +20,5 @@
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mj/↓[m:Move down   [1mℹ Filter: octocat[m
+  ────────────────────────────────────────────────────────────────────────────  
+  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit                [1mℹ Filter: octocat[m  
