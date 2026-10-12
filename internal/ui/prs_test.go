@@ -1128,70 +1128,138 @@ func TestPRDetailsRefreshRefetchesTheActiveTab(t *testing.T) {
 	}
 }
 
-// TestInfoColumnsTileTheBody is the layout property the three-pane Info view
-// rests on: whatever the terminal width, the panes and the separators drawn
+// TestInfoColumnsTileTheBody is the layout property the two-column Info view
+// rests on: whatever the terminal width, the columns and the separator drawn
 // between them add up to exactly the body.
 func TestInfoColumnsTileTheBody(t *testing.T) {
 	for width := 1; width <= 400; width++ {
-		desc, meta, checks := infoColumns(width)
-		draw := 0
-		for _, pane := range []int{desc, meta, checks} {
-			if pane > 0 {
-				draw++
-			}
+		desc, side := infoColumns(width)
+		separators := infoSepWidth
+		if side == 0 {
+			separators = 0
 		}
-		separators := 0
-		if draw > 1 {
-			separators = draw - 1
+		if sum := desc + side + separators; sum != width {
+			t.Fatalf("width %d: columns and separators tile %d, want %d", width, sum, width)
 		}
-		if sum := desc + meta + checks + separators*infoSepWidth; sum != width {
-			t.Fatalf("width %d: panes and separators tile %d, want %d", width, sum, width)
+		if desc < 0 || side < 0 {
+			t.Fatalf("width %d: negative column (%d, %d)", width, desc, side)
 		}
-		if desc < 0 || meta < 0 || checks < 0 {
-			t.Fatalf("width %d: negative pane (%d, %d, %d)", width, desc, meta, checks)
-		}
-		if width >= descMinWidth+metaMinWidth+checksMinWidth+2*infoSepWidth {
-			if desc < descMinWidth || meta < metaMinWidth || checks < checksMinWidth {
-				t.Fatalf("width %d: a pane is below its minimum (%d, %d, %d)", width, desc, meta, checks)
+		if width >= descMinWidth+sideMinWidth+infoSepWidth {
+			if desc < descMinWidth || side < sideMinWidth {
+				t.Fatalf("width %d: a column is below its minimum (%d, %d)", width, desc, side)
 			}
 		}
 	}
 }
 
-// TestInfoColumnsGivesUpTheMetadataPaneFirst pins the priority: the description
-// and the checks are what the screen is for.
-func TestInfoColumnsGivesUpTheMetadataPaneFirst(t *testing.T) {
-	const width = descMinWidth + checksMinWidth + 2*infoSepWidth + metaMinWidth - 1
-	desc, meta, checks := infoColumns(width)
-	if meta != 0 {
-		t.Fatalf("metadata pane is %d wide at %d columns, want it dropped", meta, width)
+// TestInfoColumnsDropsTheSidebarWhenItCannotAnswer pins the priority: a sidebar
+// too narrow to hold a label and a value is dropped rather than squeezed, and the
+// description takes the width back.
+func TestInfoColumnsDropsTheSidebarWhenItCannotAnswer(t *testing.T) {
+	const width = descMinWidth + sideMinWidth + infoSepWidth - 1
+	desc, side := infoColumns(width)
+	if side != 0 {
+		t.Fatalf("sidebar is %d wide at %d columns, want it dropped", side, width)
 	}
-	if desc < descMinWidth || checks < checksMinWidth {
-		t.Fatalf("panes = (%d, %d), want the description and the checks to survive", desc, checks)
+	if desc != width {
+		t.Fatalf("description is %d wide at %d columns, want the whole body", desc, width)
+	}
+}
+
+// TestSideHeightsGivesUpTheDetailsFirst pins the vertical priority: the checks
+// are what the route's keys act on, so the details block gives way when the body
+// is short and the checks keep the column.
+func TestSideHeightsGivesUpTheDetailsFirst(t *testing.T) {
+	if details, checks := sideHeights(detailsRows + checksMinRows); details != detailsRows || checks != checksMinRows {
+		t.Errorf("sideHeights(%d) = (%d, %d), want (%d, %d)",
+			detailsRows+checksMinRows, details, checks, detailsRows, checksMinRows)
+	}
+	if details, checks := sideHeights(detailsRows + checksMinRows - 1); details != 0 || checks != detailsRows+checksMinRows-1 {
+		t.Errorf("a short body kept the details block: (%d, %d)", details, checks)
+	}
+	for height := 0; height <= 60; height++ {
+		details, checks := sideHeights(height)
+		if details+checks != height {
+			t.Fatalf("height %d: (%d, %d) does not fill the column", height, details, checks)
+		}
 	}
 }
 
 // TestInfoViewTilesEveryWidth renders the Info sub-tab across a wide range of
-// body widths and checks what comes out: every line is exactly the body width,
-// and a pane that is not drawn leaves no separator behind.
+// body widths and heights and checks what comes out: every line is exactly the
+// body width, and a column that is not drawn leaves no separator behind.
 func TestInfoViewTilesEveryWidth(t *testing.T) {
 	srv := prServer(t)
 	m := openPRDetails(t, prsModel(t, srv, 120, 40))
 	details := prDetailsRoute(t, m)
 
-	for width := 12; width <= 200; width++ {
-		view := details.infoView(m.deps, layout.Rect{W: width, H: 10})
-		lines := splitLines(view)
-		if len(lines) != 10 {
-			t.Fatalf("width %d: %d lines, want 10", width, len(lines))
+	for height := 6; height <= 20; height++ {
+		for width := 12; width <= 200; width++ {
+			view := details.infoView(m.deps, layout.Rect{W: width, H: height})
+			lines := splitLines(view)
+			if len(lines) != height {
+				t.Fatalf("%dx%d: %d lines, want %d", width, height, len(lines), height)
+			}
+			for i, line := range lines {
+				if got := layout.Width(line); got != width {
+					t.Fatalf("%dx%d: line %d is %d columns: %q", width, height, i, got, line)
+				}
+				if strings.Contains(line, "││") {
+					t.Fatalf("%dx%d: line %d draws two separators: %q", width, height, i, line)
+				}
+			}
 		}
-		for i, line := range lines {
-			if got := layout.Width(line); got != width {
-				t.Fatalf("width %d: line %d is %d columns: %q", width, i, got, line)
+	}
+}
+
+// TestInfoViewStacksTheDetailsOverTheChecks pins the arrangement the screenshot
+// review asked for: the details block sits above the checks in the sidebar, and
+// both are in the same column as the description's neighbour.
+func TestInfoViewStacksTheDetailsOverTheChecks(t *testing.T) {
+	srv := prServer(t)
+	m := openPRDetails(t, prsModel(t, srv, 120, 40))
+	details := prDetailsRoute(t, m)
+
+	view := details.infoView(m.deps, layout.Rect{W: 120, H: 40})
+	rows := splitLines(view)
+	detailsRow, checksRow := -1, -1
+	for i, row := range rows {
+		if at := strings.Index(row, "DETAILS"); at >= 0 && detailsRow < 0 {
+			detailsRow = i
+			if _, side := infoColumns(120); at <= side {
+				t.Errorf("DETAILS is at column %d, want it in the sidebar", at)
 			}
-			if strings.Contains(line, "││") {
-				t.Fatalf("width %d: line %d draws two separators: %q", width, i, line)
-			}
+		}
+		if strings.Contains(row, "CHECKS") {
+			checksRow = i
+		}
+	}
+	if detailsRow < 0 || checksRow < 0 {
+		t.Fatalf("the sidebar is missing a block: details=%d checks=%d", detailsRow, checksRow)
+	}
+	if detailsRow >= checksRow {
+		t.Errorf("DETAILS is on row %d and CHECKS on row %d, want the details above the checks", detailsRow, checksRow)
+	}
+}
+
+// TestInfoViewKeepsTheDetailsOnTheCanonicalScreen pins the size the screenshot
+// review was read at. At 80x24 the Info body is fifteen rows, and the details
+// block has to be drawn in them: it is the pane that answers "whose pull request
+// is this", and dropping it to give the checks one more row leaves the commonest
+// terminal size without it.
+func TestInfoViewKeepsTheDetailsOnTheCanonicalScreen(t *testing.T) {
+	srv := prServer(t)
+	m := openPRDetails(t, prsModel(t, srv, 80, 24))
+	details := prDetailsRoute(t, m)
+
+	// 24 rows less the two header rows, the two footer rows and the five rows of
+	// heading and sub-tab strip the route draws above its body.
+	const infoBody = 24 - 2 - 2 - 5
+	view := details.infoView(m.deps, layout.Rect{W: 80, H: infoBody})
+
+	for _, want := range []string{"DETAILS", "State:", "CHECKS"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("the sidebar does not show %q at 80x24:\n%s", want, view)
 		}
 	}
 }

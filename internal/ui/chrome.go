@@ -7,9 +7,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"ghspector/internal/keymap"
 	"ghspector/internal/layout"
+	"ghspector/internal/overlay"
 	"ghspector/internal/ui/widgets"
 )
 
@@ -26,19 +28,19 @@ var (
 	bold   = func(s lipgloss.Style) lipgloss.Style { return s.Bold(true) }
 )
 
-// renderHeader draws the title band and its separator rule.
+// renderHeader draws the breadcrumb band and its separator rule.
 //
-// The title gives way first when the row is tight, because the account and the
+// The trail gives way first when the row is tight, because the account and the
 // rate limit are what the user needs on a small screen; the account then gives
-// way, and the rate limit last.
+// way, and the rate limit last. The band carries no product name: the splash
+// and the window title already say what is running, and the columns are worth
+// more to the trail.
 func renderHeader(deps Deps, r layout.Rect, title string, loading bool, tick int) string {
 	if r.Empty() {
 		return ""
 	}
 	theme := deps.Theme
 
-	prefix := "  " + style(theme.HeaderTitle, bold).Render("ghspector") +
-		style(theme.HeaderRule, normal).Render("  │  ")
 	account := style(theme.HeaderContext, normal).Render("Account: " + deps.Account.Owner.String())
 
 	indicator := ""
@@ -48,17 +50,17 @@ func renderHeader(deps Deps, r layout.Rect, title string, loading bool, tick int
 	indicator += renderRateLimit(deps)
 
 	const gap = 3
-	budget := r.W - lipgloss.Width(prefix) - lipgloss.Width(account) - lipgloss.Width(indicator) - 2*gap
+	budget := r.W - lipgloss.Width(account) - lipgloss.Width(indicator) - 2*gap
 	if budget < 4 {
-		// Drop the account before dropping the title.
-		account, budget = "", r.W-lipgloss.Width(prefix)-lipgloss.Width(indicator)-gap
+		// Drop the account before dropping the trail.
+		account, budget = "", r.W-lipgloss.Width(indicator)-gap
 	}
 	if budget < 1 {
 		budget = 1
 	}
-	page := style(theme.HeaderContext, bold).Render(layout.Truncate(title, budget))
+	page := style(theme.HeaderTitle, bold).Render(layout.Truncate(title, budget))
 
-	left := prefix + page
+	left := "  " + page
 	if account != "" {
 		left += strings.Repeat(" ", gap) + account
 	}
@@ -156,19 +158,56 @@ func hasAction(bindings []keymap.Binding, action keymap.Action) bool {
 	return false
 }
 
-// selectedRow styles a list row as the highlighted one. A theme with a
-// selection background paints the row across the width, so the highlight reads
-// as a row rather than as the text on it.
-func selectedRow(theme Theme, s string, width int) string {
-	if theme.SelectedBackground != nil {
-		return lipgloss.NewStyle().
-			Background(theme.SelectedBackground).
-			Foreground(theme.Selected).
-			Bold(true).
-			Width(width).
-			Render(s)
+// selectMarker is the gutter of the highlighted row. It is the same glyph in
+// every list, so a highlight means one thing on every screen.
+const selectMarker = "› "
+
+// selectedRow renders the highlighted row: the shared marker in the gutter, and
+// the row's own text in the accent colour and bold.
+//
+// There is deliberately no background bar. A bar has to be paired with a
+// foreground the palette can guarantee, and the pair this replaced — white on
+// purple — rendered as white on white on a light terminal and as a purple block
+// on a dark one. The marker carries the meaning, so the colour only has to be
+// readable, which every theme's accent is.
+//
+// A row may bring styles of its own: the state marker in front of a run, a job
+// or a check is coloured by how it ended. A nested style ends with a reset, and
+// that reset ends the highlight for everything after it, so the accent is
+// re-opened after each one. The marker in front of the row keeps its own colour,
+// which is the answer it is there to give.
+func selectedRow(theme Theme, row string, width int) string {
+	row = strings.TrimPrefix(row, tableIndent)
+	row = layout.Truncate(row, max(width-layout.Width(selectMarker), 1))
+
+	prefix := highlightPrefix(theme)
+	row = strings.ReplaceAll(row, ansi.ResetStyle, ansi.ResetStyle+prefix)
+	// A row with a nested style was closed by it; a row of plain cells is still
+	// open and has to be closed here.
+	if strings.HasSuffix(row, prefix) {
+		row = strings.TrimSuffix(row, prefix)
+	} else {
+		row += ansi.ResetStyle
 	}
-	return style(theme.Selected, bold).Render(s)
+	return prefix + selectMarker + row
+}
+
+// highlightPrefix is the sequence that turns the row highlight on. It is read
+// back from lipgloss rather than written out here, so it stays in step with the
+// accent colour: rendering the style with nothing in it yields the style's own
+// sequence followed by its reset.
+func highlightPrefix(theme Theme) string {
+	return strings.TrimSuffix(style(theme.Accent, bold).Render(""), ansi.ResetStyle)
+}
+
+// overlayChrome maps the theme onto the modal chrome, so a modal is drawn in the
+// same palette as the screen behind it and a theme change reaches both.
+func overlayChrome(theme Theme) overlay.Chrome {
+	c := overlay.DefaultChrome()
+	c.BorderColor = theme.OverlayBorder
+	c.TitleColor = theme.OverlayTitle
+	c.BodyColor = theme.OverlayBody
+	return c
 }
 
 // breadcrumbs joins the route titles into a single trail. The header truncates

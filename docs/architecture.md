@@ -314,6 +314,19 @@ These are the rules that keep the design from regressing. Each is enforceable.
 6. **No direct transport calls from `ui`.** Everything goes through the store.
 7. **No v1 Charm imports.**
 8. **Every screen has a golden test** at 80×24, 120×40, and 40×15.
+9. **No terminal query from a view.** The terminal is asked about its background
+   and its focus at the root, once, and the answer arrives as a message that
+   rebuilds the palette. A view renders; it does not sample. The baseline's
+   markdown renderer called `lipgloss.HasDarkBackground()` inside the render path,
+   which is one blocking probe per frame and is why the same version was both
+   well rendered and unusable.
+10. **One highlight treatment.** Every list marks its selected row the same way:
+    the shared marker in the gutter, and the row's own text in the accent colour.
+    A list draws no background bar, and no screen invents its own cursor style.
+11. **Every theme colour is chosen against the surface it is drawn on**, and a
+    test measures the contrast. A colour that assumes a dark terminal and is
+    drawn on a light one is invisible, which is the defect this rule exists to
+    prevent.
 
 ---
 
@@ -412,7 +425,7 @@ a comment list, and merge and close behind a write gate that fails closed.
 | Package | State |
 | --- | --- |
 | `internal/store` | `PullRequests` through the same 8-repository fan-out and `repoTargets` helper the runs list uses, with `state` forwarded and poll results merged by ID; `PullRequest` detail, `PRCommits`, `PRFiles`, `Comments`, `Commit`, `CheckRuns`, `Merge`, `Close`, `RepoPermission`. |
-| `internal/ui` | `Main.prsTab`, the `PRDetails` route with its five sub-tabs (Info, Commits, Files, Checks, Comments), the three-pane Info row, the write gate, the merge and close overlays, and OSC 8 hyperlinks. |
+| `internal/ui` | `Main.prsTab`, the `PRDetails` route with its five sub-tabs (Info, Commits, Files, Checks, Comments), the two-column Info row, the write gate, the merge and close overlays, and OSC 8 hyperlinks. |
 | `internal/overlay` | `method.go`: the merge-method select, built on the shared `Menu`, so the merge flow is overlays rather than a modal state machine. |
 | `internal/keymap` | `MainPRs`, `PRDetails`, `PRCommits`, `CommitDetails`, `PRDiff`, `PRComments`, `PRFilterType`, `MergeMethod`, `MergeConfirm`, `CloseConfirm`. |
 | `internal/auth` | `SetDefaultMergeMethod` edits the config file as a YAML document, so unknown keys survive and the token is never re-encoded. |
@@ -450,6 +463,54 @@ checks as Phase 2 pass; screens are pinned by 18 pull request goldens and the
 full golden set, the merge/close and filter flows by scripted tests, the pull
 request → sub-tab → detail path and the tab-cycling path by `teatest` runs
 through the real Bubble Tea runtime, and the pane geometry by property tests.
+
+### Phase 3 follow-up — palette, highlight, header (this change)
+
+A read-through of the phase 3 build found five presentation defects. None of them
+was a missing capability; all of them were the palette or the highlight being
+applied differently on different screens.
+
+- **A highlighted row vanished on a light terminal.** The switcher drew its
+  cursor row as `theme.Selected` — the colour `#ffffff` — as a *foreground* with
+  no background, so the selected account was white on white. The palette no
+  longer has a `Selected` colour at all: `selectedRow` is the one highlight in the
+  program, and it is a marker plus the accent colour.
+- **The theme froze at startup.** `cmd/ghspector` sampled the terminal background
+  with `lipgloss.HasDarkBackground(os.Stdin, os.Stdout)` once, before Bubble Tea
+  had started, and nothing re-sampled it. Changing the OS scheme while the program
+  ran therefore left the dark palette's greys on a light screen: the pull request
+  detail values and the checks drew dark on dark. The model now asks the terminal
+  itself (`tea.RequestBackgroundColor` in `Init`, again on `tea.FocusMsg` with
+  `View.ReportFocus` on), and `withTheme` rebuilds the palette *and* the overlay
+  chrome from the answer. A test renders the same screen twice — once after a
+  background change, once from a startup in that scheme — and requires the two to
+  be identical.
+- **The highlight was not one treatment.** The log viewer's step list drew ` > `
+  in a gutter the tables did not use, so the cursor looked different in the job
+  view than in the account switcher. Every list now builds rows the same way:
+  `tableIndent` on a plain row, `selectMarker` on the highlighted one.
+- **The side of the Info row.** The details and the checks each had a column of
+  their own beside the description, which left the description narrow and the
+  details permanently short of rows. The sidebar now stacks the details over the
+  checks, and the description keeps the width the third column would have taken.
+  The details block gives way first on a short body, and it is drawn at 80×24 —
+  the size the review was read at — which is why `detailsRows` is the block's own
+  height rather than one row more.
+- **The header carried a wordmark.** `ghspector  │  <trail>` spent seven columns
+  of a narrow header saying what the splash and the window title already say. The
+  header now starts with the trail.
+
+The `Selected`/`SelectedBackground` pair is gone from `Theme`, so the class of
+defect is gone with it: a colour that was used as a foreground on one screen and
+as a background on another has no fields to live in. `internal/ui/theme_test.go`
+measures every remaining colour's contrast against the surface it is drawn on
+(3:1, the WCAG minimum for a glyph or large text), which is what `StatusWarn` on
+white needed to be checked against rather than assumed.
+
+Verification: see the walkthrough for the change. The same seven checks as the
+phases pass; the palette is pinned by the contrast test and the background-change
+equivalence test, the highlight by a unit test on `selectedRow` and by every list
+golden, and the header by a test that reads the first line of a live render.
 
 ### Security findings
 

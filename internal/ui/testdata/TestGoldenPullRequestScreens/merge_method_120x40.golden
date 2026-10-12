@@ -1,40 +1,40 @@
-  [1mghspector[m  │  [1mPull Requests › PR #7[m   Account: octocat                                                                
+  [1mPull Requests › PR #7[m   Account: octocat                                                                              
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   [1m[OPEN][m [1mPR #7: Add the pull request view[m                                                                               
   Repo: octocat/api | Author: @octocat | Source: feat/prs → Base: main                                                  
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
  [1m 1:Info [m│ 2:Commits │ 3:Files │ 4:Checks │ 5:Comments                                                                  
                                                                                                                         
-[1m▶ DESCRIPTION[m                                         │[1mDETAILS[m                   │[1mCHECKS[m                                
-                                                      │                          │                                      
-This pull request adds the pull request view.         │  State:      OPEN        │  ■ lint — GitHub Actions             
-                                                      │  Author:     @octocat    │  ■ codecov — Codecov                 
-It has two paragraphs.                                │  Assignees:  @hubot      │                                      
-                                                      │  Reviewers:  @alice      │                                      
-                       ╭────────────────────────────────────────────────────────────────────────╮                       
-                       │                                                                        │                       
-                       │  [1mMerge pull request[m                                                    │                       
-                       │                                                                        │                       
+[1m▶ DESCRIPTION[m                                                                   │[1mDETAILS[m                                
+                                                                                │                                       
+This pull request adds the pull request view.                                   │  State:      OPEN                     
+                                                                                │  Author:     @octocat                 
+It has two paragraphs.                                                          │  Assignees:  @hubot                   
+                                                                                │  Reviewers:  @alice                   
+                       ╭────────────────────────────────────────────────────────────────────────╮4.0                    
+                       │                                                                        │hancement              
+                       │  [1mMerge pull request[m                                                    │24-04-30 10:00         
+                       │                                                                        │24-05-01 10:00         
                        │  Choose how to merge this pull request.                                │                       
                        │                                                                        │                       
-                       │  s/S   Squash and merge  (default)                                     │                       
-                       │  m/M   Create a merge commit                                           │                       
+                       │  s/S   Squash and merge  (default)                                     │b Actions              
+                       │  m/M   Create a merge commit                                           │decov                  
                        │  r/R   Rebase and merge                                                │                       
                        │                                                                        │                       
                        │  Current default: squash. Enter uses it, d changes and saves it.       │                       
                        │                                                                        │                       
                        ╰────────────────────────────────────────────────────────────────────────╯                       
-                                                      │                          │                                      
-                                                      │                          │                                      
-                                                      │                          │                                      
-                                                      │                          │                                      
-                                                      │                          │                                      
-                                                      │                          │                                      
-                                                      │                          │                                      
-                                                      │                          │                                      
-                                                      │                          │                                      
-                                                      │                          │                                      
-                                                      │                          │                                      
-                                                      │                          │                                      
+                                                                                │                                       
+                                                                                │                                       
+                                                                                │                                       
+                                                                                │                                       
+                                                                                │                                       
+                                                                                │                                       
+                                                                                │                                       
+                                                                                │                                       
+                                                                                │                                       
+                                                                                │                                       
+                                                                                │                                       
+                                                                                │                                       
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1ms/S[m:Squash merge  [1mm/M[m:Merge commit  [1mr/R[m:Rebase merge                     

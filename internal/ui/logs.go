@@ -276,20 +276,23 @@ func (l *Logs) attempt() int {
 }
 
 // stepsView renders the step list with the selected step marked.
+//
+// The rows are built the way every other list in the program builds them: the
+// shared indent, then the shared marker on the highlighted one. A step list
+// looks like the tables it sits next to, so a highlight reads the same way
+// wherever it appears.
 func (l *Logs) stepsView(deps Deps, width int) string {
 	theme := deps.Theme
-	rows := []string{style(theme.Muted, bold).Render(layout.Truncate(" STEPS", width))}
+	rows := []string{style(theme.Muted, bold).Render(layout.Truncate(tableIndent+"STEPS", width))}
 	if len(l.job.Steps) == 0 {
-		rows = append(rows, style(theme.Muted, normal).Render("  (no steps reported)"))
+		rows = append(rows, tableIndent+style(theme.Muted, normal).Render("(no steps reported)"))
 		return joinLines(rows)
 	}
-	nameWidth := max(width-8, 5)
+	// The gutter, the state indicator and the space after it take four cells of
+	// the row, the same four every other list leaves for them.
+	nameWidth := max(width-4, 4)
 	for i, step := range l.job.Steps {
-		marker := "   "
-		if i == l.step {
-			marker = " > "
-		}
-		row := marker + statusIndicator(theme, step.Status, step.Conclusion) + " " +
+		row := tableIndent + statusIndicator(theme, step.Status, step.Conclusion) + " " +
 			layout.Truncate(step.Name, nameWidth)
 		if i == l.step {
 			rows = append(rows, selectedRow(theme, row, width))
