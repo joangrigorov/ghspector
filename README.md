@@ -107,7 +107,7 @@ rm ghspector.tar.gz
 
 ### From Source
 
-If you have Go 1.26.5 or later installed, you can build and install the latest release directly:
+If you have Go 1.27.2 or later installed, you can build and install the latest release directly:
 ```bash
 go install github.com/joangrigorov/ghspector/cmd/ghspector@latest
 ```
