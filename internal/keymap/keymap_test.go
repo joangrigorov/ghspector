@@ -158,6 +158,16 @@ func TestDocumentedKeysFromSpec(t *testing.T) {
 		{PRDetails, "v", ActionCommits},
 		{PRDetails, "D", ActionDiff},
 		{PRDetails, "w", ActionOpenBrowser},
+		// 4.14 and 4.16 Conversations: the arrows and j/k move a line at a
+		// time, the way they do on every other list.
+		{PRComments, "down", ActionDown},
+		{PRComments, "j", ActionDown},
+		{PRComments, "up", ActionUp},
+		{PRComments, "k", ActionUp},
+		{IssueComments, "down", ActionDown},
+		{IssueComments, "j", ActionDown},
+		{IssueComments, "up", ActionUp},
+		{IssueComments, "k", ActionUp},
 	}
 
 	for _, tc := range cases {

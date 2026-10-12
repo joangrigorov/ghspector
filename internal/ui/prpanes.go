@@ -290,7 +290,7 @@ func (p *PRDetails) commentsView(deps Deps, r layout.Rect) string {
 	}
 
 	_, body := r.SplitRows(len(lines))
-	content := conversationLines(deps, conv, body.W)
+	content := p.commentLines(deps)
 	start := clampOffset(p.commentScroll, len(content))
 	lines = append(lines, take(content[start:], body.H)...)
 	return layout.Fit(joinLines(lines), r.W, r.H)
@@ -303,10 +303,15 @@ func (p *PRDetails) conversation() conversation {
 	return newConversation(p.comments, p.reviews, p.reviewComments, p.conversationHasMore)
 }
 
-// commentLines renders the conversation as lines, which is what the scroll is
-// clamped against.
-func (p *PRDetails) commentLines(deps Deps, width int) []string {
-	return conversationLines(deps, p.conversation(), width)
+// commentLines is the conversation as rendered lines, from the cache when the
+// data, the width and the palette are the ones it was rendered at. It is what
+// the pane draws and what the scroll is clamped against, so a keystroke renders
+// nothing unless something changed.
+func (p *PRDetails) commentLines(deps Deps) []string {
+	key := markdownKeyOf(deps.Theme, p.bodyWidth(deps))
+	return p.convLines.linesFrom(p.convVersion, key, func() []string {
+		return conversationLines(deps, p.conversation(), key.width)
+	})
 }
 
 // conversationMessage is what the Comments sub-tab says when it holds no

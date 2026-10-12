@@ -1291,12 +1291,67 @@ func TestPRCommentsSayWhenAPageWasCut(t *testing.T) {
 		t.Fatal("a full review page did not mark the conversation truncated")
 	}
 
-	content := details.commentLines(m.deps, details.bodyWidth(m.deps))
+	content := details.commentLines(m.deps)
 	for i := 0; i <= len(content)/diffStep+1; i++ {
 		m = pressAndDrive(t, m, "d")
 	}
 	if out := ansi.Strip(screen(t, m, 120, 40)); !strings.Contains(out, truncatedNote) {
 		t.Errorf("the end of a cut conversation does not say so:\n%s", out)
+	}
+}
+
+// TestPRCommentsScrollWithTheArrowKeys covers the keys the conversation pane
+// answers, which is what made it read as a screen that does not scroll: the
+// arrows and j/k move it a line at a time, and u/d and the page keys keep
+// moving it a screenful.
+func TestPRCommentsScrollWithTheArrowKeys(t *testing.T) {
+	srv := prServer(t, withReviews(manyReviews(8)...), withInlineComments())
+	m := openPRDetails(t, prsModel(t, srv, 100, 24))
+	m = pressAndDrive(t, m, "5")
+
+	details := prDetailsRoute(t, m)
+	content := len(details.commentLines(m.deps))
+	if content <= m.deps.Size.Height {
+		t.Fatalf("the fixture conversation is %d lines and the screen is %d rows", content, m.deps.Size.Height)
+	}
+
+	// One line down, one line up, with both spellings of each.
+	for i, key := range []string{"down", "j"} {
+		m = pressAndDrive(t, m, key)
+		if got := prDetailsRoute(t, m).commentScroll; got != i+1 {
+			t.Fatalf("%s scrolled to %d, want %d", key, got, i+1)
+		}
+	}
+	for i, key := range []string{"up", "k"} {
+		m = pressAndDrive(t, m, key)
+		if got := prDetailsRoute(t, m).commentScroll; got != 1-i {
+			t.Fatalf("%s scrolled to %d, want %d", key, got, 1-i)
+		}
+	}
+	if got := prDetailsRoute(t, m).commentScroll; got != 0 {
+		t.Fatalf("the conversation did not return to the top: %d", got)
+	}
+
+	// The frame follows the offset, and the conversation is longer than the
+	// pane, so the offsets above are scrolls rather than a clamp against a
+	// screenful that fits.
+	m = pressAndDrive(t, m, "down")
+	lines := details.commentLines(m.deps)
+	out := ansi.Strip(screen(t, m, 100, 24))
+	if last := strings.TrimSpace(lines[content-1]); last != "" && strings.Contains(out, last) {
+		t.Fatalf("the last conversation line is already on screen:\n%s", out)
+	}
+	if first := strings.TrimSpace(lines[0]); first != "" && strings.Contains(out, first) {
+		t.Errorf("the first conversation line is still on screen after scrolling past it:\n%s", out)
+	}
+
+	m = pressAndDrive(t, m, "d")
+	if got := prDetailsRoute(t, m).commentScroll; got != diffStep+1 {
+		t.Errorf("d scrolled to %d, want a screenful past the line the arrow moved", got)
+	}
+	m = pressAndDrive(t, m, "u")
+	if got := prDetailsRoute(t, m).commentScroll; got != 1 {
+		t.Errorf("u scrolled to %d, want back to the line the arrow left", got)
 	}
 }
 

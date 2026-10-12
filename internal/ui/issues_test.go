@@ -521,6 +521,42 @@ func TestIssueCommentsScroll(t *testing.T) {
 	}
 }
 
+// TestIssueCommentsScrollWithTheArrowKeys covers the same keys on the issue
+// conversation: the arrows and j/k move a line at a time, so a reader who
+// reaches for them is not left on a screen that answers only u and d.
+func TestIssueCommentsScrollWithTheArrowKeys(t *testing.T) {
+	srv := prServer(t, withComments(12))
+	m := openIssueDetails(t, issuesModel(t, srv, 100, 30))
+	m = pressAndDrive(t, m, "c")
+
+	content := len(issueCommentsRoute(t, m).lines(m.deps))
+	if content <= m.deps.Size.Height {
+		t.Fatalf("the fixture conversation is %d lines and the screen is %d rows", content, m.deps.Size.Height)
+	}
+
+	for i, key := range []string{"down", "j"} {
+		m = pressAndDrive(t, m, key)
+		if got := issueCommentsRoute(t, m).scroll; got != i+1 {
+			t.Fatalf("%s scrolled to %d, want %d", key, got, i+1)
+		}
+	}
+	for i, key := range []string{"up", "k"} {
+		m = pressAndDrive(t, m, key)
+		if got := issueCommentsRoute(t, m).scroll; got != 1-i {
+			t.Fatalf("%s scrolled to %d, want %d", key, got, 1-i)
+		}
+	}
+
+	m = pressAndDrive(t, m, "d")
+	if got := issueCommentsRoute(t, m).scroll; got != diffStep {
+		t.Errorf("d scrolled to %d, want a screenful (%d)", got, diffStep)
+	}
+	m = pressAndDrive(t, m, "u")
+	if got := issueCommentsRoute(t, m).scroll; got != 0 {
+		t.Errorf("u scrolled to %d, want back to the top", got)
+	}
+}
+
 // TestIssueCommentsReportAFailure covers the failed state of the conversation.
 func TestIssueCommentsReportAFailure(t *testing.T) {
 	srv := prServer(t, failCommentLists())

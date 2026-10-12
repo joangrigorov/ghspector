@@ -190,6 +190,17 @@ type PRDetails struct {
 	reviews             []store.Review
 	reviewComments      []store.ReviewComment
 	conversationHasMore bool
+	// convVersion counts the changes to those three lists, so the rendered
+	// conversation below is dropped when one of them lands.
+	convVersion int
+	// convLines is the conversation as it was last rendered. Rendering it is
+	// the expensive part of this screen, so a frame, a keystroke and a poll
+	// tick reuse the lines rather than paying for them again.
+	convLines renderedLines[int]
+	// descLines is the description as it was last rendered, keyed on the body
+	// itself. Every clamp measures the description, so without this a keystroke
+	// on any sub-tab pays for the Info pane's markdown.
+	descLines renderedLines[string]
 
 	loaded map[prSection]bool
 	// failed remembers the sections whose fetch failed. A sub-tab that reads
@@ -441,8 +452,11 @@ func (p *PRDetails) apply(deps Deps, msg prDataMsg) (Route, tea.Cmd) {
 	case prSectionReviewComments:
 		p.reviewComments = msg.reviewComments
 	}
-	if msg.hasMore && readsConversation(msg.section) {
-		p.conversationHasMore = true
+	if readsConversation(msg.section) {
+		if msg.hasMore {
+			p.conversationHasMore = true
+		}
+		p.convVersion++
 	}
 	p.clamp(deps)
 	return p, nil
@@ -557,7 +571,7 @@ func (p *PRDetails) clamp(deps Deps) {
 	p.commitCursor = clampIndex(p.commitCursor, len(p.commits))
 	p.fileCursor = clampIndex(p.fileCursor, len(p.files))
 	p.descScroll = clampOffset(p.descScroll, len(p.descriptionLines(deps, p.descriptionWidth(deps))))
-	p.commentScroll = clampOffset(p.commentScroll, len(p.commentLines(deps, p.bodyWidth(deps))))
+	p.commentScroll = clampOffset(p.commentScroll, len(p.commentLines(deps)))
 	p.diffScroll = clampOffset(p.diffScroll, len(diffLines(p.diffText())))
 }
 
@@ -738,8 +752,10 @@ func (p *PRDetails) refresh(deps Deps) (Route, tea.Cmd, bool) {
 		delete(p.loaded, section)
 		delete(p.failed, section)
 		if readsConversation(section) {
-			// The pages that come back decide afresh whether they were cut.
+			// The pages that come back decide afresh whether they were cut, so
+			// the rendered conversation is stale either way.
 			p.conversationHasMore = false
+			p.convVersion++
 		}
 	}
 	return p, tea.Batch(status("Refreshing pull request..."), p.loadTab(deps)), true
@@ -968,10 +984,14 @@ func (p *PRDetails) descriptionPane(deps Deps, width, height int) []string {
 		take(lines[start:], visible)...)
 }
 
-// descriptionLines is the description as rendered lines, at the same width
-// clamp uses, so the scroll bound and the pane cannot disagree.
+// descriptionLines is the description as rendered lines, from the cache when the
+// body, the width and the palette are the ones it was rendered at. It is what
+// clamp measures and what the pane draws, so neither pays for the body twice.
 func (p *PRDetails) descriptionLines(deps Deps, width int) []string {
-	return deps.Markdown.Lines(deps.Theme, p.description(), width)
+	body := p.description()
+	return p.descLines.linesFrom(body, markdownKeyOf(deps.Theme, width), func() []string {
+		return deps.Markdown.Lines(deps.Theme, body, width)
+	})
 }
 
 // metadataPane renders the details sidebar.

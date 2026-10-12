@@ -815,6 +815,54 @@ tests for the merge, the ordering, the draft, the orphan thread, the hunk tail
 and the truncation note, and scripted request assertions that the sub-tab reads
 all three endpoints.
 
+### Fix — the pane renders once per change (this change)
+
+Two defects were reported together against the Comments sub-tab, and both were
+reproduced before either was changed.
+
+**The arrows did nothing.** `PRComments` and `IssueComments` bound `u`/`d` and
+the page keys, and nothing else, so `j`, `k`, `Down` and `Up` — the keys every
+other list in the app answers — fell through. The route already handled the
+actions: `move`'s `prTabComments` case moves `commentScroll`, and
+`IssueComments.Act` gained the two cases. The binding was the whole of the
+missing piece. `TestPRCommentsScrollWithTheArrowKeys` and
+`TestIssueCommentsScrollWithTheArrowKeys` drive the keys through the model, and
+`TestDocumentedKeysFromSpec` pins them in both scopes.
+
+**A keystroke rendered every body on screen.** `conversationLines` renders each
+contribution's markdown from scratch, and the sub-tab called it twice per key:
+once from `clamp`, to bound the scroll, and once from `commentsView`, to draw. On
+the pull request this was reported from — 48 reviews and 41 inline remarks,
+~44 KB of markdown — one render measured 163 ms
+(`BenchmarkConversationRender`), so a keystroke paid something like 400 ms before
+the frame was drawn, and a poll tick paid the render again.
+
+`internal/ui/render.go` is the answer. `renderedLines[R]` holds the lines, keyed
+on the width and the palette the markdown renderer answers for, plus whatever the
+caller has to say what the content is: a counter a route bumps when data lands,
+or the body text itself. `PRDetails.commentLines`, `PRDetails.descriptionLines`,
+`IssueDetails.descriptionLines` and `IssueComments.lines` go through it. The
+description joined the same pass because `clamp` measures it: every keystroke on
+every sub-tab rendered the pull request body, which is 7 ms at 3 KB and grows
+with the body.
+
+The counts are pinned rather than described.
+`TestPRCommentsRenderTheConversationOnce` and its issue-side twin assert that
+seven keystrokes over the conversation cost zero markdown renders, that a refresh
+re-renders it (the data the lines came from is about to be replaced), and that a
+resize does too (every body re-wraps). `Markdown.renders` is the counter they
+read, beside the `builds` counter that keeps renderer construction out of the
+frame path. Measured on the same fixture, one key press went from ~400 ms to
+0.6 ms.
+
+What is not fixed: the render after data lands still happens synchronously on the
+UI goroutine, so the first frame of a review-heavy conversation can still stall
+briefly. One render per change is the cost the cache leaves; moving it off the
+update loop is a larger change than this one.
+
+Verification: the checks the conversation fix above lists, plus a live run of the
+built binary (arrows scroll the reported pull request; the lag is gone).
+
 ### Security findings
 
 | Finding | Status |
