@@ -1,0 +1,415 @@
+package ui
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+
+	"ghspector/internal/keymap"
+	"ghspector/internal/layout"
+	"ghspector/internal/overlay"
+	"ghspector/internal/store"
+)
+
+// Options configures the root model. It is built once by main and never mutated.
+type Options struct {
+	Store store.Store
+	Theme Theme
+	// Context bounds every request the model starts. main cancels it on exit.
+	Context context.Context
+	// Version is the build version shown on the splash.
+	Version string
+	// ConfigPath and TokenSource are display labels, already free of any
+	// absolute path.
+	ConfigPath  string
+	TokenSource string
+	// DefaultOwner is the context selected by --org, --user or the config
+	// file. Nil means "the authenticated user".
+	DefaultOwner *store.OwnerRef
+	// OverlayChrome styles the modal stack.
+	OverlayChrome overlay.Chrome
+}
+
+// stage is the coarse state of the root model.
+type stage int
+
+const (
+	// stageLoading shows the splash while the identity is resolved.
+	stageLoading stage = iota
+	// stageReady shows the normal chrome.
+	stageReady
+	// stageError shows a full-screen failure.
+	stageError
+)
+
+// Model is the root model. It owns the terminal size, the route stack, the
+// overlay stack, and the transient status message. Nothing else may.
+type Model struct {
+	opts Options
+	deps Deps
+
+	width, height int
+	routes        RouteStack
+	overlays      overlay.Stack
+
+	stage stage
+	err   error
+
+	tick int
+
+	status           string
+	statusErr        bool
+	statusGeneration int
+
+	// orgs backs the context switcher. Loaded with the identity so opening the
+	// switcher never stalls.
+	orgs []store.Org
+}
+
+// New builds the root model. The main route is on the stack from the start, so
+// the stack is never empty and breadcrumbs always have a root.
+func New(opts Options) Model {
+	if opts.Context == nil {
+		opts.Context = context.Background()
+	}
+	m := Model{
+		opts:     opts,
+		overlays: overlay.NewStack(opts.OverlayChrome),
+		routes:   NewRouteStack(NewMain()),
+		stage:    stageLoading,
+	}
+	m.deps = Deps{
+		Store:       opts.Store,
+		Theme:       opts.Theme,
+		Version:     opts.Version,
+		ConfigPath:  opts.ConfigPath,
+		TokenSource: opts.TokenSource,
+	}
+	return m
+}
+
+// Init starts the splash animation and the identity request.
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(m.spinnerTick(), m.loadIdentity())
+}
+
+// spinnerMsg advances the splash animation.
+type spinnerMsg struct{}
+
+// spinnerInterval paces the splash animation.
+const spinnerInterval = 300 * time.Millisecond
+
+func (m Model) spinnerTick() tea.Cmd {
+	return tea.Tick(spinnerInterval, func(time.Time) tea.Msg { return spinnerMsg{} })
+}
+
+// identityMsg carries the result of resolving who the session acts as.
+type identityMsg struct {
+	viewer store.User
+	orgs   []store.Org
+	err    error
+}
+
+// identityTimeout bounds the startup requests.
+const identityTimeout = 20 * time.Second
+
+// loadIdentity resolves the viewer and their organizations.
+func (m Model) loadIdentity() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(m.opts.Context, identityTimeout)
+		defer cancel()
+
+		viewer, err := m.opts.Store.Viewer(ctx)
+		if err != nil {
+			return identityMsg{err: err}
+		}
+		// Organizations are optional: a token without read:org still works, it
+		// just cannot switch into an organization context.
+		orgs, err := m.opts.Store.Organizations(ctx)
+		if err != nil {
+			orgs = nil
+		}
+		return identityMsg{viewer: viewer, orgs: orgs}
+	}
+}
+
+// Update is the single entry point for every message.
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Quit is the one binding that must work from every screen and from behind
+	// every modal, so it is settled before any other routing.
+	if k, ok := msg.(tea.KeyPressMsg); ok {
+		if action, found := keymap.Lookup(keymap.Global, keymap.KeyString(k)); found && action == keymap.ActionQuit {
+			return m, tea.Quit
+		}
+	}
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		return m, nil
+
+	case spinnerMsg:
+		m.tick++
+		if m.stage == stageLoading {
+			return m, m.spinnerTick()
+		}
+		return m, nil
+
+	case identityMsg:
+		return m.applyIdentity(msg)
+
+	case statusClearMsg:
+		if msg.generation == m.statusGeneration {
+			m.status = ""
+			m.statusErr = false
+		}
+		return m, nil
+
+	case StatusMsg:
+		cmd := m.setStatus(msg.Text, false)
+		return m, cmd
+
+	case PushMsg:
+		m.routes = m.routes.Push(msg.Route)
+		return m, nil
+
+	case PopMsg:
+		m.routes = m.routes.Pop()
+		return m, nil
+
+	case ReplaceMsg:
+		m.routes = m.routes.Replace(msg.Route)
+		return m, nil
+
+	case PopToRootMsg:
+		m.routes = m.routes.PopToRoot()
+		return m, nil
+
+	case ContextSelectedMsg:
+		return m.applyContext(msg.Owner)
+	}
+
+	// Input is routed to the modal stack first: an open modal owns the keyboard,
+	// so the route underneath never sees a keystroke meant for it.
+	if !m.overlays.Empty() {
+		switch msg.(type) {
+		case tea.KeyPressMsg, tea.MouseMsg, tea.PasteMsg:
+			var cmd tea.Cmd
+			m.overlays, cmd = m.overlays.Update(msg)
+			return m, cmd
+		}
+	}
+	if m.stage != stageReady {
+		// The splash and the error screen accept only quit and retry.
+		if k, ok := msg.(tea.KeyPressMsg); ok && m.stage == stageError {
+			switch keymap.KeyString(k) {
+			case "q":
+				return m, tea.Quit
+			case "r":
+				m.stage = stageLoading
+				m.err = nil
+				return m, tea.Batch(m.spinnerTick(), m.loadIdentity())
+			}
+		}
+		return m, nil
+	}
+
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		return m.handleKey(msg)
+	case tea.PasteMsg:
+		route, cmd := m.routes.Top().Update(m.deps, msg)
+		m.routes = m.routes.Replace(route)
+		return m, cmd
+	default:
+		route, cmd := m.routes.Top().Update(m.deps, msg)
+		m.routes = m.routes.Replace(route)
+		return m, cmd
+	}
+}
+
+// handleKey resolves a key press into an action and dispatches it.
+func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := keymap.KeyString(msg)
+
+	action, ok := m.resolve(key)
+	if !ok {
+		// Unbound keys go to the route, for routes that take text input.
+		route, cmd := m.routes.Top().Update(m.deps, msg)
+		m.routes = m.routes.Replace(route)
+		return m, cmd
+	}
+	return m.applyAction(action)
+}
+
+// resolve looks a key up in the active route's scope, then in the global scope.
+// The route wins, so a route can rebind a global key.
+func (m Model) resolve(key string) (keymap.Action, bool) {
+	if action, ok := keymap.Lookup(m.routes.Top().Scope(), key); ok {
+		return action, true
+	}
+	return keymap.Lookup(keymap.Global, key)
+}
+
+// applyAction runs the actions the root owns and offers the rest to the route.
+func (m Model) applyAction(action keymap.Action) (tea.Model, tea.Cmd) {
+	switch action {
+	case keymap.ActionQuit:
+		return m, tea.Quit
+
+	case keymap.ActionHelp:
+		if _, open := m.routes.Top().(*Help); open {
+			m.routes = m.routes.PopToRoot()
+			return m, nil
+		}
+		m.routes = m.routes.Push(NewHelp())
+		return m, nil
+
+	case keymap.ActionSwitchCtx:
+		if _, open := m.routes.Top().(*Switcher); open {
+			m.routes = m.routes.PopToRoot()
+			return m, nil
+		}
+		m.routes = m.routes.Push(NewSwitcher(m.switcherEntries(), m.deps.Account.Owner))
+		return m, nil
+
+	case keymap.ActionBack:
+		if m.routes.Len() > 1 {
+			m.routes = m.routes.Pop()
+		}
+		return m, nil
+	}
+
+	route, cmd, handled := m.routes.Top().Act(m.deps, action)
+	if handled {
+		m.routes = m.routes.Replace(route)
+	}
+	return m, cmd
+}
+
+// applyIdentity finishes startup.
+func (m Model) applyIdentity(msg identityMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.stage = stageError
+		m.err = msg.err
+		return m, nil
+	}
+	m.orgs = msg.orgs
+	m.stage = stageReady
+
+	owner := store.OwnerRef{Login: msg.viewer.Login}
+	if m.opts.DefaultOwner != nil && m.opts.DefaultOwner.Login != "" {
+		owner = *m.opts.DefaultOwner
+	}
+	m.deps.Account = Account{Login: msg.viewer.Login, Owner: owner}
+	return m, nil
+}
+
+// applyContext switches the active owner, drops every cached read, and tells
+// the routes so they can discard data that belonged to the previous context.
+func (m Model) applyContext(owner store.OwnerRef) (tea.Model, tea.Cmd) {
+	m.deps.Account.Owner = owner
+	m.routes = m.routes.PopToRoot()
+	m.opts.Store.Invalidate()
+
+	var broadcast tea.Cmd
+	m.routes, broadcast = m.routes.Broadcast(m.deps, AccountChangedMsg{})
+	statusCmd := m.setStatus("Context: "+owner.String(), false)
+	return m, tea.Batch(broadcast, statusCmd)
+}
+
+// switcherEntries is the list of selectable owners: the viewer, then the
+// organizations they belong to.
+func (m Model) switcherEntries() []store.OwnerRef {
+	entries := []store.OwnerRef{{Login: m.deps.Account.Login}}
+	for _, o := range m.orgs {
+		entries = append(entries, store.OwnerRef{Login: o.Login, IsOrg: true})
+	}
+	return entries
+}
+
+// setStatus records a transient message and schedules its expiry.
+func (m *Model) setStatus(text string, isErr bool) tea.Cmd {
+	if text == "" {
+		return nil
+	}
+	m.status = text
+	m.statusErr = isErr
+	m.statusGeneration++
+	gen := m.statusGeneration
+	return tea.Tick(statusTTL, func(time.Time) tea.Msg { return statusClearMsg{generation: gen} })
+}
+
+// View renders the frame. The chrome is always exactly the frame geometry, so
+// the renderer never has to reconcile a ragged screen.
+func (m Model) View() tea.View {
+	content := m.render()
+	v := tea.NewView(content)
+	v.AltScreen = true
+	v.WindowTitle = "ghspector"
+	return v
+}
+
+// render builds the screen for the current stage.
+func (m Model) render() string {
+	width, height := m.width, m.height
+	if width < 1 || height < 1 {
+		return ""
+	}
+
+	if layout.TooSmall(width, height) {
+		return renderTooSmall(m.deps.Theme, width, height)
+	}
+
+	switch m.stage {
+	case stageLoading:
+		return m.renderSplash(width, height)
+	case stageError:
+		return renderError(m.deps.Theme, m.errorTitle(), m.errorDetail(), width, height)
+	}
+
+	frame := layout.Layout(width, height)
+
+	header := renderHeader(m.deps, frame.Header, breadcrumbs(m.routes.Titles()), false, m.tick)
+
+	body := layout.Fit(m.routes.Top().View(m.deps, frame.Body), frame.Body.W, frame.Body.H)
+	if !m.overlays.Empty() {
+		// The modal is composited into the body so the chrome stays visible and
+		// the user keeps their bearings.
+		body = m.overlays.View(body, frame.Body.W, frame.Body.H)
+	}
+
+	footer := renderFooter(m.deps, frame.Footer, m.routes.Top().Scope(), m.status, m.statusErr)
+
+	return header + "\n" + body + "\n" + footer
+}
+
+// errorTitle summarises a startup failure.
+func (m Model) errorTitle() string {
+	switch {
+	case errors.Is(m.err, store.ErrForbidden):
+		return "Access denied"
+	case errors.Is(m.err, store.ErrRateLimited):
+		return "Rate limited"
+	default:
+		return "Cannot reach GitHub"
+	}
+}
+
+// errorDetail explains a startup failure without printing a token or a path.
+func (m Model) errorDetail() string {
+	detail := m.err.Error()
+	switch {
+	case errors.Is(m.err, store.ErrForbidden):
+		detail += "\n\nThe token was rejected. Check that it has not expired, and that it\n" +
+			"carries the repo and workflow scopes."
+	case errors.Is(m.err, store.ErrRateLimited):
+		detail += "\n\nWait for the limit to reset, then retry."
+	}
+	if m.deps.TokenSource != "" {
+		detail += "\n\nToken source: " + m.deps.TokenSource
+	}
+	return detail
+}

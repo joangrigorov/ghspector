@@ -524,10 +524,14 @@ func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number 
 }
 
 // GetPullRequestComments fetches comments for a pull request (issue comments).
-func (c *Client) GetPullRequestComments(ctx context.Context, owner, repo string, number int) ([]IssueComment, error) {
+func (c *Client) GetPullRequestComments(ctx context.Context, owner, repo string, number, page, perPage int) ([]IssueComment, error) {
 	var comments []IssueComment
 	path := fmt.Sprintf("/repos/%s/%s/issues/%d/comments", owner, repo, number)
-	err := c.doRequest(ctx, "GET", path, nil, &comments)
+	q := params{
+		"page":     strconv.Itoa(page),
+		"per_page": strconv.Itoa(perPage),
+	}
+	err := c.doRequest(ctx, "GET", path, q, &comments)
 	if err != nil {
 		return nil, err
 	}
@@ -535,10 +539,14 @@ func (c *Client) GetPullRequestComments(ctx context.Context, owner, repo string,
 }
 
 // GetPullRequestCommits fetches commits for a pull request.
-func (c *Client) GetPullRequestCommits(ctx context.Context, owner, repo string, number int) ([]RepositoryCommit, error) {
+func (c *Client) GetPullRequestCommits(ctx context.Context, owner, repo string, number, page, perPage int) ([]RepositoryCommit, error) {
 	var commits []RepositoryCommit
 	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/commits", owner, repo, number)
-	err := c.doRequest(ctx, "GET", path, nil, &commits)
+	q := params{
+		"page":     strconv.Itoa(page),
+		"per_page": strconv.Itoa(perPage),
+	}
+	err := c.doRequest(ctx, "GET", path, q, &commits)
 	if err != nil {
 		return nil, err
 	}
@@ -546,12 +554,12 @@ func (c *Client) GetPullRequestCommits(ctx context.Context, owner, repo string, 
 }
 
 // GetPullRequestFiles fetches files changed in a pull request.
-func (c *Client) GetPullRequestFiles(ctx context.Context, owner, repo string, number int) ([]CommitFile, error) {
+func (c *Client) GetPullRequestFiles(ctx context.Context, owner, repo string, number, page, perPage int) ([]CommitFile, error) {
 	var files []CommitFile
 	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/files", owner, repo, number)
-	// We want to request up to 100 files for a reasonable limit
 	q := params{
-		"per_page": "100",
+		"page":     strconv.Itoa(page),
+		"per_page": strconv.Itoa(perPage),
 	}
 	err := c.doRequest(ctx, "GET", path, q, &files)
 	if err != nil {
