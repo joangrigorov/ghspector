@@ -87,10 +87,22 @@ opening behaviour, both unchanged by this phase.
 | `go vet ./...` | pass |
 | `go test -race ./...` | pass — 224 test functions, 309 cases, in the 8 packages that have tests |
 | `golangci-lint run` | 0 issues |
-| `govulncheck ./...` | 14 findings, all stdlib (F5, pre-existing; identical on `main`) |
+| `govulncheck ./...` | 14 findings, all stdlib (F5, pre-existing; identical on `main`). The CI step passes, because it does not fail on standard-library advisories. |
 | `actionlint` | pass |
 | `go mod tidy -diff` | clean |
 | `gofmt -l` | clean except `internal/gh/{client,client_test,types}.go`, whose drift predates the rewrite and is left alone |
+| CI `Test and Lint` on the PR | pass — 1m41s |
+
+The built binary was run once under a pty with a deliberately invalid
+`GH_TOKEN`: it rendered the splash (`ghspector v0.4.0-phase2 · token: GH_TOKEN
+environment variable · config: config.yaml`), reached GitHub, and rendered the
+error screen with the rejection message, the retry/quit hints and the token
+source label — which also confirms live that the label carries no path (F4). It
+then exited cleanly on `q`. Without a TTY it reports `bubbletea: error opening
+TTY` and exits 1, which is the expected shape for a TUI in a pipe.
+
+Interactive use — the colour theme, and how the screens feel while scrolling a
+real log — is not covered by the above and is the reader's step.
 
 Screen coverage:
 
