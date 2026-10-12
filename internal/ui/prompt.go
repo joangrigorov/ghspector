@@ -5,7 +5,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"ghspector/internal/overlay"
+	"github.com/joangrigorov/ghspector/internal/overlay"
 )
 
 // promptInput adapts the bubbles text input to overlay.TextInput. The overlay

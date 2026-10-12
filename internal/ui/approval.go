@@ -8,9 +8,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/overlay"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/overlay"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // approvalGate is the answer to "may the viewer approve this run, and if not,

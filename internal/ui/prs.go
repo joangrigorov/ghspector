@@ -6,10 +6,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
-	"ghspector/internal/overlay"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/overlay"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // prsPageSize is how many pull requests one page of the scope-wide list asks

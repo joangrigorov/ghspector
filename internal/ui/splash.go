@@ -5,8 +5,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"ghspector/internal/layout"
-	"ghspector/internal/ui/widgets"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/ui/widgets"
 )
 
 // catLogo is the mascot shown while the session starts. It is kept as literal

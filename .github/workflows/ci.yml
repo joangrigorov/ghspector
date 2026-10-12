@@ -31,6 +31,19 @@ jobs:
       - name: Run Tests
         run: go test -v -race ./...
 
+      # golangci-lint is configured with an explicit linter list that does not
+      # include a formatter, so formatting is checked here. The tree drifted on
+      # main before this step existed: a struct's alignment and a few blank
+      # lines nobody's editor agreed on.
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt would rewrite:"
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
 

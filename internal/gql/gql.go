@@ -38,7 +38,8 @@ import (
 
 	"github.com/shurcooL/githubv4"
 
-	"ghspector/internal/gh"
+	"github.com/joangrigorov/ghspector/internal/gh"
+	"github.com/joangrigorov/ghspector/internal/sanitize"
 )
 
 // Endpoint is the production GraphQL endpoint. It is a constant rather than a
@@ -134,6 +135,10 @@ func (c *Client) do(ctx context.Context, q any, variables map[string]any, read f
 	if err := c.v4.Query(ctx, q, variables); err != nil {
 		return mapError(err)
 	}
+	// The query struct is this transport's response, so this is where its
+	// strings stop being somebody else's data. The REST transport cleans its own
+	// the same way.
+	sanitize.Texts(q)
 	c.record(read())
 	return nil
 }

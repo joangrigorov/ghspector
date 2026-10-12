@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 func TestRunsTabLoadsTheScopeWideList(t *testing.T) {

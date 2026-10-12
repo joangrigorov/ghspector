@@ -13,8 +13,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
 )
 
 // Style holds the colours a widget needs. Nil means no colour.

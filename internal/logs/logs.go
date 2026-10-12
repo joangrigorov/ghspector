@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/joangrigorov/ghspector/internal/sanitize"
 )
 
 // Markers the runner writes into the stream. They carry meaning in the Actions
@@ -103,8 +105,10 @@ func Parse(raw string) []Line {
 func parse(line string) (Line, bool) {
 	// Logs from the API carry ANSI colour; nothing downstream has to reason
 	// about escape sequences once they are gone, and the layout measures plain
-	// text.
-	line = ansi.Strip(line)
+	// text. Strip removes the sequences and leaves the control characters, and a
+	// log is the other place a terminal instruction can arrive: a job's output
+	// is written by whatever the job ran.
+	line = sanitize.Text(ansi.Strip(line))
 
 	prefix, payload, at, hasTime := splitTimestamp(line)
 

@@ -89,6 +89,27 @@ func TestSplitsTileTheRect(t *testing.T) {
 	}
 }
 
+// TestSplitRowsFairTilesTheRectAndCapsTheTopBand checks the split for a block
+// whose height is not known in advance: it still tiles, and the block can only
+// take a third of the rect.
+func TestSplitRowsFairTilesTheRectAndCapsTheTopBand(t *testing.T) {
+	for height := 1; height <= 60; height++ {
+		r := Rect{W: 40, H: height}
+		for _, want := range []int{0, 1, 3, height / 2, height, height * 4} {
+			top, bottom := r.SplitRowsFair(want)
+			if top.H+bottom.H != r.H || bottom.Y != top.Y+top.H {
+				t.Fatalf("height %d want %d: %+v does not tile %+v", height, want, top, bottom)
+			}
+			if limit := max(height/3, 1); top.H > limit {
+				t.Fatalf("height %d want %d: the top band took %d rows, cap is %d", height, want, top.H, limit)
+			}
+			if top.H != min(want, max(height/3, 1)) {
+				t.Fatalf("height %d want %d: top band %d rows", height, want, top.H)
+			}
+		}
+	}
+}
+
 // TestFitAlwaysProducesExactGeometry is the resize invariant in miniature:
 // whatever the content, Fit returns exactly w cells per line and h lines, with
 // no line wider than w. Content includes wide runes, ANSI styling, tabs and

@@ -3,7 +3,7 @@ package ui
 import (
 	"strings"
 
-	"ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/layout"
 )
 
 // tableIndent is the gutter every list row starts with, so a selected row's

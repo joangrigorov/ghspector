@@ -5,8 +5,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
 )
 
 // Tab is one of the three top-level lists.
@@ -57,6 +57,19 @@ func (m Main) Title() string { return tabMeta[m.tab].Name }
 
 // Scope is the keymap scope for the active tab.
 func (m Main) Scope() keymap.Scope { return tabMeta[m.tab].Scope }
+
+// Loading reports whether the tab on screen is waiting for its list. Only the
+// active tab counts: a background tab's fetch is not what the user is looking at.
+func (m Main) Loading() bool {
+	switch m.tab {
+	case TabWorkflows:
+		return m.runs.loading
+	case TabIssues:
+		return m.issues.loading
+	default:
+		return m.prs.loading
+	}
+}
 
 // Available narrows the footer to the keys that do something on this tab.
 func (m Main) Available(action keymap.Action) bool {

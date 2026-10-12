@@ -37,4 +37,4 @@ It has two paragraphs.                                                          
                                                                                 │                                       
                                                                                 │                                       
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1ms/S[m:Squash merge  [1mm/M[m:Merge commit  [1mr/R[m:Rebase merge                     
+  [1mq/Ctrl+C[m:Quit  [1ms/S[m:Squash merge  [1mm/M[m:Merge commit  [1mr/R[m:Rebase merge  [1md/D[m:Change default method                        

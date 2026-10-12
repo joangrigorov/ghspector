@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"ghspector/internal/gh"
+	"github.com/joangrigorov/ghspector/internal/gh"
 )
 
 // Default page sizes, matching the previous version's request sizes so the
@@ -473,6 +473,9 @@ func (r *REST) ApproveRun(ctx context.Context, repo RepoRef, runID int64) error 
 
 // RateLimit reports the most recent rate limit headers.
 func (r *REST) RateLimit() RateLimitInfo { return r.client.GetRateLimit() }
+
+// RateLimitResetIn reports how long the window the headers describe has left.
+func (r *REST) RateLimitResetIn() (time.Duration, bool) { return r.client.RateLimitResetIn() }
 
 // Scopes reports the OAuth scopes of the active token.
 func (r *REST) Scopes() []string { return r.client.GetScopes() }
