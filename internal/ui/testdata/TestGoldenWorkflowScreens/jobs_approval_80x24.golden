@@ -1,0 +1,24 @@
+  [1mghspector[m  │  [1mWorkflows › Jobs[m   Account: octocat                             
+────────────────────────────────────────────────────────────────────────────────
+  [1mWorkflow: Build 900[m                                                           
+  Repo: octocat/api | Branch: main | SHA: abcdef1                               
+  ────────────────────────────────────────────────────────────────────────────  
+                                                                                
+  ╭─────────────────────────────────────────────────────────────╮               
+  │  [1mAwaiting approval[m                                          │               
+  │                                                             │               
+  │  This run has passed its initial checks and is waiting for  │               
+  │  approval to deploy to a protected environment.             │               
+  │                                                             │               
+  │  Press a to approve it now.                                 │               
+  ╰─────────────────────────────────────────────────────────────╯               
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mj/↓[m:Move down  [1mk/↑[m:Move up       

@@ -3,6 +3,7 @@ package layout
 import (
 	"fmt"
 	"math/rand"
+	"slices"
 	"strings"
 	"testing"
 
@@ -202,4 +203,145 @@ func BenchmarkFit(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = Fit(in, 120, 40)
 	}
+}
+
+func TestWindowKeepsTheCursorVisible(t *testing.T) {
+	cases := []struct {
+		name               string
+		length, cursor     int
+		visible            int
+		wantStart, wantEnd int
+	}{
+		{"a list that fits is shown whole", 3, 0, 5, 0, 3},
+		{"an empty list has no window", 0, 0, 5, 0, 0},
+		{"the cursor at the start anchors the window", 10, 0, 4, 0, 4},
+		{"the cursor in the middle is centred", 10, 5, 4, 3, 7},
+		{"the cursor at the end pins the window to the bottom", 10, 9, 4, 6, 10},
+		{"a cursor past the end is clamped", 10, 99, 4, 6, 10},
+		{"a negative cursor is clamped", 10, -3, 4, 0, 4},
+		{"a zero viewport still shows the cursor's row", 10, 5, 0, 5, 6},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			start, end := Window(tc.length, tc.cursor, tc.visible)
+			if start != tc.wantStart || end != tc.wantEnd {
+				t.Errorf("Window(%d, %d, %d) = (%d, %d), want (%d, %d)",
+					tc.length, tc.cursor, tc.visible, start, end, tc.wantStart, tc.wantEnd)
+			}
+		})
+	}
+}
+
+func TestPadRightPadsWithoutTruncating(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		w    int
+		want string
+	}{
+		{"shorter is padded", "ab", 4, "ab  "},
+		{"exact is unchanged", "ab", 2, "ab"},
+		{"longer is left alone", "abcd", 2, "abcd"},
+		{"empty is all padding", "", 3, "   "},
+		{"a zero width is unchanged", "ab", 0, "ab"},
+		// Colour is not width: a styled cell is padded by its visible length.
+		{"escape sequences do not count", "\x1b[31m■\x1b[0m", 3, "\x1b[31m■\x1b[0m  "},
+		{"a wide rune counts as two cells", "日", 4, "日  "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := PadRight(tc.in, tc.w); got != tc.want {
+				t.Errorf("PadRight(%q, %d) = %q, want %q", tc.in, tc.w, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFitColumns(t *testing.T) {
+	// A table shaped like the runs list: a fixed status cell, a flexible name,
+	// and two columns that may be dropped.
+	table := func() []Column {
+		return []Column{
+			{Width: 3, Min: 3},
+			{Width: 16, Min: 10},
+			{Width: 22, Min: 14, Flex: true},
+			{Width: 14},
+			{Width: 16},
+			{Width: 11, Min: 9},
+		}
+	}
+	widths := func(cols []Column) []int {
+		out := make([]int, len(cols))
+		for i, c := range cols {
+			out[i] = c.Width
+		}
+		return out
+	}
+	total := func(cols []Column) int {
+		n := 2
+		first := true
+		for _, c := range cols {
+			if c.Width <= 0 {
+				continue
+			}
+			if !first {
+				n++
+			}
+			n += c.Width
+			first = false
+		}
+		return n
+	}
+
+	t.Run("spare width goes to the flexible column", func(t *testing.T) {
+		got := widths(FitColumns(table(), 120, 2, 1))
+		want := []int{3, 16, 53, 14, 16, 11}
+		if !slices.Equal(got, want) {
+			t.Fatalf("widths = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("a narrow row drops the optional columns", func(t *testing.T) {
+		got := widths(FitColumns(table(), 60, 2, 1))
+		if got[4] != 0 || got[3] != 0 {
+			t.Fatalf("widths = %v, want the actor and event columns dropped", got)
+		}
+		if got[5] == 0 {
+			t.Fatalf("widths = %v, want the duration column kept", got)
+		}
+	})
+
+	t.Run("every result fits unless nothing can shrink", func(t *testing.T) {
+		for _, w := range []int{200, 120, 100, 80, 70, 60, 50, 40, 30, 20, 12, 1} {
+			cols := FitColumns(table(), w, 2, 1)
+			if got := total(cols); got > w && got > total(FitColumns(table(), 1, 2, 1)) {
+				t.Errorf("width %d: columns take %d cells", w, got)
+			}
+		}
+	})
+
+	t.Run("a dropped column is never narrower than its minimum", func(t *testing.T) {
+		for _, w := range []int{200, 90, 60, 40, 20} {
+			for i, c := range FitColumns(table(), w, 2, 1) {
+				if c.Width > 0 && c.Width < c.Min {
+					t.Errorf("width %d: column %d is %d, below its minimum %d", w, i, c.Width, c.Min)
+				}
+			}
+		}
+	})
+
+	t.Run("the input is not modified", func(t *testing.T) {
+		cols := table()
+		_ = FitColumns(cols, 40, 2, 1)
+		if cols[2].Width != 22 {
+			t.Fatalf("input column changed to %d", cols[2].Width)
+		}
+	})
+
+	t.Run("a minimum above the preferred width wins", func(t *testing.T) {
+		got := FitColumns([]Column{{Width: 4, Min: 9}}, 40, 0, 1)
+		if got[0].Width != 9 {
+			t.Fatalf("width = %d, want 9", got[0].Width)
+		}
+	})
 }

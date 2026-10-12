@@ -1,6 +1,7 @@
 package gh
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -359,7 +360,7 @@ func (c *Client) GetJobLogs(ctx context.Context, owner, repo string, jobID int64
 		return "", ErrForbidden
 	}
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := readCapped(resp.Body, maxErrorBytes)
 		var xErr xmlError
 		err = xml.Unmarshal(body, &xErr)
 		if err == nil && xErr.Code != "" {
@@ -372,12 +373,47 @@ func (c *Client) GetJobLogs(ctx context.Context, owner, repo string, jobID int64
 		return "", fmt.Errorf("github api logs error (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readCapped(resp.Body, maxLogBytes)
 	if err != nil {
 		return "", err
 	}
 
 	return string(body), nil
+}
+
+// Byte caps for job log reads. A job log is unbounded on the wire — they reach
+// tens of megabytes — and the viewer fetches them repeatedly while a job runs,
+// so the read is capped instead of trusted.
+const (
+	// maxLogBytes is the most of a log that is read. Everything on screen fits
+	// in a fraction of it, and `w` opens the full log in the browser.
+	maxLogBytes = 8 << 20
+	// maxErrorBytes bounds the body read for a diagnostic message. An error
+	// body is a short XML or JSON document.
+	maxErrorBytes = 64 << 10
+)
+
+// truncationNote marks a log the cap cut short, so the reader is never shown a
+// partial log as if it were whole.
+const truncationNote = "\n[ghspector: log truncated at 8 MiB; press w to open the full log in the browser]\n"
+
+// readCapped reads at most limit bytes, cutting at the last line boundary so a
+// truncated tail never renders as half a line. The result is marked when it was
+// cut.
+func readCapped(r io.Reader, limit int64) ([]byte, error) {
+	// One byte past the limit distinguishes "exactly the limit" from "more".
+	buf, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(buf)) <= limit {
+		return buf, nil
+	}
+	cut := buf[:limit]
+	if idx := bytes.LastIndexByte(cut, '\n'); idx >= 0 {
+		cut = cut[:idx+1]
+	}
+	return append(cut, truncationNote...), nil
 }
 
 type xmlError struct {

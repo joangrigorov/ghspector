@@ -192,7 +192,10 @@ func TestRepositoriesUsesUserEndpointForUsers(t *testing.T) {
 // TestWorkflowRunsPaginationAndHasMore pins the page arithmetic and the
 // full-page-means-more rule.
 func TestWorkflowRunsPaginationAndHasMore(t *testing.T) {
-	runs := `{"workflow_runs":[{"id":1},{"id":2}]}`
+	// The actor is part of the fixture because the store re-checks the filter
+	// against the page it was given, and a run that does not report its actor
+	// cannot be confirmed to match.
+	runs := `{"workflow_runs":[{"id":1,"actor":{"login":"octocat"}},{"id":2,"actor":{"login":"octocat"}}]}`
 	rec := newRecorder().serve("/repos/acme/one/actions/runs", runs)
 	s := newTestStore(t, rec)
 	repo := RepoRef{Owner: "acme", Repo: "one"}

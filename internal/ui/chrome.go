@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"ghspector/internal/keymap"
@@ -93,7 +94,7 @@ func renderRateLimit(deps Deps) string {
 
 // renderFooter draws the separator rule and the key hints, with the transient
 // status message right-aligned.
-func renderFooter(deps Deps, r layout.Rect, scope keymap.Scope, status string, statusErr bool) string {
+func renderFooter(deps Deps, r layout.Rect, bindings []keymap.Binding, status string, statusErr bool) string {
 	if r.Empty() {
 		return ""
 	}
@@ -103,23 +104,25 @@ func renderFooter(deps Deps, r layout.Rect, scope keymap.Scope, status string, s
 		return layout.Fit(style(theme.HeaderRule, normal).Render(strings.Repeat("─", r.W)), r.W, r.H)
 	}
 	rule := style(theme.HeaderRule, normal).Render(strings.Repeat("─", r.W))
-	hints := renderHints(deps, r, scope, status, statusErr)
+	hints := renderHints(deps, r, bindings, status, statusErr)
 	return layout.Fit(rule+"\n"+hints, r.W, r.H)
 }
 
 // renderHints lays the footer out with hints on the left and the status message
 // on the right.
-func renderHints(deps Deps, r layout.Rect, scope keymap.Scope, status string, statusErr bool) string {
+func renderHints(deps Deps, r layout.Rect, bindings []keymap.Binding, status string, statusErr bool) string {
 	st := widgets.Style{Key: deps.Theme.KeyHint, Desc: deps.Theme.KeyDesc}
 
-	// The global keys are pinned first, so a narrow footer drops scope hints
-	// rather than the keys that work everywhere.
-	bindings := keymap.Documented(keymap.Global)
-	for _, b := range keymap.Documented(scope) {
-		if !hasAction(bindings, b.Action) {
-			bindings = append(bindings, b)
+	// The global keys are pinned first, so a narrow footer drops the active
+	// surface's hints rather than the keys that work everywhere.
+	all := keymap.Documented(keymap.Global)
+	for _, b := range bindings {
+		if b.Help == "" || hasAction(all, b.Action) {
+			continue
 		}
+		all = append(all, b)
 	}
+	bindings = all
 
 	statusRendered := ""
 	if status != "" {
@@ -151,6 +154,21 @@ func hasAction(bindings []keymap.Binding, action keymap.Action) bool {
 		}
 	}
 	return false
+}
+
+// selectedRow styles a list row as the highlighted one. A theme with a
+// selection background paints the row across the width, so the highlight reads
+// as a row rather than as the text on it.
+func selectedRow(theme Theme, s string, width int) string {
+	if theme.SelectedBackground != nil {
+		return lipgloss.NewStyle().
+			Background(theme.SelectedBackground).
+			Foreground(theme.Selected).
+			Bold(true).
+			Width(width).
+			Render(s)
+	}
+	return style(theme.Selected, bold).Render(s)
 }
 
 // breadcrumbs joins the route titles into a single trail. The header truncates
@@ -235,3 +253,9 @@ const statusTTL = 5 * time.Second
 // statusClearMsg expires a footer status message. The generation counter keeps
 // an earlier timer from clearing a newer message.
 type statusClearMsg struct{ generation int }
+
+// statusErr returns a command that shows a transient failure in the footer,
+// which the chrome renders in the error colour.
+func statusErr(text string) tea.Cmd {
+	return func() tea.Msg { return StatusMsg{Text: text, IsErr: true} }
+}

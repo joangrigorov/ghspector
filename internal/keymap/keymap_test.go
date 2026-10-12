@@ -147,8 +147,8 @@ func TestDocumentedKeysFromSpec(t *testing.T) {
 		// 4.8 Jobs: the authoritative mapping from spec D3.
 		{Jobs, "w", ActionOpenBrowser},
 		{Jobs, "W", ActionOpenBrowser},
-		{Jobs, "v", ActionOpen},
-		{Jobs, "V", ActionOpen},
+		{Jobs, "v", ActionOpenRunBrowser},
+		{Jobs, "V", ActionOpenRunBrowser},
 		{Jobs, "esc", ActionBack},
 		{Jobs, "backspace", ActionBack},
 		// PR details.

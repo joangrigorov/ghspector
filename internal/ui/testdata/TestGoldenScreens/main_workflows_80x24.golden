@@ -1,17 +1,17 @@
   [1mghspector[m  │  [1mWorkflows[m   Account: octocat                                    
 ────────────────────────────────────────────────────────────────────────────────
   Pull Requests │[1m Workflows [m│ Issues                                            
-                                                                                
-  No workflow runs loaded yet.                                                  
-                                                                                
-  The list for this tab arrives with the data layer.                            
-  The chrome, tabs, help and key handling are live.                             
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
+[1m  ST  REPOSITORY       WORKFLOW RUN           EVENT          DURATION   [m        
+[1m  □   api              Build 896              push           queued     [m        
+  ■   api              Build 899              push           1m00s              
+  ■   api              Build 893              push           7m00s              
+  ◆   api              Build 900              push           0s                 
+  ■   api              Build 898              push           2m00s              
+  ■   api              Build 897              push           2m00s              
+  ■   api              Build 895              push           2m00s              
+  ◆   api              Build 894              push           0s                 
+  ■   web              Build 800              push           2m00s              
+  [ Load More Workflow Runs... ]                                                
                                                                                 
                                                                                 
                                                                                 

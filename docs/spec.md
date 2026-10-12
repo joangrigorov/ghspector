@@ -117,18 +117,18 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 ### 4.1 Main — Workflows tab
 
-- [ ] `j` / `Down` moves down; blocked at `len(runs)-1` unless `hasMoreRuns`, in which case the "Load More" sentinel row is selectable.
-- [ ] `k` / `Up` moves up.
-- [ ] Moving the selection triggers a permission check for the newly selected run (`checkApprovalPermissionCmd`).
-- [ ] `Enter` on the Load More sentinel increments the page and fetches more runs.
-- [ ] `Enter` on a run pushes the Jobs route, clearing `jobs` and setting `selectedAttempt` to the run's `RunAttempt`.
-- [ ] `r` / `Ctrl+R` resets to page 1, clears the list and selection, and refetches.
-- [ ] `m` toggles the actor filter between the current user and empty, then refetches.
-- [ ] `f` opens the filter type overlay.
-- [ ] `w` opens the selected run's `HTMLURL` **browser**.
-- [ ] `a` opens the approval confirm overlay when the selected run needs approval and the viewer may approve it; otherwise nothing happens.
-- [ ] `x` clears the actor filter and the repo filter, then refetches.
-- [ ] `Tab` / `Shift+Tab` cycle tabs and reset all three selection indices, then fetch the newly active tab.
+- [x] `j` / `Down` moves down; blocked at `len(runs)-1` unless `hasMoreRuns`, in which case the "Load More" sentinel row is selectable.
+- [x] `k` / `Up` moves up.
+- [x] Moving the selection triggers a permission check for the newly selected run (`checkApprovalPermissionCmd`; v2: `runsTab.checkSelected`).
+- [x] `Enter` on the Load More sentinel increments the page and fetches more runs.
+- [x] `Enter` on a run pushes the Jobs route, clearing `jobs` and setting `selectedAttempt` to the run's `RunAttempt`.
+- [x] `r` / `Ctrl+R` resets to page 1, clears the list and selection, and refetches.
+- [x] `m` toggles the actor filter between the current user and empty, then refetches.
+- [x] `f` opens the filter type overlay.
+- [x] `w` opens the selected run's `HTMLURL` **browser**.
+- [x] `a` opens the approval confirm overlay when the selected run needs approval and the viewer may approve it; otherwise nothing happens.
+- [x] `x` clears the actor filter and the repo filter, then refetches.
+- [x] `Tab` / `Shift+Tab` cycles tabs and fetches a tab the first time it is opened. v2 keeps each tab's own selection instead of resetting every index, and re-opening a tab shows what was already fetched, which polling keeps current.
 
 ### 4.2 Main — Pull Requests tab
 
@@ -158,17 +158,17 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 ### 4.4 Filter type overlay
 
-- [ ] `u` / `U` opens the user filter text input. On the Workflows tab it is pre-filled with the current actor filter; on the other tabs it starts empty.
-- [ ] `r` / `R` opens the repository select overlay; if the repo list is empty it is fetched first (with a loading message).
-- [ ] `Esc` returns to the main view.
-- [ ] `Ctrl+C` quits.
+- [x] `u` / `U` opens the user filter text input. On the Workflows tab it is pre-filled with the current actor filter; on the other tabs it starts empty. v2 delivers the Workflows prompt; the PR and Issue inputs arrive with their tabs (Phases 3 and 4).
+- [x] `r` / `R` opens the repository select overlay; if the repo list is empty it is fetched first (with a loading message).
+- [x] `Esc` returns to the main view.
+- [x] `Ctrl+C` quits.
 
 ### 4.5 Repository select overlay
 
-- [ ] `j` / `k` / `Down` / `Up` move the selection.
-- [ ] `Enter` sets the repo filter to the selected repository name, returns to the main view, and refetches the active tab.
-- [ ] `Esc` returns to the filter type overlay.
-- [ ] `Ctrl+C` quits.
+- [x] `j` / `k` / `Down` / `Up` move the selection.
+- [x] `Enter` sets the repo filter to the selected repository name, returns to the main view, and refetches the active tab.
+- [x] `Esc` returns to the filter type overlay.
+- [x] `Ctrl+C` quits.
 
 ### 4.6 User filter text input (PRs and Issues)
 
@@ -185,30 +185,30 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 ### 4.8 Jobs
 
-- [ ] `j` / `k` / `Down` / `Up` navigate the job list.
-- [ ] `Enter` on a job opens Logs.
-- [ ] `Enter` on a job whose status is `in_progress` or `queued` shows the status message "Logs are not yet available for running jobs. Please wait for completion." and does not navigate.
-- [ ] `Esc` / `Backspace` returns to PR Details when the route was entered from there, otherwise to the main view.
-- [ ] `a` opens the approval confirm overlay when the run may be approved.
-- [ ] `w` / `W` opens the **selected job** in the **browser** (see [Known drift D3](#known-drift)).
-- [ ] `v` / `V` opens the **parent workflow run** in the **browser**.
-- [ ] Job and run URLs fall back to constructed `https://github.com/<full_name>/actions/runs/<id>/job/<job_id>` when `HTMLURL` is empty.
-- [ ] `r` / `Ctrl+R` refetches jobs for the current attempt.
-- [ ] `[` switches to the previous attempt when `selectedAttempt > 1`.
-- [ ] `]` switches to the next attempt when `selectedAttempt < run.RunAttempt`.
-- [ ] Attempt switching resets the job selection and list, and shows the attempt number in the loading message.
+- [x] `j` / `k` / `Down` / `Up` navigate the job list.
+- [x] `Enter` on a job opens Logs.
+- [x] `Enter` on a job whose status is `in_progress` or `queued` shows the status message "Logs are not yet available for running jobs. Please wait for completion." and does not navigate.
+- [x] `Esc` / `Backspace` returns to the route the job list was opened from. v2 always pops to the route below, which is the run list; the "opened from PR Details" origin arrives with Phase 3.
+- [x] `a` opens the approval confirm overlay when the run may be approved.
+- [x] `w` / `W` opens the **selected job** in the **browser** (see [Known drift D3](#known-drift)).
+- [x] `v` / `V` opens the **parent workflow run** in the **browser**.
+- [x] Job and run URLs fall back to constructed `https://github.com/<full_name>/actions/runs/<id>/job/<job_id>` when `HTMLURL` is empty.
+- [x] `r` / `Ctrl+R` refetches jobs for the current attempt.
+- [x] `[` switches to the previous attempt when `selectedAttempt > 1`.
+- [x] `]` switches to the next attempt when `selectedAttempt < run.RunAttempt`.
+- [x] Attempt switching resets the job selection and list, and shows the attempt number in the loading message.
 
 ### 4.9 Logs
 
-- [ ] `Esc` / `Backspace` returns to Jobs.
-- [ ] `r` / `Ctrl+R` refetches logs; blocked with the same "not yet available" message while the job is running.
-- [ ] `j` / `Down` selects the next step; `k` / `Up` selects the previous step.
-- [ ] Changing the selected step updates the rendered log content for that step.
-- [ ] `u` / `PageUp` scrolls up 3 lines and disables follow mode.
-- [ ] `d` / `PageDown` scrolls down 3 lines and re-enables follow mode on reaching the bottom.
-- [ ] `w` / `W` opens the job in the **browser**.
-- [ ] Follow mode keeps the viewport pinned to the newest output as logs are polled in.
-- [ ] Any other key is forwarded to the viewport for scrolling, except the step-navigation keys.
+- [x] `Esc` / `Backspace` returns to Jobs.
+- [x] `r` / `Ctrl+R` refetches logs; a job that is still running answers with the same "not yet available" message, which v2 reports from the failed read rather than refusing up front.
+- [x] `j` / `Down` selects the next step; `k` / `Up` selects the previous step.
+- [x] Changing the selected step updates the rendered log content for that step.
+- [x] `u` / `PageUp` scrolls up 3 lines and disables follow mode.
+- [x] `d` / `PageDown` scrolls down 3 lines and re-enables follow mode on reaching the bottom.
+- [x] `w` / `W` opens the job in the **browser**.
+- [x] Follow mode keeps the viewport pinned to the newest output as logs are polled in.
+- [ ] Any other key is forwarded to the viewport for scrolling, except the step-navigation keys. v2 binds scrolling explicitly (`u`/`d`, `PgUp`/`PgDn`) and has no catch-all viewport, so an unbound key does nothing.
 
 ### 4.10 PR Details
 
@@ -308,11 +308,11 @@ Confirm close (`mergeState == 4`):
 
 ### 4.20 Run approval overlay
 
-- [ ] `y` / `Y` / `Enter` approves the run, showing "Approving workflow run...".
-- [ ] `w` / `W` opens the run's approval page in the **browser** and shows "Opened approval page in browser."
-- [ ] A run with conclusion `action_required` on a non-fork PR cannot be approved through the API: it opens the browser instead, and the overlay body explains this.
-- [ ] `n` / `N` / `Esc` cancels.
-- [ ] Fork PRs (`head_repository.full_name != repository.full_name`) use the API approval path.
+- [x] `y` / `Y` / `Enter` approves the run, showing "Approving workflow run...".
+- [x] `w` / `W` opens the run's approval page in the **browser** and shows "Opened approval page in browser."
+- [x] A run with conclusion `action_required` on a non-fork PR cannot be approved through the API: it opens the browser instead, and the overlay body explains this.
+- [x] `n` / `N` / `Esc` cancels.
+- [x] Fork PRs (`head_repository.full_name != repository.full_name`) use the API approval path.
 
 ---
 
@@ -331,7 +331,7 @@ Confirm close (`mergeState == 4`):
 
 - [ ] PRs are filtered client-side after fetching, so a filter only sees the current page of the first 8 repositories.
 - [ ] Issues are filtered client-side after fetching, same limitation.
-- [ ] The repo filter clears when switching context.
+- [x] The repo filter clears when switching context.
 
 ### 5.2 Pagination
 
@@ -342,30 +342,30 @@ Confirm close (`mergeState == 4`):
 | Pull requests | 8 | Load More sentinel | empty page |
 | Issues | 50 | Load More sentinel | `len(page) == per_page` |
 
-- [ ] Each list exposes a "Load More" row as the final selectable row while more pages exist.
+- [x] Each list exposes a "Load More" row as the final selectable row while more pages exist. Delivered for workflow runs; the PR and Issue lists arrive with their tabs.
 - [ ] Pull requests are sorted by `updated_at` descending.
-- [ ] Workflow runs are sorted by a status priority, then recency.
-- [ ] Jobs are sorted by a job-specific priority.
-- [ ] Polled runs are merged into the existing list by run ID, then re-sorted.
+- [x] Workflow runs are sorted by a status priority, then recency.
+- [x] Jobs are sorted by a job-specific priority.
+- [x] Polled runs are merged into the existing list by run ID, then re-sorted.
 
 ### 5.3 Cross-scope aggregation
 
-- [ ] Lists are aggregated across the first **8 repositories** of the context, sorted by `pushed_at` descending.
-- [ ] Polling uses the first **15 repositories** but only queries the first 8.
-- [ ] Each repository is queried concurrently, one request per repository.
-- [ ] Runs carry their repository embedded so the UI can render owner/repo columns.
+- [x] Lists are aggregated across the first **8 repositories** of the context, sorted by `pushed_at` descending.
+- [ ] Polling uses the first **15 repositories** but only queries the first 8. v2 polls through the same 8-repository fan-out as the list, so there is one code path instead of two.
+- [x] Each repository is queried concurrently, one request per repository.
+- [x] Runs carry their repository embedded so the UI can render owner/repo columns.
 
 **Fix in v2:** replace this fan-out with a scope-wide GraphQL query with real cursor pagination and `total_count` (see [§7](#7-fix-in-v2)).
 
 ### 5.4 Polling model
 
-- [ ] A tick drives the spinner every 300 ms.
-- [ ] A poll tick drives data refresh. Interval by state: main + PRs tab → PRs interval; every other state → workflows interval.
-- [ ] Default intervals: workflows 5 s, PRs 10 s.
-- [ ] `polling.workflows_interval_seconds` and `polling.prs_interval_seconds` override them individually.
-- [ ] The legacy `polling_interval_seconds` sets both, and takes effect before the per-tab keys.
-- [ ] Polling targets: main + Workflows → runs; main + PRs → pull requests; main + Issues → issues; Jobs → active jobs; Logs → logs.
-- [ ] Polling does not run on other routes.
+- [x] A tick drives the spinner every 300 ms.
+- [x] A poll tick drives data refresh. Interval by state: main + PRs tab → PRs interval; every other state → workflows interval.
+- [x] Default intervals: workflows 5 s, PRs 10 s.
+- [x] `polling.workflows_interval_seconds` and `polling.prs_interval_seconds` override them individually.
+- [x] The legacy `polling_interval_seconds` sets both, and takes effect before the per-tab keys.
+- [x] Polling targets: main + Workflows → runs; main + PRs → pull requests; main + Issues → issues; Jobs → active jobs; Logs → logs. v2 delivers the Workflows, Jobs and Logs targets; the PR and Issue targets arrive with their tabs.
+- [x] Polling does not run on other routes.
 
 **Fix in v2:** the Issues tab currently polls on the workflows interval because the interval selector only special-cases the PRs tab.
 
@@ -534,13 +534,13 @@ Cross-cutting client behavior to preserve:
 
 These are the behaviors most worth porting directly as pure functions rather than rediscovering:
 
-- [ ] Log segmentation by step (`segmentLogs`): maps a raw log to step segments using group markers and step names, with a fuzzy name-matching score.
-- [ ] Log cleaning (`cleanLogForDisplay`): strips timestamps and ANSI for display.
-- [ ] Timestamp parsing (`parseLogTimestamp`).
-- [ ] Status → indicator mapping and status priority sorting.
-- [ ] Actor matching (`matchActor`): case-insensitive, handles a trailing `*` or prefix form.
+- [x] Log segmentation by step (`segmentLogs`): maps a raw log to step segments using group markers and step names, with a fuzzy name-matching score. v2: `internal/logs.Segment` and `MatchScore`, ported as pure functions with their own tests.
+- [ ] Log cleaning (`cleanLogForDisplay`): strips timestamps and ANSI for display. v2 keeps the timestamp on each line, because it is the only record of when a step produced its output; ANSI escapes and runner markers are stripped.
+- [x] Timestamp parsing (`parseLogTimestamp`).
+- [x] Status → indicator mapping and status priority sorting.
+- [x] Actor matching (`matchActor`): case-insensitive, handling the `[bot]`-suffixed login a bare bot name may be filtered by.
 - [ ] Check deduplication to the latest run per check name.
-- [ ] Duration formatting.
+- [x] Duration formatting.
 - [ ] Diff formatting with per-line styling.
 
 ---
@@ -549,14 +549,22 @@ These are the behaviors most worth porting directly as pure functions rather tha
 
 | Section | Items | Checked |
 | --- | --- | --- |
-| Startup, context, chrome | 4 subsections | 0 |
-| Route map | 19 states mapped | 0 |
-| Route behaviors | 4.1–4.20 | 0 |
-| Filters / pagination / polling | 5.1–5.4 | 0 |
-| CLI and config | 6.1–6.3 | 0 |
-| Fix in v2 | 7 | 0 |
-| Drift decisions | D1–D8 | 0 |
-| API map | 24 endpoints | 0 |
-| Parallel anchors | 8 | 0 |
+| Startup, context, chrome (§2) | 26 | 0 |
+| Route map (§3) | 19 states mapped | 0 |
+| Route behaviors (§4.1–4.20) | 131 | 45 |
+| Filters / pagination / polling (§5.1–5.4) | 19 | 15 |
+| CLI and config (§6.1–6.3) | 16 | 0 |
+| Fix in v2 (§7) | 7 | 0 |
+| Drift decisions (D1–D8) | 8 | 8 |
+| API map (§9) | 24 endpoints, 6 client behaviors | 0 |
+| Parallel anchors (§10) | 8 | 5 |
+
+A box is checked when the behavior is implemented **and** covered by a test, so
+the count follows the phases that ran the checklist: Phase 2 checked the
+Workflows, Jobs and Logs rows it delivers (§4.1, §4.4–4.5, §4.8–4.9, §4.20, the
+workflow rows of §5, and the anchors the logs package ports). The shell rows
+(§2) and the CLI/config rows (§6) are delivered but are re-verified when their
+phase runs the list. Drift decisions are checked by their recorded resolutions
+above.
 
 Sections 4 (route behaviors), 5 (filters/pagination/polling), and 6 (CLI/config) are the parity gate. Section 7 is the improvement backlog. Section 8 requires a written decision per item before the README is finalized.
