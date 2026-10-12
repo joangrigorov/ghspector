@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.4.0](https://github.com/joangrigorov/ghspector/compare/v0.3.0...v0.4.0) (2026-10-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tui:** rebuild the shell on Bubble Tea v2 with a deterministic layout ([#17](https://github.com/joangrigorov/ghspector/issues/17))
+
+### Features
+
+* **data:** the GraphQL aggregation upgrade (Phase 5) ([#23](https://github.com/joangrigorov/ghspector/issues/23)) ([684de39](https://github.com/joangrigorov/ghspector/commit/684de39b3a6307e54aba2f3ee189847d8030a5d7))
+* **prs:** read the whole conversation on the Comments tab ([#27](https://github.com/joangrigorov/ghspector/issues/27)) ([53a94c4](https://github.com/joangrigorov/ghspector/commit/53a94c4de0a6d9435ca59ef798482bbf5a198290))
+* **tui:** implement the Issues vertical slice (Phase 4) ([#21](https://github.com/joangrigorov/ghspector/issues/21)) ([deacdfc](https://github.com/joangrigorov/ghspector/commit/deacdfcc81d9bb91c76dd72044b539963af1fcfd))
+* **tui:** implement the pull requests vertical slice (Phase 3) ([#19](https://github.com/joangrigorov/ghspector/issues/19)) ([34c6ad3](https://github.com/joangrigorov/ghspector/commit/34c6ad3202dab5e968ce786671c0a15293f380dd))
+* **tui:** implement the Workflows vertical slice (Phase 2) ([#18](https://github.com/joangrigorov/ghspector/issues/18)) ([0a9273a](https://github.com/joangrigorov/ghspector/commit/0a9273ad83c1d93f3db56b69b6398b740d8fc036))
+* **tui:** rebuild the shell on Bubble Tea v2 with a deterministic layout ([#17](https://github.com/joangrigorov/ghspector/issues/17)) ([536f1f8](https://github.com/joangrigorov/ghspector/commit/536f1f8818f6c72b2b6cf00cb04d2702b6c4ec29))
+* **tui:** the parity audit and rendered markdown (Phase 6) ([#24](https://github.com/joangrigorov/ghspector/issues/24)) ([df51bf7](https://github.com/joangrigorov/ghspector/commit/df51bf7fe3127c93fc68c04cb6a863f21e013696))
+
+
+### Bug Fixes
+
+* **deps:** bump the github-actions-dependencies group across 1 directory with 3 updates ([#14](https://github.com/joangrigorov/ghspector/issues/14)) ([3e64be8](https://github.com/joangrigorov/ghspector/commit/3e64be8c2a267a91c2c3d0211d6c57330e9e2085))
+* **deps:** upgrade to Go 1.27.2 ([#25](https://github.com/joangrigorov/ghspector/issues/25)) ([2e5b9a9](https://github.com/joangrigorov/ghspector/commit/2e5b9a9c33855a0648a049e5ab6eaa77eb31a609))
+* **tui:** one highlight treatment, a palette that follows the terminal ([#20](https://github.com/joangrigorov/ghspector/issues/20)) ([fb8427a](https://github.com/joangrigorov/ghspector/commit/fb8427af41c25115c1f21bb90a22fde9ecadfa0f))
+* **ui:** give every screen one content box ([#26](https://github.com/joangrigorov/ghspector/issues/26)) ([8368a20](https://github.com/joangrigorov/ghspector/commit/8368a20d9e0308f2d220bb3b823b1085d54ad547))
+
 ## [0.3.0](https://github.com/joangrigorov/ghspector/compare/v0.2.0...v0.3.0) (2026-07-22)
 
 
