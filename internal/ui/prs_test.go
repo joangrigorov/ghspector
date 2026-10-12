@@ -55,6 +55,7 @@ func fixturePRs() []prSpec {
 // prServerConfig is the fixture server's behaviour.
 type prServerConfig struct {
 	prs        []prSpec
+	issues     []issueSpec
 	runs       []runSpec
 	permission string
 	// scopes is the X-OAuth-Scopes header. Empty means the API does not report
@@ -62,6 +63,13 @@ type prServerConfig struct {
 	scopes string
 	// failPulls makes every pull request list fail.
 	failPulls bool
+	// failIssues makes every issue list fail.
+	failIssues bool
+	// failComments makes every conversation fail.
+	failComments bool
+	// comments is how many comments the conversation holds. Zero means the
+	// standard two-comment fixture.
+	comments int
 	// failMerge makes the merge endpoint refuse.
 	failMerge bool
 	// failPermission makes the collaborators endpoint fail, which is the state
@@ -102,9 +110,30 @@ func withPRs(prs ...prSpec) prServerOption {
 	return func(c *prServerConfig) { c.prs = prs }
 }
 
+// withIssues replaces the issue list.
+func withIssues(issues ...issueSpec) prServerOption {
+	return func(c *prServerConfig) { c.issues = issues }
+}
+
 // failPullLists makes every pull request list fail.
 func failPullLists() prServerOption {
 	return func(c *prServerConfig) { c.failPulls = true }
+}
+
+// failIssueLists makes every issue list fail.
+func failIssueLists() prServerOption {
+	return func(c *prServerConfig) { c.failIssues = true }
+}
+
+// failCommentLists makes every conversation fail.
+func failCommentLists() prServerOption {
+	return func(c *prServerConfig) { c.failComments = true }
+}
+
+// withComments replaces the conversation with n comments, so a test can scroll a
+// thread longer than the screen.
+func withComments(n int) prServerOption {
+	return func(c *prServerConfig) { c.comments = n }
 }
 
 // failMergeEndpoint makes the merge endpoint refuse.
@@ -151,6 +180,7 @@ func prServerWithLog(t *testing.T, log *requestLog, opts ...prServerOption) *htt
 	t.Helper()
 	config := prServerConfig{
 		prs:        fixturePRs(),
+		issues:     fixtureIssues(),
 		runs:       fixtureRuns(8),
 		permission: "write",
 		checks:     fixtureChecks(),
@@ -193,7 +223,12 @@ func prServerWithLog(t *testing.T, log *requestLog, opts ...prServerOption) *htt
 		case strings.HasSuffix(path, "/files"):
 			writeBody(w, filesBody(t))
 		case strings.HasSuffix(path, "/comments"):
-			writeBody(w, commentsBody(t))
+			if config.failComments {
+				w.WriteHeader(http.StatusNotFound)
+				writeBody(w, `{"message":"no fixture"}`)
+				return
+			}
+			writeBody(w, commentsBody(t, config.comments))
 		case strings.HasSuffix(path, "/check-runs"):
 			writeBody(w, checksBody(t, config.checks))
 		case strings.HasSuffix(path, "/actions/runs") && r.Method == http.MethodGet:
@@ -211,6 +246,19 @@ func prServerWithLog(t *testing.T, log *requestLog, opts ...prServerOption) *htt
 				return
 			}
 			writeBody(w, `{"permission":"`+config.permission+`","user":{"login":"octocat"}}`)
+		// The issues paths are matched after the pull request ones, so the two
+		// fixtures never shadow each other: the issues endpoint also returns
+		// pull requests, and that overlap lives in the fixture body rather than
+		// in the routing.
+		case strings.Contains(path, "/issues/"):
+			writeBody(w, issueDetailBody(t, config.issues, repoFromPath(path)))
+		case strings.HasSuffix(path, "/issues"):
+			if config.failIssues {
+				w.WriteHeader(http.StatusNotFound)
+				writeBody(w, `{"message":"no fixture"}`)
+				return
+			}
+			writeBody(w, issuesBody(t, config.issues, repoFromPath(path), r.URL.Query().Get("state")))
 		case strings.Contains(path, "/pulls/") && r.Method == http.MethodPatch:
 			writeBody(w, `{"number":7,"state":"closed"}`)
 		case strings.Contains(path, "/pulls/"):
@@ -364,6 +412,157 @@ func prJSON(t *testing.T, spec prSpec) map[string]any {
 	return out
 }
 
+// issueSpec is one entry of the issues endpoint in a fixture. The endpoint
+// returns pull requests alongside issues, and the transport drops them, so a
+// spec can say that it is one.
+type issueSpec struct {
+	number    int
+	repo      string
+	title     string
+	state     string
+	author    string
+	assignees []string
+	labels    []string
+	milestone string
+	created   time.Time
+	updated   time.Time
+	// closed is when the issue was closed. Zero means it is still open.
+	closed time.Time
+	// isPull marks an entry that is really a pull request, which the transport
+	// has to drop before the list ever sees it.
+	isPull bool
+}
+
+// issueFixtureNumber is the issue the details tests open: the first issue in
+// the fixture list.
+const issueFixtureNumber = 3
+
+// fixtureIssues is the standard issue list: an open issue carrying an assignee,
+// a label and a milestone in the first repository, a closed one in the second,
+// and one pull request the endpoint returns alongside them. The last entry is
+// what makes the exclusion observable from the screen.
+func fixtureIssues() []issueSpec {
+	return []issueSpec{
+		{
+			number: issueFixtureNumber, repo: fixtureRepo, title: "Add the issues view",
+			state: "open", author: "octocat", assignees: []string{"hubot"},
+			labels: []string{"enhancement"}, milestone: "0.7.0",
+			created: workflowNow.Add(-48 * time.Hour), updated: workflowNow,
+		},
+		{
+			number: 4, repo: secondRepo, title: "Ship the old thing",
+			state: "closed", author: "hubot",
+			created: workflowNow.Add(-72 * time.Hour), updated: workflowNow.Add(-2 * time.Hour),
+			closed: workflowNow.Add(-2 * time.Hour),
+		},
+		{
+			number: 5, repo: fixtureRepo, title: "A pull request in the issue list",
+			state: "open", author: "octocat",
+			created: workflowNow.Add(-time.Hour), updated: workflowNow.Add(-time.Hour),
+			isPull: true,
+		},
+	}
+}
+
+// issuesBody renders the issues endpoint's response for one repository and the
+// requested state, the way the API does: an open query leaves the closed issues
+// out. Two entries is the fixture's page, so HasMore is false.
+func issuesBody(t *testing.T, issues []issueSpec, repo, state string) string {
+	t.Helper()
+	if state == "" {
+		state = "open"
+	}
+	items := make([]map[string]any, 0, len(issues))
+	for _, spec := range issues {
+		if spec.repo != repo || (state != "all" && spec.state != state) {
+			continue
+		}
+		items = append(items, issueJSON(t, spec))
+	}
+	return jsonBody(t, items)
+}
+
+// issueDetailBody renders one issue, with a body to describe. Like the pull
+// request fixture it answers with the first issue of the repository, which is
+// the row every details test opens.
+func issueDetailBody(t *testing.T, issues []issueSpec, repo string) string {
+	t.Helper()
+	for _, spec := range issues {
+		if spec.repo != repo || spec.isPull {
+			continue
+		}
+		detail := issueJSON(t, spec)
+		detail["body"] = strings.Join([]string{
+			"Issues are the third list of the app.",
+			"",
+			"They have no reviewers and no diff, so the sidebar carries what the list cannot: the assignees, the labels and the milestone.",
+			"",
+			"The description scrolls by one line with j and k, and by six with u and d, which is the pair the pull request description uses.",
+			"",
+			"Press c for the conversation.",
+		}, "\n")
+		detail["repository"] = map[string]any{
+			"name":      spec.repo,
+			"full_name": "octocat/" + spec.repo,
+			"owner":     map[string]any{"login": "octocat"},
+		}
+		return jsonBody(t, detail)
+	}
+	t.Fatalf("no fixture issue in %s", repo)
+	return ""
+}
+
+// issueJSON renders one entry of the issues endpoint. It carries no repository
+// object, which is what the real endpoint returns: the store fills that in from
+// the repository it asked about.
+func issueJSON(t *testing.T, spec issueSpec) map[string]any {
+	t.Helper()
+	number := spec.number
+	if number == 0 {
+		number = 1
+	}
+	author := spec.author
+	if author == "" {
+		author = "octocat"
+	}
+	out := map[string]any{
+		"id":         int64(2000 + number),
+		"number":     number,
+		"title":      spec.title,
+		"state":      spec.state,
+		"created_at": spec.created.Format(time.RFC3339),
+		"updated_at": spec.updated.Format(time.RFC3339),
+		"html_url":   fmt.Sprintf("https://github.com/octocat/%s/issues/%d", spec.repo, number),
+		"user":       map[string]any{"login": author},
+	}
+	if !spec.closed.IsZero() {
+		out["closed_at"] = spec.closed.Format(time.RFC3339)
+	}
+	if len(spec.assignees) > 0 {
+		assignees := make([]map[string]any, 0, len(spec.assignees))
+		for _, login := range spec.assignees {
+			assignees = append(assignees, map[string]any{"login": login})
+		}
+		out["assignees"] = assignees
+	}
+	if len(spec.labels) > 0 {
+		labels := make([]map[string]any, 0, len(spec.labels))
+		for _, name := range spec.labels {
+			labels = append(labels, map[string]any{"name": name, "color": "a2eeef"})
+		}
+		out["labels"] = labels
+	}
+	if spec.milestone != "" {
+		out["milestone"] = map[string]any{"title": spec.milestone}
+	}
+	if spec.isPull {
+		out["pull_request"] = map[string]any{
+			"url": fmt.Sprintf("https://api.github.com/repos/octocat/%s/pulls/%d", spec.repo, number),
+		}
+	}
+	return out
+}
+
 // commitsBody is the pull request's commit list.
 func commitsBody(t *testing.T) string {
 	t.Helper()
@@ -421,23 +620,31 @@ func filesBody(t *testing.T) string {
 }
 
 // commentsBody is the pull request's comment thread.
-func commentsBody(t *testing.T) string {
+// commentsBody renders the conversation. Zero asks for the standard two
+// comments; a larger count repeats them with distinct ids, which is what a test
+// that scrolls a long thread needs.
+func commentsBody(t *testing.T, count int) string {
 	t.Helper()
-	return jsonBody(t, []map[string]any{
-		{
-			"id":         1,
-			"body":       "Looks good to me.",
-			"created_at": workflowNow.Format(time.RFC3339),
-			"html_url":   "https://github.com/octocat/api/pull/7#issuecomment-1",
-			"user":       map[string]any{"login": "alice"},
-		},
-		{
-			"id":         2,
-			"body":       "Thanks! Merging once the checks pass.",
-			"created_at": workflowNow.Add(time.Minute).Format(time.RFC3339),
-			"user":       map[string]any{"login": "octocat"},
-		},
-	})
+	if count <= 0 {
+		count = 2
+	}
+	items := make([]map[string]any, 0, count)
+	for i := 0; i < count; i++ {
+		body := fmt.Sprintf("Comment %d looks good to me.", i+1)
+		user := "alice"
+		if i%2 == 1 {
+			body = fmt.Sprintf("Comment %d: thanks! Merging once the checks pass.", i+1)
+			user = "octocat"
+		}
+		items = append(items, map[string]any{
+			"id":         int64(i + 1),
+			"body":       body,
+			"created_at": workflowNow.Add(time.Duration(i) * time.Minute).Format(time.RFC3339),
+			"html_url":   fmt.Sprintf("https://github.com/octocat/api/pull/7#issuecomment-%d", i+1),
+			"user":       map[string]any{"login": user},
+		})
+	}
+	return jsonBody(t, items)
 }
 
 // checksBody renders the check-run list.
@@ -765,7 +972,7 @@ func TestPRDetailsRendersEverySubTab(t *testing.T) {
 		"2": "internal/ui/prs.go",
 		"3": "FILES & DIFF",
 		"4": "CHECKS",
-		"5": "Looks good to me.",
+		"5": "Comment 1 looks good to me.",
 	}
 	// The commits tab lists commits, so its marker comes from the commit
 	// fixture rather than from a heading.
@@ -1133,8 +1340,8 @@ func TestPRDetailsRefreshRefetchesTheActiveTab(t *testing.T) {
 // between them add up to exactly the body.
 func TestInfoColumnsTileTheBody(t *testing.T) {
 	for width := 1; width <= 400; width++ {
-		desc, side := infoColumns(width)
-		separators := infoSepWidth
+		desc, side := detailColumns(width)
+		separators := detailSepWidth
 		if side == 0 {
 			separators = 0
 		}
@@ -1144,7 +1351,7 @@ func TestInfoColumnsTileTheBody(t *testing.T) {
 		if desc < 0 || side < 0 {
 			t.Fatalf("width %d: negative column (%d, %d)", width, desc, side)
 		}
-		if width >= descMinWidth+sideMinWidth+infoSepWidth {
+		if width >= descMinWidth+sideMinWidth+detailSepWidth {
 			if desc < descMinWidth || side < sideMinWidth {
 				t.Fatalf("width %d: a column is below its minimum (%d, %d)", width, desc, side)
 			}
@@ -1156,8 +1363,8 @@ func TestInfoColumnsTileTheBody(t *testing.T) {
 // too narrow to hold a label and a value is dropped rather than squeezed, and the
 // description takes the width back.
 func TestInfoColumnsDropsTheSidebarWhenItCannotAnswer(t *testing.T) {
-	const width = descMinWidth + sideMinWidth + infoSepWidth - 1
-	desc, side := infoColumns(width)
+	const width = descMinWidth + sideMinWidth + detailSepWidth - 1
+	desc, side := detailColumns(width)
 	if side != 0 {
 		t.Fatalf("sidebar is %d wide at %d columns, want it dropped", side, width)
 	}
@@ -1232,7 +1439,7 @@ func TestInfoViewStacksTheDetailsOverTheChecks(t *testing.T) {
 	for i, row := range rows {
 		if at := strings.Index(row, "DETAILS"); at >= 0 && detailsRow < 0 {
 			detailsRow = i
-			if _, side := infoColumns(120); at <= side {
+			if _, side := detailColumns(120); at <= side {
 				t.Errorf("DETAILS is at column %d, want it in the sidebar", at)
 			}
 		}
@@ -1281,7 +1488,7 @@ func TestInfoViewKeepsTheDetailsOnTheCanonicalScreen(t *testing.T) {
 	if checksAt < 1 {
 		t.Fatalf("the sidebar has no CHECKS heading:\n%s", view)
 	}
-	_, side := infoColumns(80)
+	_, side := detailColumns(80)
 	above := []rune(lines[checksAt-1])
 	if got := strings.TrimSpace(string(above[len(above)-side:])); got != "" {
 		t.Errorf("the row above CHECKS is not blank: %q", got)

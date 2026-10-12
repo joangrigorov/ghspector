@@ -810,7 +810,7 @@ func (p *PRDetails) body(deps Deps, r layout.Rect) string {
 // given, already padded to its own width, so joining them row by row tiles the
 // region exactly at every size.
 func (p *PRDetails) infoView(deps Deps, r layout.Rect) string {
-	descW, sideW := infoColumns(r.W)
+	descW, sideW := detailColumns(r.W)
 
 	descLines := p.descriptionPane(deps, descW, r.H)
 	if sideW == 0 {
@@ -875,8 +875,8 @@ func (p *PRDetails) metadataPane(deps Deps, width, height int) []string {
 		{"Author", "@" + prAuthor(p.pr)},
 		{"Assignees", orNone(logins(p.pr.Assignees))},
 		{"Reviewers", orNone(logins(p.pr.RequestedReviewers))},
-		{"Milestone", orNone(milestoneTitle(p.pr))},
-		{"Labels", orNone(labelNames(p.pr))},
+		{"Milestone", orNone(milestoneName(p.pr.Milestone))},
+		{"Labels", orNone(labelList(p.pr.Labels))},
 		{"Created", formatTime(p.pr.CreatedAt)},
 		{"Updated", formatTime(p.pr.UpdatedAt)},
 	}
@@ -965,24 +965,24 @@ func (p *PRDetails) checksMessage() string {
 	}
 }
 
-// infoColumns splits the Info sub-tab's width into the description and the
-// sidebar. The sidebar stacks the details over the checks, so there are two
-// columns rather than three.
+// detailColumns splits a screen that puts a description beside a metadata
+// sidebar into the two widths: the pull request Info sub-tab and the issue
+// screen, which differ only in what the sidebar holds.
 //
 // The widths plus one separator always add up to width, so the row tiles the
 // body exactly at every terminal size. The description takes the slack, which is
 // what it is for; the sidebar gets a third of the row within its own bounds. A
 // width that cannot hold both drops the sidebar, because a sidebar too narrow to
 // show a label and its value is not an answer.
-func infoColumns(width int) (desc, side int) {
+func detailColumns(width int) (desc, side int) {
 	if width < 1 {
 		width = 1
 	}
-	if width <= infoSepWidth {
+	if width <= detailSepWidth {
 		// Room for one column and nothing else.
 		return width, 0
 	}
-	usable := width - infoSepWidth
+	usable := width - detailSepWidth
 	if usable < descMinWidth+sideMinWidth {
 		return width, 0
 	}
@@ -1001,18 +1001,19 @@ func sideHeights(height int) (details, checks int) {
 	return detailsRows, height - detailsRows - sideGapRows
 }
 
-// Pane geometry for the Info sub-tab: the separator between the description and
-// the sidebar, the narrowest each column may become, the widest the sidebar may
-// grow, and the rows the details block needs before the sidebar gives it up.
+// Pane geometry for a description-beside-a-sidebar screen: the separator
+// between the two columns, the narrowest each column may become, the widest the
+// sidebar may grow, and the rows the details block needs before it gives way to
+// the checks.
 //
 // The sidebar's minimum is the width at which a label and a value both still fit
 // on one line. Below that it would hold "  State:      OP" rather than an answer,
 // so it is dropped instead of squeezed.
 const (
-	infoSepWidth = 1
-	descMinWidth = 20
-	sideMinWidth = 24
-	sideMaxWidth = 40
+	detailSepWidth = 1
+	descMinWidth   = 20
+	sideMinWidth   = 24
+	sideMaxWidth   = 40
 	// detailsRows is the height the details block is drawn in: its heading, the
 	// blank line under it, and the eight label/value rows. It is also the point
 	// below which the block is dropped, so the eight rows have to fit in the
@@ -1091,21 +1092,22 @@ func logins(users []store.User) string {
 	return strings.Join(names, ", ")
 }
 
-// milestoneTitle is the milestone's name, or empty when there is none.
-func milestoneTitle(pr store.PullRequest) string {
-	if pr.Milestone == nil {
+// milestoneName is the milestone's title, or empty when there is none.
+func milestoneName(milestone *store.Milestone) string {
+	if milestone == nil {
 		return ""
 	}
-	return pr.Milestone.Title
+	return milestone.Title
 }
 
-// labelNames joins a pull request's labels.
-func labelNames(pr store.PullRequest) string {
-	if len(pr.Labels) == 0 {
+// labelList joins a label list. Both sidebars and the issue table read it, so a
+// label list is rendered the same everywhere.
+func labelList(labels []store.Label) string {
+	if len(labels) == 0 {
 		return ""
 	}
-	names := make([]string, 0, len(pr.Labels))
-	for _, l := range pr.Labels {
+	names := make([]string, 0, len(labels))
+	for _, l := range labels {
 		names = append(names, l.Name)
 	}
 	return strings.Join(names, ", ")

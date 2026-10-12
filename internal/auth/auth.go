@@ -19,6 +19,7 @@ import (
 type PollingConfig struct {
 	WorkflowsIntervalSeconds int `yaml:"workflows_interval_seconds,omitempty"`
 	PRsIntervalSeconds       int `yaml:"prs_interval_seconds,omitempty"`
+	IssuesIntervalSeconds    int `yaml:"issues_interval_seconds,omitempty"`
 }
 
 // Default poll intervals, in seconds, used when the config file does not set
@@ -26,34 +27,40 @@ type PollingConfig struct {
 const (
 	DefaultWorkflowsIntervalSeconds = 5
 	DefaultPRsIntervalSeconds       = 10
+	DefaultIssuesIntervalSeconds    = 10
 )
 
-// PollingIntervals is the resolved refresh cadence of the two polled lists.
+// PollingIntervals is the resolved refresh cadence of the three polled lists.
 type PollingIntervals struct {
 	Workflows time.Duration
 	PRs       time.Duration
+	Issues    time.Duration
 }
 
 // PollingIntervals resolves the refresh cadence from the configured values.
 //
-// The per-tab keys win, the legacy single key sets both when they are absent,
-// and the defaults cover the rest. A non-positive value means "unset" rather
-// than "off", which is how the previous version read the file: polling could
-// only be retimed, never disabled.
+// The per-tab keys win, the legacy single key sets all three when they are
+// absent, and the defaults cover the rest. A non-positive value means "unset"
+// rather than "off", which is how the previous version read the file: polling
+// could only be retimed, never disabled.
 func (c Config) PollingIntervals() PollingIntervals {
 	out := PollingIntervals{
 		Workflows: DefaultWorkflowsIntervalSeconds * time.Second,
 		PRs:       DefaultPRsIntervalSeconds * time.Second,
+		Issues:    DefaultIssuesIntervalSeconds * time.Second,
 	}
 	if c.PollingIntervalSeconds > 0 {
 		legacy := time.Duration(c.PollingIntervalSeconds) * time.Second
-		out.Workflows, out.PRs = legacy, legacy
+		out.Workflows, out.PRs, out.Issues = legacy, legacy, legacy
 	}
 	if c.Polling.WorkflowsIntervalSeconds > 0 {
 		out.Workflows = time.Duration(c.Polling.WorkflowsIntervalSeconds) * time.Second
 	}
 	if c.Polling.PRsIntervalSeconds > 0 {
 		out.PRs = time.Duration(c.Polling.PRsIntervalSeconds) * time.Second
+	}
+	if c.Polling.IssuesIntervalSeconds > 0 {
+		out.Issues = time.Duration(c.Polling.IssuesIntervalSeconds) * time.Second
 	}
 	return out
 }

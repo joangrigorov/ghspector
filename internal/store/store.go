@@ -132,11 +132,18 @@ type PRQuery struct {
 	Reviewer string
 }
 
-// IssueQuery filters an issue list.
+// IssueQuery filters an issue list. The login filters are applied by the store,
+// because the REST transport cannot express them in one request.
 type IssueQuery struct {
-	Page   Page
-	State  string
-	Author string
+	Page  Page
+	State string
+	// Repo narrows the scope-wide list to one repository by exact name. Empty
+	// means every repository in the context. The single-repository Issues call
+	// ignores it.
+	Repo string
+	// Author and Assignee narrow by login. Empty means no filter.
+	Author   string
+	Assignee string
 }
 
 // Store is the read and write surface the UI is allowed to use.
@@ -187,6 +194,10 @@ type Store interface {
 	// Issues lists issues in one repository. Pull requests are excluded, as
 	// the GitHub issues endpoint returns both.
 	Issues(ctx context.Context, repo RepoRef, q IssueQuery) (List[Issue], error)
+	// ScopeIssues lists issues across the context's repositories, merged into
+	// one list in display order. It is what the issues view asks for; Issues
+	// exists for the single-repository case and for tests.
+	ScopeIssues(ctx context.Context, owner OwnerRef, q IssueQuery) (List[Issue], error)
 	// Issue fetches one issue.
 	Issue(ctx context.Context, repo RepoRef, number int) (Issue, error)
 	// Comments lists the comments on a pull request or issue.

@@ -260,9 +260,15 @@ func (p *PRDetails) commentsView(deps Deps, r layout.Rect) string {
 
 // commentLines renders the conversation as lines, one block per comment.
 func (p *PRDetails) commentLines(deps Deps, width int) []string {
-	theme := deps.Theme
+	return commentBlockLines(deps.Theme, p.comments, width)
+}
+
+// commentBlockLines renders a conversation as lines, one block per comment. The
+// pull request and issue screens both read it, so the two conversations read the
+// same.
+func commentBlockLines(theme Theme, comments []store.IssueComment, width int) []string {
 	var out []string
-	for i, comment := range p.comments {
+	for i, comment := range comments {
 		if i > 0 {
 			out = append(out, "", style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-2, 1))), "")
 		}

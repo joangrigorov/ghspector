@@ -18,6 +18,7 @@ import (
 const (
 	testWorkflowsInterval = 5 * time.Second
 	testPRsInterval       = 10 * time.Second
+	testIssuesInterval    = 20 * time.Second
 )
 
 // pollingModel is a ready model with polling enabled on a clock the test
@@ -29,6 +30,7 @@ func pollingModel(t *testing.T, srv *httptest.Server, w, h int) (Model, *fixedCl
 		o.Clock = clock
 		o.PollWorkflows = testWorkflowsInterval
 		o.PollPRs = testPRsInterval
+		o.PollIssues = testIssuesInterval
 	})
 	return m, clock
 }
@@ -53,16 +55,50 @@ func TestPollTickIsArmedForTheActiveTab(t *testing.T) {
 		t.Fatalf("the workflows tab waited %v, want %v", got, testWorkflowsInterval)
 	}
 
-	// The issue tab runs on the workflows cadence, which is the previous
-	// version's rule: an interval of its own is a v2 improvement (spec §7) and
-	// comes with that tab's data layer.
+	// The Issues tab has an interval of its own, which is the v2 fix spec §5.4
+	// asks for: the previous version polled it on the workflows cadence.
 	m, _ = pressKey(t, m, "tab")
 	if m.routes.Top().Scope() != keymap.MainIssues {
 		t.Fatalf("scope = %q, want the issue tab", m.routes.Top().Scope())
 	}
 	armAndRelease(t, m, clock)
-	if got := clock.waited(); len(got) != 3 || got[2] != testWorkflowsInterval {
-		t.Fatalf("the issue tab waited %v, want %v", got, testWorkflowsInterval)
+	if got := clock.waited(); len(got) != 3 || got[2] != testIssuesInterval {
+		t.Fatalf("the issue tab waited %v, want %v", got, testIssuesInterval)
+	}
+}
+
+// TestPollTickRefreshesTheIssueList is the spec §5.4 target for the third list:
+// main + Issues → issues. The poll folds its page into the list rather than
+// clearing it, so the table does not empty once per interval.
+func TestPollTickRefreshesTheIssueList(t *testing.T) {
+	srv := prServer(t)
+	clock := newFixedClock(workflowNow)
+	m := issuesModel(t, srv, 120, 40, func(o *Options) {
+		o.Clock = clock
+		o.PollIssues = testIssuesInterval
+	})
+
+	before := issuesTabOf(t, m)
+	if len(before.issues) == 0 {
+		t.Fatal("the issue list is empty")
+	}
+
+	poll, ok := clock.release(t, m.armPoll()).(pollMsg)
+	if !ok {
+		t.Fatal("the released tick did not produce a poll message")
+	}
+	next, cmd := send(t, m, poll)
+	if cmd == nil {
+		t.Fatal("the poll produced no command")
+	}
+	refreshed := drive(t, next, cmd)
+
+	issues := issuesTabOf(t, refreshed)
+	if len(issues.issues) != len(before.issues) {
+		t.Errorf("the poll changed the list from %d issues to %d", len(before.issues), len(issues.issues))
+	}
+	if issues.loading {
+		t.Error("the poll left the list in its loading state")
 	}
 }
 

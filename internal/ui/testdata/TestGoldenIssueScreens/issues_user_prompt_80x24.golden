@@ -1,0 +1,24 @@
+  [1mIssues[m                                                        Account: octocat
+────────────────────────────────────────────────────────────────────────────────
+  Pull Requests │ Workflows │[1m Issues [m                                           
+[1m  ST  ISSUE   TITLE                                AUTHOR          [m             
+[1m› ■   #3      Add the issues view                  octocat         [m             
+ ╭─╭────────────────────────────────────────────────────────────────────────╮   
+ │ │                                                                        │   
+ │ │  [1mFilter issues by user[m                                                 │   
+ │ │                                                                        │   
+ │ │  Show only issues this GitHub login is involved in.                    │   
+ │ │  Current user filter: none.                                            │   
+ │ │  Enter continues to choose author or assignee.                         │   
+ │ │                                                                        │   
+ │ │  login                                                                 │   
+ ╰─│                                                                        │   
+   │  Submit an empty value to clear the filter.                            │   
+   │                                                                        │   
+   ╰────────────────────────────────────────────────────────────────────────╯   
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEnter[m:Confirm  [1mEsc[m:Cancel        

@@ -77,6 +77,7 @@ func run(args []string, stdout io.Writer) int {
 		DefaultOwner:    defaultOwner(config),
 		PollWorkflows:   polling.Workflows,
 		PollPRs:         polling.PRs,
+		PollIssues:      polling.Issues,
 		MergeMethod:     config.DefaultMergeMethod,
 		SaveMergeMethod: auth.SetDefaultMergeMethod,
 	})

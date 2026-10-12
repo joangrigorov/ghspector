@@ -30,10 +30,11 @@ type Deps struct {
 	TokenSource string
 	// Clock paces polling. Nil means the real clock.
 	Clock Clock
-	// PollWorkflows and PollPRs are the refresh intervals from the config file.
-	// A non-positive interval turns polling off for that tab.
+	// PollWorkflows, PollPRs and PollIssues are the refresh intervals from the
+	// config file. A non-positive interval turns polling off for that tab.
 	PollWorkflows time.Duration
 	PollPRs       time.Duration
+	PollIssues    time.Duration
 	// Size is the terminal geometry. A route that opens a modal needs it,
 	// because an overlay is given a width by the stack but never a height.
 	Size Size
