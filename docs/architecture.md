@@ -1,0 +1,320 @@
+# ghspector v2 — architecture
+
+This document defines the target architecture for the rewrite. Its purpose is to make the previous design's failure modes structurally impossible, so that a future contributor cannot accidentally reintroduce them.
+
+Companion documents:
+
+- `docs/spec.md` — the behavioral parity checklist that gates the rewrite.
+- The phased plan (session artifact): phases, delivery, and per-phase exit criteria.
+
+---
+
+## 1. Goals and non-goals
+
+**Goals**
+
+1. Deterministic layout. Given `(width, height)` and a route, the rendered screen is fully determined, with no hand-tuned constants and no string slicing.
+2. One source of truth per concern: one keymap, one overlay mechanism, one layout engine, one place that computes a view's dimensions.
+3. Each screen is a small, independently testable unit with explicit inputs.
+4. Scope-wide GitHub queries instead of per-repository fan-out, with real pagination.
+5. The existing config file, CLI flags, release pipeline, and module path keep working unchanged.
+
+**Non-goals**
+
+- Rewriting `internal/gh` (REST client) or `internal/auth`. They are correct and encode hard-won API behavior.
+- Changing the binary name, module path, entry point, or goreleaser output.
+- Adding new user-facing capabilities before parity is reached, except where the architecture makes them free (scope-wide filtering).
+
+---
+
+## 2. Layers
+
+```
+cmd/ghspector        wiring only: flags, config, dependency construction, program start
+      │
+internal/ui          routes, components, theme, chrome          (presentation)
+      │
+internal/store       caching, pagination, aggregation, rate limiting  (application)
+      │
+internal/gh   internal/gql                                     (transport)
+      │
+      └── internal/auth, internal/config                        (infrastructure)
+```
+
+Dependency direction is strictly downward. `ui` never imports `gh` or `gql`; it consumes store types. `gh` and `gql` are stateless and know nothing about the UI or the store's cache.
+
+### Package responsibilities
+
+| Package | Responsibility | Must not |
+| --- | --- | --- |
+| `internal/layout` | `Rect`, `Frame`, splitting, placement, truncation, wrapping | Know about any screen |
+| `internal/keymap` | Binding definitions, lookup, footer/help rendering from bindings | Know about any screen's state |
+| `internal/overlay` | Modal stack, generic `Confirm`, compositing | Draw its own box characters |
+| `internal/ui` | Root model, route stack, routes, chrome, theme | Do arithmetic on `width`/`height`; match raw key strings |
+| `internal/ui/widgets` | Table, log view, breadcrumbs, status bar, spinner | Read the root model |
+| `internal/store` | Cache, cursors, aggregation, single rate limiter | Format anything for display |
+| `internal/gh` | REST endpoints, pagination helpers, error mapping | Hold mutable application state |
+| `internal/gql` | GraphQL queries and mutations, cursor pagination | Know about `gh`'s types |
+| `internal/auth` | Token resolution, config load/save | Know about the UI |
+
+---
+
+## 3. The five structural fixes
+
+These are the direct answers to the failure modes in the v1 TUI. Each one is enforced by a test or a lint rule, not by convention alone.
+
+### 3.1 Layout engine
+
+**Problem it removes:** 47 hand-tuned constants such as `m.height - 12` and `m.width - 102`, differing per view, which is why scroll and clipping bugs appeared one view at a time.
+
+```go
+type Rect struct{ X, Y, W, H int }
+
+type Frame struct {
+    Header Rect
+    Body   Rect
+    Footer Rect
+}
+
+func Layout(width, height int) Frame
+```
+
+Rules:
+
+- A view receives a `Rect` and renders within it. It never receives the raw terminal size.
+- `Rect` gains only what is genuinely needed: `Split` (vertical/horizontal), `Inner` (inset by border/padding), and `Place` (center a smaller block).
+- Truncation and wrapping go through `charmbracelet/x/ansi` so wide runes and ANSI sequences are handled by measurement, never by rune indexing.
+- The frame is computed once per `WindowSizeMsg`, and a body too small to render produces one documented "terminal too small" view rather than a malformed screen.
+
+**Enforced by:** a resize test that asserts every rendered line is exactly `width` cells and the line count is exactly `height`, across a range of sizes including very narrow and very wide.
+
+### 3.2 Routes instead of `viewState`
+
+**Problem it removes:** one enum serving as screens, modals, and routes at once, which made `View()` a combinatorial branch map and made `Esc` semantics implicit in a `prevState` field.
+
+```go
+type Route interface {
+    Init() tea.Cmd
+    Update(tea.Msg) (Route, tea.Cmd)
+    View(r layout.Rect) tea.View
+    Title() string
+    Bindings() []keymap.Binding
+    KeyScope() keymap.Scope
+}
+
+type Stack []Route
+```
+
+Navigation:
+
+- `Push(route)` for drill-down; `Pop()` for `Esc`. `Esc` behavior is defined once, by the stack, instead of being re-implemented in each state's key switch.
+- Breadcrumbs are `Join(stack titles)`. No screen builds its own breadcrumb string.
+- Each pushed route carries its own identity — `(owner, repo, number)`, `(owner, repo, runID, attempt)` — instead of reading it back out of shared model fields. This removes the v1 pattern where `getRun()` patched missing repository fields by consulting the selected pull request.
+
+Route inventory (from `docs/spec.md` §3):
+
+```
+Splash
+Main{tab ∈ PRs | Workflows | Issues}
+  Workflows: RunList → Jobs → Logs
+  PRs:       PRList → PRDetails{sub-tab} → Commits → CommitDetails
+                                        → Files (diff)
+                                        → Comments
+  Issues:    IssueList → IssueDetails → Comments
+```
+
+### 3.3 Overlay stack
+
+**Problem it removes:** modals drawn as literal box-drawing strings with hardcoded widths, composited by stripping ANSI and slicing runes — the direct cause of unpredictable layout corrections.
+
+```go
+type Overlay interface {
+    Update(tea.Msg) (Overlay, tea.Cmd)
+    View(width int) string          // returns content only, never a box
+    Bindings() []keymap.Binding
+}
+
+type Stack []Overlay                // topmost captures input first
+```
+
+Rules:
+
+- An overlay returns content. The chrome, border, padding, and centering come from the overlay stack.
+- Composition uses `lipgloss/v2` `Canvas` and `Layer` (`NewCanvas`, `NewLayer`, `X`, `Y`, `Z`, `Compose`, `Render`), which are cell-aware. No ANSI stripping, no rune slicing.
+- One generic confirm covers merge, close, and run approval:
+
+```go
+type Confirm struct {
+    Title    string
+    Body     []string
+    OnYes    tea.Cmd
+    Destructive bool
+}
+```
+
+- Overlays live in their own stack, so the route underneath is rendered once and never re-rendered because modal state changed.
+
+**Enforced by:** a property test that composes random backgrounds with random overlay content — including emoji, CJK, and ANSI-styled text — and asserts the result preserves exact line count and display width.
+
+### 3.4 Keymap
+
+**Problem it removes:** bindings declared in three unsynchronized places (the update switch, 16 footer call sites, and the help text), which let the README, the help screen, the footer, and the actual behavior diverge.
+
+```go
+type Scope string                     // e.g. "main.workflows", "pr.details", "overlay.merge"
+type Binding struct {
+    Keys        []string
+    Help        string
+    Action      func() tea.Cmd
+    Destructive bool
+}
+func For(scope Scope) []Binding
+func Match(scope Scope, msg tea.KeyPressMsg) (Binding, bool)
+```
+
+Rules:
+
+- Dispatch is by binding lookup in the route's scope. There are no `switch msg.String()` key literals in route code.
+- The footer renders from the active scope's bindings.
+- The help overlay renders from the same bindings, grouped by scope.
+- The README keybinding tables are generated from, or asserted against, the same bindings.
+
+**Enforced by:** a test asserting every binding appears in help and is reachable, and that no key is handled outside the keymap.
+
+### 3.5 Store
+
+**Problem it removes:** per-repository goroutine fan-out duplicated across `fetchRunsCmd` and `pollRunsCmd`, an 8-repository cap, page-only filtering, and a hand-rolled rate-limit check.
+
+```go
+type Store interface {
+    Contexts(ctx context.Context) ([]Context, error)          // user + orgs
+    Repositories(ctx context.Context, c Context) ([]Repository, error)
+
+    WorkflowRuns(ctx context.Context, q RunQuery) (RunPage, error)
+    Jobs(ctx context.Context, run RunRef, attempt int) ([]Job, error)
+    Logs(ctx context.Context, run RunRef, jobID int64) (string, error)
+
+    PullRequests(ctx context.Context, q PRQuery) (PRPage, error)
+    PullRequest(ctx context.Context, ref PRRef) (PRDetail, error)
+    Issue(ctx context.Context, ref IssueRef) (IssueDetail, error)
+
+    Merge(ctx context.Context, ref PRRef, method MergeMethod) error
+    Close(ctx context.Context, ref PRRef) error
+    ApproveRun(ctx context.Context, run RunRef) error
+    ApproveDeployments(ctx context.Context, run RunRef, envIDs []int64) error
+    CanWrite(ctx context.Context, repo RepoRef) (bool, error)
+}
+```
+
+- Query types (`RunQuery`, `PRQuery`) carry scope, state, actor, author, assignee, reviewer, and cursor. Filtering is a property of the query, which is what lets v2 move it server-side.
+- Caching and cursors live here, keyed by resource and scope. The UI holds presentation state only.
+- Pagination is cursor-based for GraphQL and page-based for REST, behind the same `Page` types.
+- One rate limiter is shared by the REST and GraphQL transports. REST feeds it from response headers; GraphQL feeds it from the `rateLimit { cost remaining resetAt }` field included in every query.
+
+**Enforced by:** store tests that run the same query against a REST-backed and a GraphQL-backed transport and assert equivalent domain objects, plus a test that the limiter depletes by the reported query cost.
+
+---
+
+## 4. Transport split
+
+**GraphQL (`internal/gql`, via `shurcooL/githubv4`)** handles listing and aggregation, where a single cursor-paginated query replaces N per-repository requests:
+
+- workflow runs across a scope
+- pull requests across a scope, including author/assignee/reviewer filters server-side
+- issues across a scope, with the PR-exclusion handled by the API rather than by a client-side predicate
+- repository lists (kept as REST fallback if GraphQL proves awkward for a scope)
+
+**REST (`internal/gh`)** handles what GraphQL does not cover well:
+
+- job logs (`/actions/jobs/{id}/logs`) — REST-only, and the error body is XML
+- PR file patches and diffs
+- check runs
+- write operations already implemented and tested (merge, close, approve, permission checks)
+
+Both transports share the rate limiter and the error taxonomy (rate-limited, forbidden, not-found, generic).
+
+---
+
+## 5. State ownership
+
+| State | Owner |
+| --- | --- |
+| Terminal size → `Frame` | Root model |
+| Route stack, overlay stack | Root model |
+| Theme | Root model |
+| Keymap scope resolution | Root model |
+| Contexts, active context | Store-backed slice in the context switcher route; the active context lives in the root model |
+| List data, cursors, selection, focus | The owning route (`RunList`, `PRList`, `IssueList`) |
+| Page-level state (`RunPageData`) | The owning route |
+| Caches | Store |
+| `loading` / `status message` | Root model, since chrome renders both |
+
+Target: on the order of 15 root-model fields, against 90 today. Detail identity (`owner`, `repo`, `number`, `runID`, `attempt`) lives in the route that was pushed, never in a shared field that a sibling route reads.
+
+---
+
+## 6. Dependencies
+
+Pinned at the time of writing (verified against the module proxy):
+
+| Module | Version |
+| --- | --- |
+| `github.com/charmbracelet/bubbletea/v2` | v2.1.0 |
+| `github.com/charmbracelet/lipgloss/v2` | v2.0.6 |
+| `github.com/charmbracelet/bubbles/v2` | v2.2.1 |
+| `github.com/charmbracelet/glamour/v2` | v2.0.1 |
+| `github.com/charmbracelet/x/ansi` | latest |
+| `github.com/charmbracelet/x/exp/teatest/v2` | v2.0.0-20261011004359-2acd7e345453 (untagged; pin the pseudo-version) |
+| `github.com/shurcooL/githubv4` | v0.0.0-20260209031235-2402fdf4a9ed (untagged; pin the pseudo-version) |
+| `golang.org/x/time` | v0.16.0 |
+
+Bubble Tea v2 contract changes to build against from the start:
+
+- `View()` returns `tea.View`, constructed with `tea.NewView(content)`; alternate screen is a field on the view rather than a program option.
+- Key messages are `KeyPressMsg` / `KeyReleaseMsg` carrying a typed `Key`. Exact signatures are confirmed against pkg.go.dev at the start of Phase 1 rather than assumed.
+
+**Rule:** v1 and v2 Charm import paths must never coexist in the module. A CI check greps the tree for v1 import paths and fails if any are found.
+
+---
+
+## 7. Conventions
+
+These are the rules that keep the design from regressing. Each is enforceable.
+
+1. **No layout arithmetic in a view.** A view may read `rect.W` and `rect.H`; it may not do `height - N`.
+2. **No `switch` on key strings in a route.** Keys resolve through the keymap.
+3. **No box-drawing literals.** Borders come from `lipgloss` borders or the overlay stack.
+4. **No measurement by rune index.** Width and truncation go through `x/ansi`.
+5. **No route edits shared sibling state.** A route reads its own data and its own identity.
+6. **No direct transport calls from `ui`.** Everything goes through the store.
+7. **No v1 Charm imports.**
+8. **Every screen has a golden test** at 80×24, 120×40, and 40×15.
+
+---
+
+## 8. Testing strategy
+
+| Layer | Purpose | Location |
+| --- | --- | --- |
+| Golden renders | Catch layout, chrome, and resize regressions | `internal/ui/**/testdata/*.golden` |
+| Property tests | Prove the compositor preserves dimensions with wide runes and ANSI | `internal/overlay` |
+| Keymap invariants | Keep bindings, footer, help, and README consistent | `internal/keymap` |
+| Scripted flows | Exercise real interactions against mock transports | route tests via teatest v2 |
+| Store equivalence | Prove REST and GraphQL backends agree | `internal/store` |
+| Client units | Rate limiting, error mapping, pagination, log parsing | `internal/gh`, `internal/gql` |
+| Pure functions | Log segmentation, timestamp parsing, status ordering, dedup | alongside the widgets that use them |
+
+Golden files are updated with a `-update` flag and reviewed on every diff. Because a golden file can only prove "unchanged", behavioral confidence comes from the scripted-flow and property tests.
+
+The v1 `internal/tui/app_test.go` is deleted rather than ported: it asserts hardcoded layout arithmetic, which the layout engine makes meaningless.
+
+---
+
+## 9. Release and packaging constraints
+
+Unchanged and load-bearing:
+
+- Module path `ghspector`; entry point `cmd/ghspector/main.go`.
+- `main.version`, `main.commit`, `main.date` remain `main`-package variables, injected by goreleaser `-X` ldflags.
+- `release-please-config.json` and `.github/workflows/release.yml` stay as they are, plus `bump-minor-pre-major: true` so breaking changes move `0.x` to the next minor while the rewrite is unstable. Moving to `1.0.0` is a deliberate later act.
+- `internal/auth.Config`'s YAML keys and the config path stay byte-compatible. A `version` key is added; nothing is removed or renamed.
