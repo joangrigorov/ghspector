@@ -1,0 +1,237 @@
+package ui
+
+import (
+	"strconv"
+	"strings"
+	"time"
+
+	"charm.land/lipgloss/v2"
+
+	"ghspector/internal/keymap"
+	"ghspector/internal/layout"
+	"ghspector/internal/ui/widgets"
+)
+
+// rate limit thresholds for the header indicator, matching the previous
+// version's colour bands.
+const (
+	rateWarnBelow = 1000
+	rateFailBelow = 200
+)
+
+// Style option helpers, so style() reads as a colour plus modifiers.
+var (
+	normal = func(s lipgloss.Style) lipgloss.Style { return s }
+	bold   = func(s lipgloss.Style) lipgloss.Style { return s.Bold(true) }
+)
+
+// renderHeader draws the title band and its separator rule.
+//
+// The title gives way first when the row is tight, because the account and the
+// rate limit are what the user needs on a small screen; the account then gives
+// way, and the rate limit last.
+func renderHeader(deps Deps, r layout.Rect, title string, loading bool, tick int) string {
+	if r.Empty() {
+		return ""
+	}
+	theme := deps.Theme
+
+	prefix := "  " + style(theme.HeaderTitle, bold).Render("ghspector") +
+		style(theme.HeaderRule, normal).Render("  │  ")
+	account := style(theme.HeaderContext, normal).Render("Account: " + deps.Account.Owner.String())
+
+	indicator := ""
+	if loading {
+		indicator += style(theme.StatusWarn, normal).Render(widgets.Dots(tick)) + " "
+	}
+	indicator += renderRateLimit(deps)
+
+	const gap = 3
+	budget := r.W - lipgloss.Width(prefix) - lipgloss.Width(account) - lipgloss.Width(indicator) - 2*gap
+	if budget < 4 {
+		// Drop the account before dropping the title.
+		account, budget = "", r.W-lipgloss.Width(prefix)-lipgloss.Width(indicator)-gap
+	}
+	if budget < 1 {
+		budget = 1
+	}
+	page := style(theme.HeaderContext, bold).Render(layout.Truncate(title, budget))
+
+	left := prefix + page
+	if account != "" {
+		left += strings.Repeat(" ", gap) + account
+	}
+
+	titleRow := band(theme, r.W, joinLR(r.W, left, indicator))
+	if r.H < 2 {
+		return layout.Fit(titleRow, r.W, r.H)
+	}
+	rule := style(theme.HeaderRule, normal).Render(strings.Repeat("─", r.W))
+	return layout.Fit(titleRow+"\n"+rule, r.W, r.H)
+}
+
+// renderRateLimit renders the remaining request budget, coloured by how much is
+// left. An unset budget renders nothing rather than a misleading zero.
+func renderRateLimit(deps Deps) string {
+	rl := deps.Store.RateLimit()
+	if rl.Limit <= 0 {
+		return ""
+	}
+	colour := deps.Theme.StatusOK
+	switch {
+	case rl.Remaining < rateFailBelow:
+		colour = deps.Theme.StatusFail
+	case rl.Remaining < rateWarnBelow:
+		colour = deps.Theme.StatusWarn
+	}
+	text := "Rate limit: " + strconv.Itoa(rl.Remaining) + "/" + strconv.Itoa(rl.Limit)
+	if !rl.Reset.IsZero() && rl.Remaining == 0 {
+		text += " resets " + rl.Reset.Format(time.Kitchen)
+	}
+	return style(colour, normal).Render(text)
+}
+
+// renderFooter draws the separator rule and the key hints, with the transient
+// status message right-aligned.
+func renderFooter(deps Deps, r layout.Rect, scope keymap.Scope, status string, statusErr bool) string {
+	if r.Empty() {
+		return ""
+	}
+	theme := deps.Theme
+
+	if r.H < 2 {
+		return layout.Fit(style(theme.HeaderRule, normal).Render(strings.Repeat("─", r.W)), r.W, r.H)
+	}
+	rule := style(theme.HeaderRule, normal).Render(strings.Repeat("─", r.W))
+	hints := renderHints(deps, r, scope, status, statusErr)
+	return layout.Fit(rule+"\n"+hints, r.W, r.H)
+}
+
+// renderHints lays the footer out with hints on the left and the status message
+// on the right.
+func renderHints(deps Deps, r layout.Rect, scope keymap.Scope, status string, statusErr bool) string {
+	st := widgets.Style{Key: deps.Theme.KeyHint, Desc: deps.Theme.KeyDesc}
+
+	// The global keys are pinned first, so a narrow footer drops scope hints
+	// rather than the keys that work everywhere.
+	bindings := keymap.Documented(keymap.Global)
+	for _, b := range keymap.Documented(scope) {
+		if !hasAction(bindings, b.Action) {
+			bindings = append(bindings, b)
+		}
+	}
+
+	statusRendered := ""
+	if status != "" {
+		colour := deps.Theme.StatusOK
+		marker := "ℹ "
+		if statusErr {
+			colour = deps.Theme.StatusFail
+			marker = "✖ "
+		}
+		statusRendered = style(colour, bold).Render(marker + status)
+	}
+
+	hintWidth := r.W - lipgloss.Width(statusRendered) - 2
+	if hintWidth < 1 {
+		if statusRendered != "" {
+			return layout.Fit("  "+statusRendered, r.W, 1)
+		}
+		hintWidth = 1
+	}
+	hints := "  " + widgets.Footer(st, bindings, hintWidth)
+	return layout.Fit(joinLR(r.W, hints, statusRendered), r.W, 1)
+}
+
+// hasAction reports whether bindings already covers action.
+func hasAction(bindings []keymap.Binding, action keymap.Action) bool {
+	for _, b := range bindings {
+		if b.Action == action {
+			return true
+		}
+	}
+	return false
+}
+
+// breadcrumbs joins the route titles into a single trail. The header truncates
+// it, so no screen builds or clips its own trail.
+func breadcrumbs(titles []string) string {
+	if len(titles) == 0 {
+		return ""
+	}
+	return strings.Join(titles, " › ")
+}
+
+// joinLR places left and right on one row of exactly width cells, padding the
+// gap. When there is not enough room the right side is trimmed, because the
+// left side carries the identity.
+func joinLR(width int, left, right string) string {
+	leftW, rightW := lipgloss.Width(left), lipgloss.Width(right)
+	gap := width - leftW - rightW
+	if gap < 1 {
+		room := width - leftW - 1
+		if room < 1 {
+			return layout.Fit(left, width, 1)
+		}
+		right = layout.Truncate(right, room)
+		gap = width - leftW - lipgloss.Width(right)
+		if gap < 0 {
+			gap = 0
+		}
+	}
+	return layout.Fit(left+strings.Repeat(" ", gap)+right, width, 1)
+}
+
+// band paints a full-width row with the header background when one is set.
+func band(theme Theme, width int, s string) string {
+	if theme.HeaderBackground == nil {
+		return s
+	}
+	return lipgloss.NewStyle().Background(theme.HeaderBackground).Width(width).Render(s)
+}
+
+// renderTooSmall is the whole screen when the terminal is below the supported
+// minimum. It replaces a malformed layout rather than trying to squeeze one in.
+//
+// The title goes first so it survives a screen only a few rows tall.
+func renderTooSmall(theme Theme, width, height int) string {
+	lines := []string{
+		style(theme.ErrorTitle, bold).Render("Terminal too small"),
+	}
+	if height >= 6 {
+		lines = append(lines, "")
+	}
+	lines = append(lines,
+		style(theme.Text, normal).Render("ghspector needs at least "+
+			strconv.Itoa(layout.MinWidth)+"x"+strconv.Itoa(layout.MinHeight)+" cells."),
+		style(theme.Muted, normal).Render("Current size: "+strconv.Itoa(width)+"x"+strconv.Itoa(height)+"."),
+		"",
+		style(theme.Muted, normal).Render("Resize the window, or press q to quit."),
+	)
+	return layout.Fit(strings.Join(lines, "\n"), width, height)
+}
+
+// renderError is the whole screen when startup cannot continue, for example
+// when the token is rejected.
+func renderError(theme Theme, title, detail string, width, height int) string {
+	lines := []string{
+		"",
+		style(theme.ErrorTitle, bold).Render(title),
+		"",
+	}
+	for _, line := range strings.Split(detail, "\n") {
+		lines = append(lines, style(theme.ErrorBody, normal).Render(line))
+	}
+	lines = append(lines,
+		"",
+		style(theme.Muted, normal).Render("Press r to retry, q to quit."),
+	)
+	return layout.Fit(strings.Join(lines, "\n"), width, height)
+}
+
+// statusTTL is how long a transient footer message stays on screen.
+const statusTTL = 5 * time.Second
+
+// statusClearMsg expires a footer status message. The generation counter keeps
+// an earlier timer from clearing a newer message.
+type statusClearMsg struct{ generation int }

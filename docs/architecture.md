@@ -129,12 +129,20 @@ Main{tab ∈ PRs | Workflows | Issues}
 
 ```go
 type Overlay interface {
-    Update(tea.Msg) (Overlay, tea.Cmd)
-    View(width int) string          // returns content only, never a box
+    Update(tea.Msg) (Overlay, tea.Cmd)   // nil return asks the stack to pop
+    View(width int) string               // returns content only, never a box
+    Title() string                       // drawn above the body; empty means none
     Bindings() []keymap.Binding
 }
 
-type Stack []Overlay                // topmost captures input first
+type Stack struct{ /* ordered overlays plus the shared Chrome */ }
+```
+
+Navigation and stack control travel as messages rather than as methods on the
+route interface, so a route never holds stack bookkeeping:
+
+```go
+type (PushMsg struct{ Route Route }; PopMsg struct{}; ReplaceMsg struct{ Route Route })
 ```
 
 Rules:
@@ -161,22 +169,37 @@ type Confirm struct {
 **Problem it removes:** bindings declared in three unsynchronized places (the update switch, 16 footer call sites, and the help text), which let the README, the help screen, the footer, and the actual behavior diverge.
 
 ```go
-type Scope string                     // e.g. "main.workflows", "pr.details", "overlay.merge"
+type Scope string                     // e.g. "main.workflows", "pr.details", ...
+type Action string                    // stable intent, e.g. "open-browser"
 type Binding struct {
-    Keys        []string
+    Action      Action
+    Keys        []string              // values reported by KeyString
     Help        string
-    Action      func() tea.Cmd
     Destructive bool
 }
 func For(scope Scope) []Binding
-func Match(scope Scope, msg tea.KeyPressMsg) (Binding, bool)
+func Lookup(scope Scope, key string) (Action, bool)
+func KeyString(msg tea.KeyPressMsg) string
 ```
+
+The keymap is data plus lookup, with no styling and no transport, so it stays
+cheap to test and cannot import a screen.
+
+`KeyString` exists because `msg.String()` reports an uppercase letter only when
+the terminal supplies the shifted character as `Text`. A terminal using the
+Kitty keyboard protocol sets `ShiftedCode` and leaves `Text` empty, in which
+case `String()` lowercases the letter and a `C` binding would never fire.
+`KeyString` recovers the uppercase form.
 
 Rules:
 
-- Dispatch is by binding lookup in the route's scope. There are no `switch msg.String()` key literals in route code.
-- The footer renders from the active scope's bindings.
-- The help overlay renders from the same bindings, grouped by scope.
+- Dispatch is by action lookup in the route's scope, falling back to the global
+  scope. There are no `switch msg.String()` key literals in route code.
+- The footer renders from the same bindings, globals pinned first so a narrow
+  footer drops scope hints rather than the keys that work everywhere.
+- The help route renders from the same bindings, grouped by scope.
+- A test asserts every scope in the table appears in the help order, every
+  binding is reachable by lookup, and no scope binds one key to two actions.
 - The README keybinding tables are generated from, or asserted against, the same bindings.
 
 **Enforced by:** a test asserting every binding appears in help and is reachable, and that no key is handled outside the keymap.
@@ -259,17 +282,19 @@ Pinned at the time of writing (verified against the module proxy):
 
 | Module | Version |
 | --- | --- |
-| `github.com/charmbracelet/bubbletea/v2` | v2.1.0 |
-| `github.com/charmbracelet/lipgloss/v2` | v2.0.6 |
-| `github.com/charmbracelet/bubbles/v2` | v2.2.1 |
-| `github.com/charmbracelet/glamour/v2` | v2.0.1 |
-| `github.com/charmbracelet/x/ansi` | latest |
+| `charm.land/bubbletea/v2` | v2.1.0 |
+| `charm.land/lipgloss/v2` | v2.0.6 |
+| `charm.land/bubbles/v2` | v2.2.1 (added when the first widget needs it: the log viewport and the text inputs) |
+| `charm.land/glamour/v2` | v2.0.1 (added with markdown rendering) |
+| `github.com/charmbracelet/x/ansi` | v0.11.9 |
 | `github.com/charmbracelet/x/exp/teatest/v2` | v2.0.0-20261011004359-2acd7e345453 (untagged; pin the pseudo-version) |
+| `github.com/charmbracelet/x/exp/golden` | v0.0.0-20251109135125-8916d276318f (test-only) |
 | `github.com/shurcooL/githubv4` | v0.0.0-20260209031235-2402fdf4a9ed (untagged; pin the pseudo-version) |
 | `golang.org/x/time` | v0.16.0 |
 
 Bubble Tea v2 contract changes to build against from the start:
 
+- Charm's v2 modules moved to the `charm.land` vanity domain. The go-import meta tags there point back at `github.com/charmbracelet/<pkg>`, but the module paths declared in their `go.mod` files are `charm.land/...`, so imports must use `charm.land/...`. The two exceptions are `github.com/charmbracelet/x/ansi` (still on the GitHub path) and `github.com/charmbracelet/x/exp/teatest/v2` (declares the GitHub path; `charm.land/x/exp/teatest/v2` does not resolve).
 - `View()` returns `tea.View`, constructed with `tea.NewView(content)`; alternate screen is a field on the view rather than a program option.
 - Key messages are `KeyPressMsg` / `KeyReleaseMsg` carrying a typed `Key`. Exact signatures are confirmed against pkg.go.dev at the start of Phase 1 rather than assumed.
 
@@ -318,3 +343,41 @@ Unchanged and load-bearing:
 - `main.version`, `main.commit`, `main.date` remain `main`-package variables, injected by goreleaser `-X` ldflags.
 - `release-please-config.json` and `.github/workflows/release.yml` stay as they are, plus `bump-minor-pre-major: true` so breaking changes move `0.x` to the next minor while the rewrite is unstable. Moving to `1.0.0` is a deliberate later act.
 - `internal/auth.Config`'s YAML keys and the config path stay byte-compatible. A `version` key is added; nothing is removed or renamed.
+
+---
+
+## 10. Build status
+
+### Phase 1 — foundation and shell (this change)
+
+Shipped:
+
+| Package | State |
+| --- | --- |
+| `internal/layout` | `Rect`, `Frame`, `Layout`, `Fit`, `Truncate`. Swept over sizes and randomized wide-rune content. |
+| `internal/keymap` | The binding table, `Lookup`, `KeyString`, footer and help rendering inputs, and the generated `docs/keybindings.md`. |
+| `internal/overlay` | Modal stack over a lipgloss v2 `Canvas`, the generic `Confirm`, and a property test that proves composited frames keep exact geometry. |
+| `internal/store` | The `Store` interface, a REST implementation, a keyed TTL cache with single-flight, and one shared `x/time/rate` limiter. |
+| `internal/ui` | Root model, route stack, breadcrumbs, header with rate-limit indicator, footer from the keymap, transient status message, splash, error screen, too-small screen, tabbed main route, help route, context switcher. |
+
+Deleted: the v1 `internal/tui` package and its `app_test.go`.
+
+Deliberately not in this phase: list bodies. `internal/ui` renders three tabs
+with live chrome, tabs, help, and key routing, but no rows yet. The data layer
+arrives with the routes that need it.
+
+### Security findings
+
+| Finding | Status |
+| --- | --- |
+| F2 — the browser opener accepted any URL scheme | Closed. `ui.OpenBrowser` validates the scheme and host at the boundary; `ValidateBrowserURL` is unit-tested. |
+| F4 — the credential source label printed the config file's absolute path | Closed. `auth` reports the file name only; a test asserts no path separator reaches the label. |
+| F1 — `viewerCanMerge` fails open when the scope header is absent | Open, owned by the PR details phase. GitHub still enforces authorization server-side, so this is a correctness and UX issue. |
+| F3 — `io.ReadAll` on job logs is unbounded | Open, owned by the logs phase. |
+| F5 — 14 stdlib advisories at `go1.26.5` | Open, standalone. Fixed by the `go1.26.6` toolchain; reproduced identically on the previous `main`, so it is not introduced here. |
+
+### Release hold
+
+Do not merge a release-please release PR between the first and last rewrite
+phase. The intermediate states are deliberately incomplete, and cutting a
+release from one would publish a shell.

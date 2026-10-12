@@ -122,7 +122,9 @@ func ResolveTokenWithCliGetter(cliGetter func() (string, error)) (string, *Confi
 	var loadedCfg *Config
 	if path, err := ResolveConfigPath(); err == nil {
 		if cfg, err := LoadConfig(path); err == nil && cfg.GitHubToken != "" {
-			cfg.TokenSource = "config file: " + path
+			// Report the file name only. The full path contains the user's home
+			// directory, and this label is rendered on screen.
+			cfg.TokenSource = "config file: " + filepath.Base(path)
 			return cfg.GitHubToken, cfg, nil
 		}
 		loadedCfg = &Config{}
