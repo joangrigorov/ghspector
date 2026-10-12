@@ -119,14 +119,16 @@ reader's step.
 | `go mod tidy -diff` | clean |
 | `gofmt -l` | clean except `internal/gh/{client,client_test,types}.go`, whose drift predates the rewrite and is left alone |
 | `./ghspector -v` | prints `ghspector <version>`, `commit: <sha>`, `build date: <date>` and exits 0 |
+| CI `Test and Lint` on the PR | pass — 1m00s |
 
-The built binary was also run once under a pty with a deliberately invalid
+The built binary was also run twice under a pty with a deliberately invalid
 `GH_TOKEN`: it rendered the splash, reached GitHub, and drew the error screen
-with the rejection message, the retry and quit hints and the token source label,
-then exited cleanly on `q`. Without a TTY it reports an open-TTY error and exits
-1, which is the expected shape for a TUI in a pipe. A live session against real
-pull requests was not run: that needs a real token, and reading one out of the
-user's credential store is out of bounds for this session.
+with the rejection message, the retry and quit hints and the token source label.
+The first run was stopped by a timeout; the second, with `q` sent to the pty,
+exited 0. Without a TTY it reports an open-TTY error and exits 1, which is the
+expected shape for a TUI in a pipe. A live session against real pull requests
+was not run: that needs a real token, and reading one out of the user's
+credential store is out of bounds for this session.
 
 Screen and flow coverage:
 
