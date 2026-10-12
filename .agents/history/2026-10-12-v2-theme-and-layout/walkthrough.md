@@ -111,6 +111,7 @@ highlight, which is the reader's step.
 | `go mod tidy -diff` | clean |
 | `gofmt -l` | clean except `internal/gh/{client,client_test,types}.go`, whose drift predates the rewrite and is left alone |
 | `./ghspector -v` | prints `ghspector <version>`, `commit: <sha>`, `build date: <date>` and exits 0 |
+| CI `Test and Lint` on the PR | pass — 58s, on the code commit `e6845c0` |
 
 Screen and flow coverage for this change:
 
