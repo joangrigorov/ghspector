@@ -33,12 +33,12 @@ Monitoring GitHub Actions workflows across multiple active repositories typicall
 - **Real-Time Polling**: Active background status updates for runs, jobs, logs, pull requests and issues.
 - **Workflow & Log Viewer**: Cycle through historical attempts of multi-run workflows and tail active jobs in real-time.
 - **Keyboard-Driven PR Management**: Read PR descriptions, inspect Action checks/comments, and merge (Squash, Normal, Rebase) or close PRs directly.
-- **The Whole Conversation**: A pull request's discussion is read from the three lists GitHub keeps it in — comments, reviews, and the inline comments a review carries — merged in the order they were written, with each review's verdict, summary and file threads (`path:line`, the hunk, the replies) under it.
+- **The Whole Conversation**: A pull request's discussion is read from the three lists GitHub keeps it in — comments, reviews, and the inline comments a review carries — merged in the order they were written, with each review's verdict, summary and file threads (`path:line`, the hunk, the replies) under the review that opened them. A thread is the comment it started from, so a reply posted from a later review stays under the remark it answers.
 - **Issue Browser**: Read issue descriptions and metadata, and follow a thread's comments, with author/assignee filters.
 - **Rendered Markdown**: Pull request and issue descriptions, comments and commit messages are rendered as documents — headings, lists, quotes, inline code — in the same palette as the rest of the screen, in either light or dark mode.
 - **Actor Filtering**: Quick text filtering to isolate workflow runs, PRs or issues by specific users.
 - **Context Switcher**: Swap between user profiles and organization scopes on the fly.
-- **Terminal Hyperlinks**: Support for clickable OSC 8 links and quick keys to open runs, jobs, and PRs in your default browser.
+- **Terminal Hyperlinks**: Support for clickable OSC 8 links and quick keys to open runs, jobs, and PRs in your default browser. On the conversation screens the repository, the branch compare, every thread's location, and the name and time of every contribution are links too.
 - **Honest Counts**: A list says "Load More" while the API reports matches left, rather than when a page happened to come back full.
 
 ---

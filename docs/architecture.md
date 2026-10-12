@@ -863,6 +863,83 @@ update loop is a larger change than this one.
 Verification: the checks the conversation fix above lists, plus a live run of the
 built binary (arrows scroll the reported pull request; the lag is gone).
 
+### Fix — a thread is the comment it started from (this change)
+
+The Comments sub-tab drew every inline remark as a thread of its own. The live
+evidence, read off the pull request the report named: 41 inline comments, 25 of
+them replies, and **every one of those 25 replies arrived in a later review than
+the comment it answers** — GitHub posts a reply as part of a new review, so the reply carries
+`pull_request_review_id` of the review that posted it while `in_reply_to_id`
+names the remark it answers. 13 of the 16 threads spanned more than one review.
+`groupThreads` was called once per review, so it could only merge a reply whose
+parent happened to be in the same slice: 41 comments became 41 thread headers,
+13 locations were drawn more than once, and one location was drawn four times.
+
+`groupThreads` now takes the comments of the whole page and works out the thread
+each belongs to by walking `in_reply_to_id` to the comment the exchange started
+from. A thread is placed, and its location and hunk excerpt taken, from that
+comment; a reply whose root is not on the page — the page was cut, or the token
+cannot see it — is gathered under the remark it names rather than dropped or
+drawn alone; and the remarks of a thread are ordered by time, whatever order the
+API returned them in. `newConversation` then attributes each thread to the review
+that owns its root comment, so a review that only replied reads as a heading with
+nothing beneath it while the exchange stays where it was written.
+
+The fixture made this defect invisible: it put the reply in the same review as
+the comment it answered, a shape the API does not return. `fixtureInline` now
+posts the reply from a second review, which is why `pr_comments_120x40` gained a
+bare review block: the reply's review, holding none of the thread now drawn above
+it. `TestConversationGroupsAThreadAcrossReviews`,
+`TestConversationFollowsAChainOfReplies` and
+`TestConversationGathersRepliesToAMissingComment` cover the grouping at the unit
+level, and `TestPRCommentsKeepAThreadTogetherAcrossReviews` counts the location
+on the screen.
+
+### Feat — the conversation links what it names (this change)
+
+The screen already linked the pull request title and the author of each
+contribution. It now also links what the rest of its text names, all of it built
+in `internal/ui/links.go` from what the API returned rather than from the screen's
+own state, so a URL cannot point at something the row it is drawn from does not
+belong to:
+
+| Text | Opens |
+| --- | --- |
+| the repository in the heading | the repository page |
+| `Source: x → Base: y` | the compare between the branches |
+| a thread's `path:line` | the thread on GitHub |
+| an issue conversation's heading | the issue |
+| a contribution's name and time | that comment |
+
+Two choices are deliberate. A thread's location opens the remark's permalink
+rather than a blob URL built from the head SHA, because GitHub keeps a comment on
+the line it was written against — the API reports that line as zero once the diff
+has moved past it — so a blob URL would point at the wrong line the moment the
+branch moves on, while the permalink always lands on the remark. And the name and
+the time both carry the same permalink: the whole of what identifies a
+contribution opens it, and neither link is the only way in.
+
+The live run found the heading links dead. The REST payload carries the
+repository only under `head.repo` and `base.repo`, so `Repository.FullName` at the
+top level of the detail response is empty, and both the repository link and the
+compare link were built from it. `repoFullName` now takes the name the payload
+carried when it carried one and the reference the route was opened with
+otherwise, and the test fixtures no longer inject a top-level `repository` object:
+the injected object had hidden the defect, and the fixtures now mirror the shapes
+GitHub returns. The fallback is what the heading already drew, so the text on
+screen is unchanged and it opens the repository it names.
+
+The links are OSC 8 sequences, so a terminal without support prints the text and
+ignores them, and the plain palette the goldens render emits none: the link
+decisions are pinned by `TestConversationLinksTheChromeAndTheThread` and
+`TestIssueScreensLinkTheIssue` against a coloured palette, and the golden files
+stay byte-for-byte free of escape sequences beyond the styling they always had.
+
+Verification: the checks the conversation fix above lists, plus a live run of the
+built binary against the reported pull request — 41 thread headers became 16, and
+the raw pane carries the OSC 8 tokens for the repository, the compare, the thread
+locations and the comment permalinks.
+
 ### Security findings
 
 | Finding | Status |
