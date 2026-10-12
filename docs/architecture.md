@@ -41,7 +41,7 @@ internal/gh   internal/gql                                     (transport)
       └── internal/auth, internal/config                        (infrastructure)
 ```
 
-Dependency direction is strictly downward. `ui` never imports `gh` or `gql`; it consumes store types. `gh` and `gql` are stateless and know nothing about the UI or the store's cache.
+Dependency direction is strictly downward. `ui` never imports `gh` or `gql`; it consumes store types. `gh` and `gql` carry no application state — `gql.Client` remembers the last rate-limit report and nothing else — and know nothing about the UI or the store's cache.
 
 ### Package responsibilities
 
@@ -54,7 +54,7 @@ Dependency direction is strictly downward. `ui` never imports `gh` or `gql`; it 
 | `internal/ui/widgets` | Table, log view, breadcrumbs, status bar, spinner | Read the root model |
 | `internal/store` | Cache, cursors, aggregation, single rate limiter | Format anything for display |
 | `internal/gh` | REST endpoints, pagination helpers, error mapping | Hold mutable application state |
-| `internal/gql` | GraphQL queries and mutations, cursor pagination | Know about `gh`'s types |
+| `internal/gql` | GraphQL queries, cursor pagination, and mapping a response into the domain types | Define its own parallel types for what it returns; reach the network outside the store's limiter |
 | `internal/auth` | Token resolution, config load/save | Know about the UI |
 
 ---
@@ -231,8 +231,8 @@ type Store interface {
 
 - Query types (`RunQuery`, `PRQuery`) carry scope, state, actor, author, assignee, reviewer, and cursor. Filtering is a property of the query, which is what lets v2 move it server-side.
 - Caching and cursors live here, keyed by resource and scope. The UI holds presentation state only.
-- Pagination is cursor-based for GraphQL and page-based for REST, behind the same `Page` types.
-- One rate limiter is shared by the REST and GraphQL transports. REST feeds it from response headers; GraphQL feeds it from the `rateLimit { cost remaining resetAt }` field included in every query.
+- Pagination is cursor-based for GraphQL and page-based for REST, behind the same `Page` types. A cursor API cannot jump to page N, so `store.searchScope` walks the pages before the one asked for; each walk step goes through the cache, and the page before the one being loaded is the page on screen, so a "Load More" costs one query.
+- One rate limiter is shared by the REST and GraphQL transports. REST spends a request; GraphQL reserves the points its query cost, which the response reports after the fact, so the previous query's cost is what the next one reserves. The header renders whichever transport has less left, because either one can cut the app off.
 
 **Enforced by:** store tests that run the same query against a REST-backed and a GraphQL-backed transport and assert equivalent domain objects, plus a test that the limiter depletes by the reported query cost.
 
@@ -240,21 +240,21 @@ type Store interface {
 
 ## 4. Transport split
 
-**GraphQL (`internal/gql`, via `shurcooL/githubv4`)** handles listing and aggregation, where a single cursor-paginated query replaces N per-repository requests:
+Which list belongs on which transport is a schema question, so the answer was read off the published schema (`https://docs.github.com/public/fpt/schema.docs.graphql`) rather than assumed.
 
-- workflow runs across a scope
-- pull requests across a scope, including author/assignee/reviewer filters server-side
-- issues across a scope, with the PR-exclusion handled by the API rather than by a client-side predicate
-- repository lists (kept as REST fallback if GraphQL proves awkward for a scope)
+**GraphQL (`internal/gql`, via `shurcooL/githubv4`)** serves the scope-wide pull request and issue lists. `Query.search` is the only connection that spans a scope for them: `Organization` exposes no issue or pull request connection at all, and `User.pullRequests` / `User.issues` are the authored-by connections, which answer a different question. Each list is therefore one cursor-paginated search query per page, with `state`, `repo`, `author`, `assignee` and `review-requested` as qualifiers the API applies across the whole scope, `HasMore` from the index's own match count, and the cursor the page ends with starting the next one. `Repository.pullRequests` and `Repository.issues` exist, but using them would rebuild the per-repository fan-out in a different dialect.
 
-**REST (`internal/gh`)** handles what GraphQL does not cover well:
+**REST (`internal/gh`)** serves everything else:
 
+- workflow runs across a scope, which no transport can list: the schema's only run connection is `Workflow.runs`, which hangs off a single workflow file, and `Query.search` has no run index (`SearchType` is discussion, issue, repository and user). The runs list keeps its bounded fan-out, and `store.maxAggregateRepos` is that cap.
+- the fallback for a scope the search index will not serve
 - job logs (`/actions/jobs/{id}/logs`) — REST-only, and the error body is XML
+- repository lists (the fan-out's targets and the context switcher)
 - PR file patches and diffs
 - check runs
 - write operations already implemented and tested (merge, close, approve, permission checks)
 
-Both transports share the rate limiter and the error taxonomy (rate-limited, forbidden, not-found, generic).
+The choice lives in `internal/store`: `Client.ScopePRs` and `Client.ScopeIssues` try the search query and fall back to the fan-out, so nothing above the store knows which transport answered. Both transports share the rate limiter and the error taxonomy (rate-limited, forbidden, not-found, generic).
 
 ---
 
@@ -290,7 +290,17 @@ Pinned at the time of writing (verified against the module proxy):
 | `github.com/charmbracelet/x/exp/teatest/v2` | v2.0.0-20261011004359-2acd7e345453 (untagged; pin the pseudo-version) |
 | `github.com/charmbracelet/x/exp/golden` | v0.0.0-20251109135125-8916d276318f (test-only) |
 | `github.com/shurcooL/githubv4` | v0.0.0-20260209031235-2402fdf4a9ed (untagged; pin the pseudo-version) |
+| `github.com/shurcooL/graphql` | v0.0.0-20240915155400-7ee5256398cf (indirect, through `githubv4`) |
 | `golang.org/x/time` | v0.16.0 |
+| `golang.org/x/oauth2` | v0.37.0 (indirect requirement only — see below) |
+
+**No OAuth dependency.** The GraphQL transport authenticates with the same token
+the REST transport uses, written into the `Authorization` header by a ~20-line
+`authTransport` `http.RoundTripper`, so `githubv4.NewClient` receives a stock
+`*http.Client`. `golang.org/x/oauth2` appears in `go.mod` as an indirect
+requirement because `githubv4`'s own `example_test.go` imports it, and `go mod
+tidy` records it for that reason. `go list -deps` over ghspector's packages does
+not include it, so no `oauth2` code is compiled into the binary.
 
 Bubble Tea v2 contract changes to build against from the start:
 
@@ -555,6 +565,111 @@ counts rows on screen, and the tab, its fetch and its return by a `teatest` run
 through the runtime. The issue store gets its own tests for the fan-out, the
 sort, the merge, the filters, `HasMore` and the partial-failure rule.
 
+### Phase 5 — GraphQL aggregation (this change)
+
+The scope-wide lists stop being a guess. Pull requests and issues are one
+cursor-paginated GraphQL search query per page, with the API applying the
+filters across the whole scope and reporting the match count the list ends on;
+the REST fan-out stays underneath them as the fallback. The `store.Store`
+interface did not change, and neither did a line of `internal/ui`.
+
+The phase's exit criterion was "run/PR/issue lists come from GraphQL". Two of the
+three could, and the third cannot, which is why this section records the schema
+evidence as much as the delivery.
+
+| Package | State |
+| --- | --- |
+| `internal/gql` | New. `Client` wraps `shurcooL/githubv4` around a stock `http.Client` (15 s timeout, `http.DefaultTransport`, the token added by a 20-line `authTransport` `RoundTripper`, so the token never reaches a URL, a query, or a message), plus a `Reserver` seam onto the store's limiter, the last `rateLimit` report, and an error mapper onto `gh`'s taxonomy. `SearchIssues`/`SearchPullRequests` build the qualifier query, page it with `after` cursors, request `rateLimit { limit cost remaining resetAt }` on every query, and map responses straight into `gh.Issue`/`gh.PullRequest`. |
+| `internal/store/client.go` | New. `Client` composes `REST` with `gql`. `ScopePRs`/`ScopeIssues` run the search and fall back to the fan-out; `ScopeRuns` stays on `REST`. A 30-second breaker stops a query the API refused from being retried on every poll. `RateLimit()` reports whichever transport has less left. |
+| `internal/store/search.go` | New. `searchScope`/`searchPager` walk the cursors before the page asked for through the cache, so a "Load More" costs one query and a poll that lands on the visible page costs none. `HasMore` comes from the index's match count, and the page is not post-filtered, because the API's qualifiers are exact and a second filter would desync the count from the rows. |
+| `internal/gh` | `GetWorkflowRuns` returns the repository's `total_count` with the page, and `listOfTotal` turns it into `HasMore`: the runs list ends on a count the API reported rather than on a full page it guessed from. |
+| `internal/ui` | Unchanged, which is the phase's proof that the seam held. The UI fixture server still serves REST and refuses `/graphql`, so the UI tests drive the documented fallback on purpose; the search path is covered by the `internal/gql` and `internal/store` tests. |
+
+Fixed while building this:
+
+- **A rate limit can only be read after the query it describes.** `do` first
+  reserved the reported cost by passing `q.RateLimit.budget` — a bound method
+  value, which evaluates its receiver when it is created. The client therefore
+  reserved the zero-valued copy taken before the query ran, and every reservation
+  was one point. It now passes a closure that reads the populated field, and a
+  test asserts that the cost the API reports is the cost the next query reserves.
+- **The decoder rejects a field the query never selected.** `shurcooL/graphql`
+  errors on unknown JSON fields, so a stub that invented a `requestedReviewer`
+  team arm failed with `struct field for "name" doesn't exist`. The fixture now
+  sends a real non-`User` arm (empty, since none of the team fields are
+  selected), which is what a query that only reads `login` would see.
+- **A field tagged with a fragment cannot name a JSON key.** The query writer
+  writes a `graphql` tag *in place of* the field's name, and the response decoder
+  refuses to look up a key in a field whose tag begins with `...`. So a fragment
+  tag belongs on a field *inside* the struct that carries the name — which is why
+  `reviewRequests{nodes{requestedReviewer{... on User{login,databaseId}}}}` has
+  the tag on `User` and not on `RequestedReviewer`. Putting it on the outer field
+  produced both a malformed query and
+  `struct field for "requestedReviewer" doesn't exist in any of 3 places`.
+
+Found by running it against GitHub, which no stub in this repository can do:
+
+- **`databaseId` is not a field of the `Actor` interface.** The first live query
+  came back `Field 'databaseId' doesn't exist on type 'Actor'`, and every
+  scope-wide list silently fell back to the fan-out — the app worked, without the
+  feature. The id is now read through the fragments of the concrete types that
+  carry one (`... on User{databaseId}`, `... on Bot{__typename,databaseId}`), the
+  assignee connection and the review request union read it directly because their
+  type is the concrete `User`, and `TestQueriesSelectAnActorsIDOnItsOwnType` pins
+  both shapes for both queries. A stub server answers whatever it is asked, so
+  nothing short of the real schema could have caught this; the check that did is
+  recorded below.
+- **An app's account has two spellings, and the index knows a third.** GraphQL
+  reports a bot as `github-actions`, REST as `github-actions[bot]`, and the search
+  index matches only `author:app/github-actions` — verified against the live
+  index, where the bare slug returns nothing with the scope qualifier or without
+  it. Two consequences, both fixed: the bot's login is restored to the REST
+  spelling from the `__typename` the `Bot` fragment carries, so the two transports
+  describe the same actor and the column reads the way it always did; and
+  `appQualifier` turns a login ending in `[bot]` into `app/<slug>` before the
+  filter reaches the index, so a filter built from what is on screen matches.
+
+Deviations from the plan for this phase, to be reported at the review gate:
+
+1. **Workflow runs keep the REST fan-out.** The plan asked for all three lists on
+   GraphQL. `Workflow.runs` is the schema's only run connection and it hangs off
+   a single workflow file; `Query.search` has no run index (`SearchType` is
+   discussion, issue, repository, user). The list therefore keeps the fan-out and
+   the cap, and `docs/spec.md` §5.3 records the same evidence.
+2. **The `limit > 8` cap was consolidated, not deleted.** The four duplicated
+   fan-out bodies in the previous `internal/tui/update.go` are gone: one
+   `repoTargets` helper and one `maxAggregateRepos = 8` constant now serve the
+   runs list and the fallback. The cap itself survives for the runs list, which
+   is the one list that still fans out.
+3. **`golang.org/x/oauth2` is not a code dependency.** The transport writes the
+   bearer header itself. See §6 for why the module appears in `go.mod` anyway.
+4. **A failed search is not retried immediately.** A scope the API refuses falls
+   back to REST and the search stays off for 30 seconds, so a poll every five
+   seconds does not turn one refusal into twelve.
+5. **Deferred:** platform-specific `RepoStats` on `RepoRef`, automatic REST
+   failure tracking, and multi-user caching. None is needed for the exit
+   criteria, and each would add state without a caller.
+
+Verification: see the walkthrough for the phase. Beyond the suite below, this
+phase was the first with a path a stub could not stand in for, so it was run
+against GitHub. That run is what found the `Actor` bug above; after the fix it
+shows the scope-wide lists answering from the search index — eleven open issues
+across two repositories where the eight-repository fan-out sees eight, three open
+pull requests where the fan-out sees two — an app filter narrowing the list to
+the one pull request the app opened, and the runs list unchanged on its fan-out.
+
+The suite behind that: the same checks as the previous phases. The new transport
+is pinned by 14 tests against a stubbed GraphQL server — query shape, domain
+mapping, totals and cursors, cost reservation, the error taxonomy, the qualifier
+builder and the app-login rule — and the store by a suite that runs the same
+scope against a GraphQL server and a REST one and asserts equivalent domain
+objects, plus the cursor walk, page caching, the fallback, the fallback's error
+preference, the breaker, and the two-transport rate limit. There is no browser to
+drive for a terminal UI, so the substitute stands as before: `teatest` runs
+through the runtime, one golden per screen at 80×24, 120×40 and 40×15, and
+scripted tests that assert the requests a screen sent, all of which pass
+unchanged in this phase.
+
 ### Security findings
 
 | Finding | Status |
@@ -563,7 +678,18 @@ sort, the merge, the filters, `HasMore` and the partial-failure rule.
 | F4 — the credential source label printed the config file's absolute path | Closed. `auth` reports the file name only; a test asserts no path separator reaches the label. |
 | F1 — `viewerCanMerge` fails open when the scope header is absent | **Closed in Phase 3.** The merge and close gate (`ui.decidePRWrite`) fails closed: repository write permission decides, an unreadable permission is a refusal, and the baseline's scope-header-only answer is gone. |
 | F3 — `io.ReadAll` on job logs is unbounded | **Closed in Phase 2.** `gh.GetJobLogs` reads through a capped reader (`maxLogBytes`, 8 MiB) and appends a truncation note on a line boundary; error bodies are capped at 64 KiB. Tested against an oversized body and for line-boundary truncation. Multiplied by per-route polling, this was a memory-exhaustion vector rather than a vulnerability. |
-| F5 — 14 stdlib advisories at `go1.26.5` | Open, standalone. Fixed by the `go1.26.6` toolchain; reproduced identically on the previous `main`, so it is not introduced here. |
+| F5 — 14 stdlib advisories at `go1.26.5` | Open, standalone. Fixed by a later patch of the same series (the advisory database names `go1.26.6` for five of them and `go1.26.9` for the rest); reproduced identically on the previous `main`, so it is not introduced here. Phase 5's scan reports the same 14 plus 7 advisories in packages and modules the code does not call, all of them standard library as well — nothing from the modules this phase added. |
+
+**Phase 5 transport invariants.** The GraphQL endpoint is a constant, so no
+configuration value can redirect an authenticated request to another host, and
+the endpoint parameter exists for tests alone (`TestNewClientPinsTheEndpointUnlessATestOverridesIt`
+covers both halves). The client is a stock `http.Client` over
+`http.DefaultTransport`, so the platform's own certificate verification
+authenticates the server and no `InsecureSkipVerify` exists to misuse. The token
+is written into the `Authorization` header of a cloned request and formatted into
+no error, message, or log; the stub server asserts that it arrived in the header
+and in no URL. The library's errors are matched on text rather than interpreted,
+and the text is the API's own.
 
 ### Release hold
 

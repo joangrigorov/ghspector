@@ -49,8 +49,8 @@ func defaultFixtures() map[string]string {
 // the requests a person makes one at a time, and a test drives a whole screen's
 // fetch at once, so it is lifted here; the limiter has its own tests in the
 // store package. Extra options adjust the cache a test needs to see through.
-func testStore(srv *httptest.Server, opts ...store.Option) *store.REST {
-	return store.NewREST("test-token", srv.URL,
+func testStore(srv *httptest.Server, opts ...store.Option) *store.Client {
+	return store.New("test-token", srv.URL, srv.URL+graphQLPath,
 		append([]store.Option{store.WithRateLimit(1000, 1000)}, opts...)...)
 }
 

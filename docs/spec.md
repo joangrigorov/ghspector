@@ -367,17 +367,23 @@ Confirm close (`mergeState == 4`):
 | Resource | Page size | Next page | End detection |
 | --- | --- | --- | --- |
 | Repositories | 100 (list), 15 (poll) | not paginated | — |
-| Workflow runs | 8 | Load More sentinel | empty page |
-| Pull requests | 8 | Load More sentinel | empty page |
-| Issues | 50 | Load More sentinel | `len(page) == per_page` |
+| Workflow runs | 8 | Load More sentinel | the repository's `total_count` |
+| Pull requests | 8 | Load More sentinel | the search index's match count |
+| Issues | 50 | Load More sentinel | the search index's match count |
 
 - [x] Each list exposes a "Load More" row as the final selectable row while more pages exist. Delivered for workflow runs, pull requests and issues.
-- [x] On the issues endpoint `HasMore` is read from the raw page, before pull requests are dropped, so a full page keeps the sentinel even when the filtered list is short.
+- [x] The Load More row is offered from the count the API reports rather than from a full page. A page that holds the last item ends the list even when it is full, which is what removes the phantom row the previous rule produced (v2, see [§7](#7-fix-in-v2)).
+- [x] On the REST issues endpoint `HasMore` is still read from the raw page, before pull requests are dropped, so a full page keeps the sentinel even when the filtered list is short. That rule now applies to the fan-out fallback only.
+- [x] The scope-wide pull request and issue lists come from one GraphQL search query per page, with the state and login filters applied by the API across the whole scope (v2). The cursor a page ends with starts the next one.
+- [x] A scope the search index will not serve falls back to the REST fan-out, which is what keeps the screen working when the index refuses (v2).
+- [x] A login filter reads an app the way the index does: a bot's login, which the API spells `<slug>[bot]`, becomes the `app/<slug>` qualifier, so a filter built from the login the list shows narrows to that app's entries. The index matches the bare slug the GraphQL API reports for a bot in no spelling, with or without the scope qualifier (v2).
 - [x] Pull requests are sorted by `updated_at` descending, then by the higher number, so two pull requests touched in the same second have a stable order.
 - [x] Workflow runs are sorted by a status priority, then recency.
 - [x] Jobs are sorted by a job-specific priority.
 - [x] Polled runs are merged into the existing list by run ID, then re-sorted.
 - [x] Polled pull requests are merged by ID, then re-sorted, so a pull request whose state changed replaces its row.
+
+**v2 note on the search index's limits.** The index is eventually consistent, so a write can take a few seconds to appear in a list; it holds at most 1000 matches for one query, which is also where it stops serving pages; and its requests draw on a separate allowance (documented as 30 per minute) on top of the point budget. The app asks for one search per page of a list and polls only the visible tab, so the allowance is not spent on lists nobody is looking at.
 
 ### 5.3 Cross-scope aggregation
 
@@ -386,9 +392,9 @@ Confirm close (`mergeState == 4`):
 - [x] Each repository is queried concurrently, one request per repository.
 - [x] Runs carry their repository embedded so the UI can render owner/repo columns.
 
-**v2 note.** One cap, `store.maxAggregateRepos`, and one `repoTargets` helper serve the runs list, the runs poll, the pull request list, and the pull request poll. The 15-repository poll list is gone.
+**v2 note.** One cap, `store.maxAggregateRepos`, and one `repoTargets` helper serve the runs list and the fan-out fallback that pull requests and issues fall back to. The 15-repository poll list is gone.
 
-**Fix in v2:** replace this fan-out with a scope-wide GraphQL query with real cursor pagination and `total_count` (see [§7](#7-fix-in-v2)).
+**Fix in v2, delivered for two of the three lists.** Pull requests and issues are now one scope-wide GraphQL search query per page with real cursor pagination, the match count, and server-side filters; the fan-out behind them is the fallback rather than the path. **Workflow runs could not follow**, and this is a schema limit rather than a choice: the only run connection in GitHub's GraphQL schema is `Workflow.runs`, which hangs off a single workflow file, and `Query.search` has no run index (`SearchType` is discussion, issue, repository and user). So the runs list keeps the bounded fan-out, and `maxAggregateRepos = 8` now exists for that one list. At a five-second poll that is 1.6 requests a second against the shared five-a-second allowance, which leaves room for the scope lists' searches.
 
 ### 5.4 Polling model
 
@@ -450,8 +456,8 @@ Path: `<os.UserConfigDir()>/ghspector/config.yaml` (Linux/macOS `~/.config/ghspe
 
 These are behavior changes the rewrite is expected to make. They are not parity requirements, and each needs its own test.
 
-- [ ] Replace the 8-repository cap with scope-wide aggregation via GraphQL, with real cursor pagination and `total_count`. **Open:** the GraphQL transport is Phase 5; the REST fan-out is now one cap (`store.maxAggregateRepos`) behind one helper, so the replacement is a single swap.
-- [ ] Move PR author/assignee/reviewer and issue author/assignee filters server-side (GraphQL supports all of them), so filtering is truthful across the whole scope rather than only the current page. **Open:** it rides with the GraphQL transport.
+- [x] Replace the 8-repository cap with scope-wide aggregation via GraphQL, with real cursor pagination and `total_count`. **Delivered for pull requests and issues**, which are one cursor-paginated search query per page and end on the count the index reports. **Not delivered for workflow runs, and not deliverable:** the schema's only run connection is `Workflow.runs`, which hangs off one workflow file, and search has no run index, so the runs list keeps the fan-out and the cap (see §5.3).
+- [x] Move PR author/assignee/reviewer and issue author/assignee filters server-side (GraphQL supports all of them), so filtering is truthful across the whole scope rather than only the current page. **Delivered:** the filters are search qualifiers (`author:`, `assignee:`, `review-requested:`, `repo:`, `state:`), so a filtered list is what the API matched across the scope. The REST fallback still applies its own filter to the page it holds, because the REST list endpoints cannot express one.
 - [x] Unify the workflow actor filter with the other user filters: today it is a `bool` flag plus a prefilled text input, while PRs and Issues use dedicated states.
 - [x] Poll the Issues tab on its own interval. **Delivered:** `keymap.MainIssues` selects the Issues interval, and `polling.issues_interval_seconds` sets it.
 - [ ] Replace the merge-method default cycle, which persists config on a keystroke, with an explicit save or an in-memory default that is written once. **Decided:** the cycle stays, because the method select is the only place it is chosen and a save key would duplicate the `Enter` that already advances. What the item was really about — the write clobbering the file — is fixed: `d` edits the file as a YAML document (`auth.SetDefaultMergeMethod`), so a key this build does not know survives and the token is never re-encoded; a session with no writable path cycles in memory and says "this session only".
@@ -545,15 +551,16 @@ REST calls made by the current implementation. `o` = owner, `r` = repo.
 | --- | --- | --- |
 | `GET /user` | Authenticated user | REST |
 | `GET /user/orgs` | Context list | REST |
-| `GET /users/{o}/repos`, `GET /orgs/{o}/repos` | Repo list (`sort=pushed&direction=desc`) | GraphQL (task: keep REST as fallback) |
-| `GET /repos/{o}/{r}/actions/runs` | Workflow runs, optional `actor` | GraphQL |
+| `GET /users/{o}/repos`, `GET /orgs/{o}/repos` | Repo list (`sort=pushed&direction=desc`) | REST (the list the run fan-out and the fallback cover) |
+| `POST /graphql` (`search`) | Scope-wide pull request and issue lists, one query per page | GraphQL |
+| `GET /repos/{o}/{r}/actions/runs` | Workflow runs, optional `actor` | REST (the schema has no scope-wide run connection; see §5.3) |
 | `GET /repos/{o}/{r}/actions/runs/{id}` | Single run | REST |
 | `GET /repos/{o}/{r}/actions/runs/{id}/jobs` | Jobs | REST |
 | `GET /repos/{o}/{r}/actions/runs/{id}/attempts/{n}/jobs` | Jobs for an attempt | REST |
 | `GET /repos/{o}/{r}/actions/jobs/{id}` | Single job | REST |
 | `GET /repos/{o}/{r}/actions/jobs/{id}/logs` | Job logs (REST-only; errors arrive as XML) | REST |
-| `GET /repos/{o}/{r}/pulls` | Pull requests, `state` | GraphQL |
-| `GET /repos/{o}/{r}/issues` | Issues, `state`; PRs filtered out client-side | GraphQL |
+| `GET /repos/{o}/{r}/pulls` | Pull requests, `state` (the fan-out fallback; the list itself is a search) | GraphQL search, REST fallback |
+| `GET /repos/{o}/{r}/issues` | Issues, `state`; PRs filtered out client-side (the fan-out fallback; the list itself is a search that excludes them by query) | GraphQL search, REST fallback |
 | `GET /repos/{o}/{r}/issues/{n}` | Single issue | REST |
 | `GET /repos/{o}/{r}/pulls/{n}` | Single PR | REST |
 | `GET /repos/{o}/{r}/issues/{n}/comments` | PR and issue comments | REST |
@@ -576,6 +583,7 @@ Cross-cutting client behavior to preserve:
 - [ ] If the rate limit is exhausted and resets in more than 30 s, return a rate-limited error rather than sleeping. If it resets sooner, wait for the reset subject to context cancellation.
 - [ ] `429` → rate-limited error; `401`/`403` → forbidden error including the API message; other `4xx`/`5xx` → error including the API message.
 - [ ] Job-log errors are parsed as XML (`Code`, `Message`) before falling back to the raw body.
+- [x] Every GraphQL query asks for `rateLimit { limit cost remaining resetAt }`, and the cost the API reports is what the next query reserves from the shared limiter (v2). The header renders whichever of the two transports has less left, since either can cut the app off.
 
 ---
 

@@ -61,13 +61,14 @@ func TestRunsTabCursorStopsAtTheEnds(t *testing.T) {
 }
 
 func TestRunsTabLoadMoreSentinel(t *testing.T) {
-	// A full page from the api repository means there may be another one.
-	srv := workflowServer(t, fixtureRuns(8))
+	// Nine runs in the api repository: eight fill the page and the ninth is the
+	// reason the count reports another page.
+	srv := workflowServer(t, fixtureRuns(9))
 	m := workflowsModel(t, srv, 100, 30)
 	runs := runsTabOf(t, m)
 
 	if !runs.hasMore {
-		t.Fatal("hasMore = false after a full page, want true")
+		t.Fatal("hasMore = false with a run beyond the page, want true")
 	}
 	if got := runs.selectable(); got != len(runs.runs)+1 {
 		t.Fatalf("selectable rows = %d, want the runs plus the sentinel", got)
@@ -77,7 +78,8 @@ func TestRunsTabLoadMoreSentinel(t *testing.T) {
 	}
 
 	// Walking to the sentinel and pressing enter fetches the next page, which
-	// the fixture serves empty: the sentinel then goes away.
+	// holds the ninth run: the list grows and the sentinel goes away, because
+	// the count had nothing beyond it.
 	loaded := m
 	for i := 0; i < len(runs.runs); i++ {
 		loaded, _ = pressKey(t, loaded, "j")
@@ -90,10 +92,10 @@ func TestRunsTabLoadMoreSentinel(t *testing.T) {
 	after := runsTabOf(t, next)
 
 	if after.hasMore {
-		t.Error("the sentinel survived an empty next page")
+		t.Error("the sentinel survived the last page")
 	}
-	if len(after.runs) != len(runs.runs) {
-		t.Errorf("an empty page changed the list: %d runs, want %d", len(after.runs), len(runs.runs))
+	if len(after.runs) != len(runs.runs)+1 {
+		t.Errorf("the next page left %d runs, want %d", len(after.runs), len(runs.runs)+1)
 	}
 	if after.cursor > len(after.runs)-1 {
 		t.Errorf("cursor = %d after the sentinel disappeared, want it clamped", after.cursor)
