@@ -89,6 +89,12 @@ The seven checks, on the final commit of the branch:
 | `go mod tidy -diff` | pass (no change) |
 | `gofmt -l internal/ cmd/` | clean except the pre-existing `internal/gh/{client,client_test,types}.go` drift, which predates the rewrite and is left alone |
 
+**CI.** The `Test and Lint` workflow on this branch passed on the code commit
+`cf0c9f4` in 1m29s (run
+[38278594813](https://github.com/joangrigorov/ghspector/actions/runs/38278594813)) —
+the same checks, run by the workflow's own steps, so the table above is not only
+a local record.
+
 ### Run against GitHub
 
 This is the first phase whose feature a stub server cannot referee: a stub

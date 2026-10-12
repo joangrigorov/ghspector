@@ -613,12 +613,12 @@ Found by running it against GitHub, which no stub in this repository can do:
   came back `Field 'databaseId' doesn't exist on type 'Actor'`, and every
   scope-wide list silently fell back to the fan-out — the app worked, without the
   feature. The id is now read through the fragments of the concrete types that
-  carry one (`... on User{databaseId}`, `... on Bot{...}`), the assignee
-  connection and the review request union read it directly because their type is
-  the concrete `User`, and `TestQueriesSelectAnActorsIDOnItsOwnType` pins both
-  shapes for both queries. A stub server answers whatever it is asked, so nothing
-  short of the real schema could have caught this; the check that did is recorded
-  below.
+  carry one (`... on User{databaseId}`, `... on Bot{__typename,databaseId}`), the
+  assignee connection and the review request union read it directly because their
+  type is the concrete `User`, and `TestQueriesSelectAnActorsIDOnItsOwnType` pins
+  both shapes for both queries. A stub server answers whatever it is asked, so
+  nothing short of the real schema could have caught this; the check that did is
+  recorded below.
 - **An app's account has two spellings, and the index knows a third.** GraphQL
   reports a bot as `github-actions`, REST as `github-actions[bot]`, and the search
   index matches only `author:app/github-actions` — verified against the live
