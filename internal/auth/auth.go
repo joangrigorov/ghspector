@@ -3,10 +3,12 @@ package auth
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,6 +89,10 @@ func ResolveConfigPath() (string, error) {
 	return filepath.Join(configDir, "ghspector", "config.yaml"), nil
 }
 
+// warnOut is where the non-fatal config-permission warning goes. It is a
+// variable so a test can read the warning; nothing sets it in production.
+var warnOut io.Writer = os.Stderr
+
 // LoadConfig reads the config file from disk.
 func LoadConfig(path string) (*Config, error) {
 	file, err := os.Open(path)
@@ -101,7 +107,8 @@ func LoadConfig(path string) (*Config, error) {
 		if err == nil {
 			// Warn if permissions are too open (e.g. group/other write or read access)
 			if info.Mode().Perm()&0077 != 0 {
-				fmt.Fprintln(os.Stderr, "Warning: Config file permissions are too open. Please restrict access: chmod 600 config.yaml")
+				// A warning that cannot be printed must not fail the read.
+				_, _ = fmt.Fprintln(warnOut, "Warning: Config file permissions are too open. Please restrict access: chmod 600 config.yaml")
 			}
 		}
 	}
@@ -139,6 +146,101 @@ func SaveConfig(cfg *Config) error {
 	}
 
 	return os.WriteFile(path, data, 0600)
+}
+
+// SetDefaultMergeMethod records method as the config file's
+// default_merge_method, creating the file when it does not exist yet.
+//
+// The file is edited as a YAML document rather than decoded into Config and
+// re-encoded. Re-encoding would rewrite every key this build knows about and
+// silently drop the ones it does not, and decoding the token from the
+// environment into a Config would write a credential to disk that was never in
+// the file. Editing the document changes the one key the TUI owns.
+func SetDefaultMergeMethod(method string) error {
+	if !ValidMergeMethod(method) {
+		return fmt.Errorf("unknown merge method %q", method)
+	}
+	path, err := ResolveConfigPath()
+	if err != nil {
+		return err
+	}
+
+	var doc yaml.Node
+	data, readErr := os.ReadFile(path)
+	switch {
+	case readErr == nil:
+		if unmarshalErr := yaml.Unmarshal(data, &doc); unmarshalErr != nil {
+			return unmarshalErr
+		}
+	case !os.IsNotExist(readErr):
+		return readErr
+	}
+	if len(doc.Content) == 0 {
+		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return fmt.Errorf("config file %s is not a mapping", filepath.Base(path))
+	}
+	setKey(root, "default_merge_method", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: method})
+	setKey(root, "version", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: strconv.Itoa(CurrentConfigVersion)})
+
+	data, err = yaml.Marshal(&doc)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+// setKey sets a top-level key of a YAML mapping, replacing a value that is
+// already there and appending the key when it is not.
+func setKey(mapping *yaml.Node, key string, value *yaml.Node) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			mapping.Content[i+1] = value
+			return
+		}
+	}
+	mapping.Content = append(mapping.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, value)
+}
+
+// MergeMethods are the merge methods the API accepts, in the order the merge
+// overlay cycles through them.
+var MergeMethods = []string{"squash", "merge", "rebase"}
+
+// ValidMergeMethod reports whether method is one of MergeMethods.
+func ValidMergeMethod(method string) bool {
+	for _, m := range MergeMethods {
+		if m == method {
+			return true
+		}
+	}
+	return false
+}
+
+// NextMergeMethod returns the method that follows method in MergeMethods,
+// wrapping around. An unknown method starts the cycle at the first entry.
+func NextMergeMethod(method string) string {
+	for i, m := range MergeMethods {
+		if m == method {
+			return MergeMethods[(i+1)%len(MergeMethods)]
+		}
+	}
+	return MergeMethods[0]
+}
+
+// ResolveMergeMethod returns the merge method to use when the merge overlay
+// opens. An unset or unrecognised value falls back to squash, which is the
+// method the previous version started on.
+func ResolveMergeMethod(configured string) string {
+	if ValidMergeMethod(configured) {
+		return configured
+	}
+	return MergeMethods[0]
 }
 
 // ResolveToken retrieves a GitHub token using the fallback strategy.

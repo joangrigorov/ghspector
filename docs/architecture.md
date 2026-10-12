@@ -366,7 +366,7 @@ Deliberately not in this phase: list bodies. Phase 1 rendered three tabs with
 live chrome, tabs, help, and key routing, but no rows. The data layer arrived
 with the routes that need it.
 
-### Phase 2 — Workflows vertical slice (this change)
+### Phase 2 — Workflows vertical slice (merged as #18)
 
 The Workflows tab, the Jobs route, and the Logs route are real: a run list
 aggregated across the context's repositories, per-attempt job lists, the log
@@ -401,13 +401,63 @@ Verification: see the walkthrough for the phase. In short — `go build`, `go ve
 loop by a fake clock, and the list → jobs → logs path by a `teatest` run through
 the real Bubble Tea runtime.
 
+### Phase 3 — Pull requests vertical slice (this change)
+
+The Pull Requests tab, the pull request detail route with its five sub-tabs, and
+the merge and close flows are real: a pull request list aggregated across the
+context's repositories, a detail screen whose checks resolve back to the workflow
+runs that produced them, a commit list with commit detail, a files-and-diff view,
+a comment list, and merge and close behind a write gate that fails closed.
+
+| Package | State |
+| --- | --- |
+| `internal/store` | `PullRequests` through the same 8-repository fan-out and `repoTargets` helper the runs list uses, with `state` forwarded and poll results merged by ID; `PullRequest` detail, `PRCommits`, `PRFiles`, `Comments`, `Commit`, `CheckRuns`, `Merge`, `Close`, `RepoPermission`. |
+| `internal/ui` | `Main.prsTab`, the `PRDetails` route with its five sub-tabs (Info, Commits, Files, Checks, Comments), the three-pane Info row, the write gate, the merge and close overlays, and OSC 8 hyperlinks. |
+| `internal/overlay` | `method.go`: the merge-method select, built on the shared `Menu`, so the merge flow is overlays rather than a modal state machine. |
+| `internal/keymap` | `MainPRs`, `PRDetails`, `PRCommits`, `CommitDetails`, `PRDiff`, `PRComments`, `PRFilterType`, `MergeMethod`, `MergeConfirm`, `CloseConfirm`. |
+| `internal/auth` | `SetDefaultMergeMethod` edits the config file as a YAML document, so unknown keys survive and the token is never re-encoded. |
+| `cmd/ghspector` | `run(args, stdout)` takes its arguments and version writer as parameters, so the flag handling is tested without a terminal. |
+
+Fixed while building this:
+
+- **The write gate failed open (finding F1, closed).** The baseline's
+  `viewerCanMerge()` answered "yes" whenever the `X-OAuth-Scopes` header was
+  absent, so a token the API said nothing about was advertised as able to write
+  and then rejected at the API. The gate now asks the scope question first and,
+  when the header is absent, asks the question that decides the matter:
+  repository write permission for the authenticated user. An unreadable
+  permission is a refusal. The refusals, the scoped path, a `read` permission and
+  an unreadable permission all have tests in `internal/ui/prs_test.go`.
+- **A chain of overlays drew as one box with a doubled border.** `Stack.View`
+  centred every layer at the same place, so opening the repository picker from
+  the filter menu produced two boxes on top of each other and the only evidence
+  of a stack was a doubled border. Layers now cascade two cells up and to the
+  left per level of depth, which is also what made the *already merged* Phase 2
+  goldens show the defect; they were regenerated and read.
+- **The Info row could draw an empty pane's separator.** At 60 columns the
+  metadata pane was too narrow to hold a label and a value, so the row rendered
+  `││` and a truncated answer. The pane is now dropped rather than squeezed, and
+  the width it would have used returns to the description; a property test
+  renders every width from 12 to 200 and asserts the row tiles the body exactly,
+  with no doubled separator.
+- **The test store throttled its own fixtures.** The shared limiter paces a
+  person's requests one at a time, and a UI test drives a whole screen's fetch at
+  once, so a golden rendered "Loading…" instead of the data. UI tests now lift
+  the limit through one helper, and the limiter keeps its own tests in `store`.
+
+Verification: see the walkthrough for the phase. In short — the same seven
+checks as Phase 2 pass; screens are pinned by 18 pull request goldens and the
+full golden set, the merge/close and filter flows by scripted tests, the pull
+request → sub-tab → detail path and the tab-cycling path by `teatest` runs
+through the real Bubble Tea runtime, and the pane geometry by property tests.
+
 ### Security findings
 
 | Finding | Status |
 | --- | --- |
 | F2 — the browser opener accepted any URL scheme | Closed. `ui.OpenBrowser` validates the scheme and host at the boundary; `ValidateBrowserURL` is unit-tested. |
 | F4 — the credential source label printed the config file's absolute path | Closed. `auth` reports the file name only; a test asserts no path separator reaches the label. |
-| F1 — `viewerCanMerge` fails open when the scope header is absent | Open, owned by the PR details phase. GitHub still enforces authorization server-side, so this is a correctness and UX issue. |
+| F1 — `viewerCanMerge` fails open when the scope header is absent | **Closed in Phase 3.** The merge and close gate (`ui.decidePRWrite`) fails closed: repository write permission decides, an unreadable permission is a refusal, and the baseline's scope-header-only answer is gone. |
 | F3 — `io.ReadAll` on job logs is unbounded | **Closed in Phase 2.** `gh.GetJobLogs` reads through a capped reader (`maxLogBytes`, 8 MiB) and appends a truncation note on a line boundary; error bodies are capped at 64 KiB. Tested against an oversized body and for line-boundary truncation. Multiplied by per-route polling, this was a memory-exhaustion vector rather than a vulnerability. |
 | F5 — 14 stdlib advisories at `go1.26.5` | Open, standalone. Fixed by the `go1.26.6` toolchain; reproduced identically on the previous `main`, so it is not introduced here. |
 

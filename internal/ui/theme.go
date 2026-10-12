@@ -52,6 +52,13 @@ type Theme struct {
 	OverlayBorder color.Color
 	OverlayTitle  color.Color
 	OverlayBody   color.Color
+
+	// Hyperlinks enables OSC 8 links on the names that point at a GitHub page.
+	// It is a capability, not a colour: a plain theme emits no escape sequences
+	// at all, so golden renders and the "no styling" contract hold. A terminal
+	// without OSC 8 support shows the text and ignores the sequence, which is
+	// why this is on by default rather than opt-in.
+	Hyperlinks bool
 }
 
 // DarkTheme returns the theme for a dark terminal background.
@@ -84,6 +91,8 @@ func DarkTheme() Theme {
 		OverlayBorder: lipgloss.Color("#3a3a3a"),
 		OverlayTitle:  lipgloss.Color("#d787ff"),
 		OverlayBody:   lipgloss.Color("#e4e4e4"),
+
+		Hyperlinks: true,
 	}
 }
 
@@ -117,6 +126,8 @@ func LightTheme() Theme {
 		OverlayBorder: lipgloss.Color("#d7d7d7"),
 		OverlayTitle:  lipgloss.Color("#5f00af"),
 		OverlayBody:   lipgloss.Color("#262626"),
+
+		Hyperlinks: true,
 	}
 }
 

@@ -267,6 +267,142 @@ func TestPromptRendersTheInputAndAHint(t *testing.T) {
 	}
 }
 
+// methodOverlay is the merge-method chooser as the pull request view builds it,
+// reduced to what the control itself needs.
+func methodOverlay() Method {
+	return Method{
+		Scope:   keymap.MergeMethod,
+		Heading: "Merge pull request",
+		Intro:   []string{"Choose how to merge this pull request."},
+		Options: []Option{
+			{Action: keymap.ActionMergeSquash, Value: "squash", Label: "Squash and merge"},
+			{Action: keymap.ActionMergeMerge, Value: "merge", Label: "Create a merge commit"},
+			{Action: keymap.ActionMergeRebase, Value: "rebase", Label: "Rebase and merge"},
+		},
+		Default: "squash",
+	}
+}
+
+func TestMethodRendersOptionsKeysAndDefault(t *testing.T) {
+	view := methodOverlay().View(60)
+
+	for _, want := range []string{
+		"Choose how to merge this pull request.",
+		"Squash and merge", "Create a merge commit", "Rebase and merge",
+		"(default)", "Current default: squash",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("method view is missing %q:\n%s", want, view)
+		}
+	}
+	// The key that fires an option is rendered beside it.
+	squashLine := ""
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "Squash and merge") {
+			squashLine = line
+		}
+	}
+	if !strings.HasPrefix(strings.TrimSpace(squashLine), "s") {
+		t.Errorf("the squash option does not lead with its key: %q", squashLine)
+	}
+	if got := methodOverlay().Title(); got != "Merge pull request" {
+		t.Errorf("Title() = %q", got)
+	}
+	if got := len(methodOverlay().Bindings()); got != len(keymap.For(keymap.MergeMethod)) {
+		t.Errorf("Bindings() returned %d entries, want the scope's %d", got, len(keymap.For(keymap.MergeMethod)))
+	}
+}
+
+func TestMethodPickClosesAndReportsTheValue(t *testing.T) {
+	got := chosen{}
+	m := methodOverlay()
+	m.OnPick = func(value string) tea.Cmd {
+		got.value = value
+		return nil
+	}
+
+	next, _ := m.Update(press(t, "r"))
+
+	if got.value != "rebase" {
+		t.Errorf("picked %q, want the value the key stands for", got.value)
+	}
+	if next != nil {
+		t.Error("the chooser stayed open after a pick")
+	}
+}
+
+func TestMethodSubmitAcceptsTheDefault(t *testing.T) {
+	m := methodOverlay()
+	m.OnSubmit = func() tea.Msg { return nil }
+	m.OnPick = func(string) tea.Cmd {
+		t.Error("enter picked an option instead of accepting the default")
+		return nil
+	}
+
+	// Enter runs the submit command, and the chooser is replaced by whatever
+	// that command asks for — the confirmation, in the pull request view.
+	next, cmd := m.Update(press(t, "enter"))
+	if next != nil {
+		t.Error("the chooser stayed open after enter")
+	}
+	if cmd == nil {
+		t.Error("enter produced no command")
+	}
+}
+
+func TestMethodCycleDefaultWalksTheOptionsAndKeepsTheOverlayOpen(t *testing.T) {
+	var cycled []string
+	m := methodOverlay()
+	m.OnCycleDefault = func(value string) tea.Cmd {
+		cycled = append(cycled, value)
+		return nil
+	}
+
+	next, _ := m.Update(press(t, "d"))
+	got, ok := next.(Method)
+	if !ok {
+		t.Fatalf("d closed the chooser; it is %T", next)
+	}
+	if got.Default != "merge" {
+		t.Errorf("default after one cycle = %q, want merge", got.Default)
+	}
+	next, _ = got.Update(press(t, "d"))
+	next, _ = next.(Method).Update(press(t, "d"))
+	if final := next.(Method).Default; final != "squash" {
+		t.Errorf("default after a full cycle = %q, want it wrapped back to squash", final)
+	}
+	if len(cycled) != 3 || cycled[0] != "merge" || cycled[2] != "squash" {
+		t.Errorf("cycled = %v, want the new default reported each time", cycled)
+	}
+}
+
+// TestMethodCycleFromAnUnknownDefault starts at the first option, which is what
+// a config file with an unrecognised method resolves to.
+func TestMethodCycleFromAnUnknownDefault(t *testing.T) {
+	m := methodOverlay()
+	m.Default = ""
+	next, _ := m.Update(press(t, "d"))
+	if got := next.(Method).Default; got != "squash" {
+		t.Errorf("default = %q, want the first option", got)
+	}
+}
+
+func TestMethodCancelCloses(t *testing.T) {
+	m := methodOverlay()
+	if next, _ := m.Update(press(t, "esc")); next != nil {
+		t.Error("esc did not close the chooser")
+	}
+}
+
+func TestMethodIgnoresUnboundKeys(t *testing.T) {
+	m := methodOverlay()
+	for _, key := range []string{"j", "k", "x"} {
+		if next, _ := m.Update(press(t, key)); next == nil {
+			t.Errorf("%q closed the chooser", key)
+		}
+	}
+}
+
 func TestCloseAllPopsEveryOverlay(t *testing.T) {
 	st := NewStack(plainChrome()).
 		Push(&stubOverlay{title: "one"}).
@@ -301,6 +437,7 @@ func TestControlsKeepTheFrameGeometry(t *testing.T) {
 		List{Scope: keymap.RepoSelect, Heading: "Repository", Rows: []string{"api", "web"}, MaxRows: 4},
 		Prompt{Scope: keymap.UserInput, Heading: "Filter by user", Input: &stubInput{value: "octocat"}},
 		Confirm{Scope: keymap.ApproveRun, Heading: "Approve workflow run", Body: []string{"Approve run 1?"}},
+		methodOverlay(),
 	}
 
 	for i, control := range controls {

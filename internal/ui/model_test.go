@@ -31,11 +31,17 @@ func ghServer(t *testing.T, routes map[string]string) *httptest.Server {
 	return srv
 }
 
-// defaultFixtures covers the startup requests: the viewer and their orgs.
+// defaultFixtures covers the startup requests: the viewer, their orgs, and an
+// empty repository list. The lists are aggregated across the context's
+// repositories, so an empty context is the state that leaves every list empty
+// without a request per repository.
 func defaultFixtures() map[string]string {
 	return map[string]string{
-		"/user":      `{"login":"octocat","id":1}`,
-		"/user/orgs": `[{"login":"acme","id":2},{"login":"beta","id":3}]`,
+		"/user":                `{"login":"octocat","id":1}`,
+		"/user/orgs":           `[{"login":"acme","id":2},{"login":"beta","id":3}]`,
+		"/users/octocat/repos": `[]`,
+		"/users/acme/repos":    `[]`,
+		"/users/beta/repos":    `[]`,
 	}
 }
 
@@ -46,11 +52,20 @@ func plainOverlayChrome() overlay.Chrome {
 	return c
 }
 
+// testStore is the store a UI test runs against. The outgoing rate limit paces
+// the requests a person makes one at a time, and a test drives a whole screen's
+// fetch at once, so it is lifted here; the limiter has its own tests in the
+// store package. Extra options adjust the cache a test needs to see through.
+func testStore(srv *httptest.Server, opts ...store.Option) *store.REST {
+	return store.NewREST("test-token", srv.URL,
+		append([]store.Option{store.WithRateLimit(1000, 1000)}, opts...)...)
+}
+
 // newModel builds a model at a size, on the splash.
 func newModel(t *testing.T, srv *httptest.Server, w, h int, tweak ...func(*Options)) Model {
 	t.Helper()
 	opts := Options{
-		Store:       store.NewREST("test-token", srv.URL),
+		Store:       testStore(srv),
 		Theme:       PlainTheme(),
 		Context:     context.Background(),
 		Version:     "test",
@@ -70,17 +85,25 @@ func newModel(t *testing.T, srv *httptest.Server, w, h int, tweak ...func(*Optio
 }
 
 // readyModel drives startup to completion by running the identity command and
-// feeding its result back, which is exactly what the runtime does.
+// feeding its result back, which is exactly what the runtime does. The command
+// that answer produces — the active tab's first fetch — is returned, because
+// what it fetches depends on the fixtures the test serves.
 func readyModel(t *testing.T, srv *httptest.Server, w, h int, tweak ...func(*Options)) Model {
 	t.Helper()
-	m := newModel(t, srv, w, h, tweak...)
-	msg := m.loadIdentity()()
-	next, _ := send(t, m, msg)
-	got := next
-	if got.stage != stageReady {
-		t.Fatalf("startup failed: stage = %v, err = %v", got.stage, got.err)
+	m, _ := startup(t, newModel(t, srv, w, h, tweak...))
+	return m
+}
+
+// startup resolves the identity and returns the ready model with the command
+// that fills the first screen. Tests that serve the active tab's data drive it;
+// the rest leave it, which is the state a real user sees while it is in flight.
+func startup(t *testing.T, m Model) (Model, tea.Cmd) {
+	t.Helper()
+	next, cmd := send(t, m, m.loadIdentity()())
+	if next.stage != stageReady {
+		t.Fatalf("startup failed: stage = %v, err = %v", next.stage, next.err)
 	}
-	return got
+	return next, cmd
 }
 
 // send feeds one message and returns the resulting model.
@@ -451,6 +474,36 @@ func TestHelpOpensClosesAndScrolls(t *testing.T) {
 	}
 }
 
+// TestHelpRendersTheStatusLegend pins the legend to the markers the tables
+// draw: every glyph below comes from statusIndicator, which is what puts the
+// same marker in front of a run, job, check or log row.
+func TestHelpRendersTheStatusLegend(t *testing.T) {
+	srv := ghServer(t, defaultFixtures())
+	m := readyModel(t, srv, 100, 40)
+	m = typeKeys(t, m, "?")
+
+	body := m.View().Content
+	for _, want := range []string{"Status", "◆ waiting", "□ queued", "■ running", "■ success", "■ failed"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("help body missing %q:\n%s", want, body)
+		}
+	}
+	// The legend leads the body, so it is on screen without scrolling.
+	lines := splitLines(body)
+	legend, global := -1, -1
+	for i, line := range lines {
+		if legend < 0 && strings.Contains(line, "waiting") {
+			legend = i
+		}
+		if global < 0 && strings.Contains(line, "Global") {
+			global = i
+		}
+	}
+	if legend < 0 || legend > global {
+		t.Errorf("the legend (line %d) does not lead the keymap sections (line %d):\n%s", legend, global, body)
+	}
+}
+
 func TestSwitcherSelectsAndCloses(t *testing.T) {
 	srv := ghServer(t, defaultFixtures())
 	m := readyModel(t, srv, 80, 24)
@@ -492,7 +545,10 @@ func TestSwitcherSelectsAndCloses(t *testing.T) {
 	}
 
 	m = typeKeys(t, m, "o")
-	m = typeKeys(t, m, "esc")
+	// The switcher asks the stack to pop, so the command is driven the way the
+	// runtime would.
+	m, cmd = pressKey(t, m, "esc")
+	m = drive(t, m, cmd)
 	if _, ok := m.routes.Top().(*Switcher); ok {
 		t.Error("esc did not close the switcher")
 	}
@@ -539,7 +595,7 @@ func TestStatusMessageAndExpiry(t *testing.T) {
 	srv := ghServer(t, defaultFixtures())
 	m := readyModel(t, srv, 100, 24)
 
-	if strings.Contains(m.View().Content, "Refreshed") {
+	if strings.Contains(m.View().Content, "Refreshing pull requests...") {
 		t.Fatal("a status message appeared before one was set")
 	}
 
@@ -548,11 +604,17 @@ func TestStatusMessageAndExpiry(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("refresh returned no command")
 	}
-	// The refresh command is a plain function, so running it yields the status
-	// message and schedules its expiry.
-	next, expiry := send(t, m, cmd())
-	m = next
-	if !strings.Contains(m.View().Content, "Refreshed") {
+	// A refresh answers with a batch: the status message, and the fetch it
+	// describes. Running it yields exactly the messages the runtime delivers.
+	var expiry tea.Cmd
+	for _, msg := range messagesOf(t, cmd) {
+		stepped, follow := send(t, m, msg)
+		m = stepped
+		if _, ok := msg.(StatusMsg); ok {
+			expiry = follow
+		}
+	}
+	if !strings.Contains(m.View().Content, "Refreshing pull requests...") {
 		t.Fatalf("status message missing from the footer:\n%s", m.View().Content)
 	}
 	if expiry == nil {
@@ -562,7 +624,7 @@ func TestStatusMessageAndExpiry(t *testing.T) {
 
 	next, _ = send(t, m, statusClearMsg{generation: generation})
 	m = next
-	if strings.Contains(m.View().Content, "Refreshed") {
+	if strings.Contains(m.View().Content, "Refreshing pull requests...") {
 		t.Error("the status message did not expire")
 	}
 }

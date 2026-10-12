@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 
 	"ghspector/internal/keymap"
@@ -54,7 +56,7 @@ func (h *Help) View(deps Deps, r layout.Rect) string {
 		Title: deps.Theme.Title,
 		Muted: deps.Theme.Muted,
 	}
-	lines := widgets.HelpLines(st, r.W)
+	lines := append(legendLines(deps.Theme, r.W), widgets.HelpLines(st, r.W)...)
 	h.total = len(lines)
 	h.visible = r.H
 
@@ -83,5 +85,35 @@ func (h *Help) scroll(delta int) {
 	}
 	if h.offset > limit {
 		h.offset = limit
+	}
+}
+
+// statusLegend names the states a row marker can stand for. Each entry is drawn
+// by statusIndicator, the same function the run, job, check and log rows use, so
+// the legend cannot describe a symbol the tables do not draw.
+var statusLegend = []struct {
+	label      string
+	status     string
+	conclusion string
+}{
+	{label: "waiting", status: "waiting"},
+	{label: "queued", status: "queued"},
+	{label: "running", status: "in_progress"},
+	{label: "success", conclusion: "success"},
+	{label: "failed", conclusion: "failure"},
+}
+
+// legendLines renders the status legend. It leads the help body so the markers
+// in the tables can be read without scrolling to the end of the reference, and
+// it ends in a blank line so the first keymap section stays separated.
+func legendLines(theme Theme, width int) []string {
+	entries := make([]string, 0, len(statusLegend))
+	for _, entry := range statusLegend {
+		entries = append(entries, statusIndicator(theme, entry.status, entry.conclusion)+" "+entry.label)
+	}
+	return []string{
+		style(theme.Title, bold).Render("Status"),
+		layout.Fit("  "+strings.Join(entries, "   "), width, 1),
+		"",
 	}
 }
