@@ -37,4 +37,4 @@
                                                                                                                         
                                                                                                                         
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
-  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEsc/Backspace[m:Back  [1mr/Ctrl+R[m:Refresh  [1mu/PgUp[m:Scroll up                   
+  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEsc/Backspace[m:Back  [1mj/↓[m:Down a line  [1mk/↑[m:Up a line  [1mr/Ctrl+R[m:Refresh     

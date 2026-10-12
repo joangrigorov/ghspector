@@ -276,7 +276,19 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 - [x] `Esc` / `Backspace` returns to PR Details.
 - [x] `r` / `Ctrl+R` refreshes the comments.
-- [x] Other keys are forwarded to the viewport for scrolling. **Superseded:** v2 binds scrolling explicitly (`u`/`d`), the same as the log viewer (§4.9), so an unbound key does nothing. `TestIssueCommentsScroll` covers the keys; the conversation keeps the same `u`/`d` binding the log viewer has (`keymap.IssueComments`).
+- [x] `j` / `k` / `Down` / `Up` scroll the conversation by one line.
+- [x] `u` / `d` scroll it by three, the pair the log viewer uses (§4.9).
+- [x] Other keys are forwarded to the viewport for scrolling. **Superseded:** v2 binds scrolling explicitly, so an unbound key does nothing. `TestIssueCommentsScroll` and `TestPRCommentsScrollWithTheArrowKeys` cover the keys; the conversation keeps the `u`/`d` binding the log viewer has (`keymap.IssueComments`).
+
+**v2 fix: the conversation is three lists, not one.** The tab read `GET /issues/{n}/comments` alone, so a pull request reviewed and never discussed showed "No comments" while the API was holding dozens of reviews (the reported case, `getpup/backend#1536`: 0 conversation comments, 30 reviews, 30 inline review comments). The sub-tab now reads all three lists at the API maximum of one page each (`per_page=100`) and merges them in the order they were written:
+
+- a conversation comment reads as it did;
+- a review reads as its author, its conclusion (`[approved]`, `[changes requested]`, `[reviewed]`), its submission time, and its summary, with the inline threads it carries underneath;
+- an inline thread reads as `path:line`, the last three lines of the hunk it was written against, and the exchange, replies under the comment they answer.
+
+Two edges are deliberate. A review the viewer has not submitted — state `PENDING`, or no submission time — is a draft, so it and the inline remarks it holds are left out. A page that comes back full is part of a longer discussion, so the pane says so at the end rather than showing a fraction of it as the whole.
+
+**v2 fix: a keystroke costs nothing.** Merging three lists of markdown bodies made the pane expensive to draw — 163 ms for one render of the pull request this was reported from, twice per key press, once to measure the scroll and once to draw. The rendered lines are now held until the data, the width or the palette changes (`internal/ui/render.go`), which is what a keystroke on the conversation now costs: no markdown work at all. The first render after data arrives still happens on the UI goroutine.
 
 ### 4.15 Issue Details
 
@@ -295,7 +307,7 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 - [x] `Esc` / `Backspace` returns to Issue Details.
 - [x] `r` / `Ctrl+R` refreshes the comments.
-- [x] The conversation scrolls with `u` / `d`, the same pair the pull request conversation uses (§4.14).
+- [x] The conversation scrolls with `j` / `k` / `Down` / `Up` a line at a time and with `u` / `d` three lines at a time, the pairs the pull request conversation uses (§4.14).
 
 ### 4.17 Context switcher overlay
 
@@ -566,6 +578,8 @@ REST calls made by the current implementation. `o` = owner, `r` = repo.
 | `GET /repos/{o}/{r}/issues/{n}` | Single issue | REST |
 | `GET /repos/{o}/{r}/pulls/{n}` | Single PR | REST |
 | `GET /repos/{o}/{r}/issues/{n}/comments` | PR and issue comments | REST |
+| `GET /repos/{o}/{r}/pulls/{n}/reviews` | PR reviews: state, summary, submission time | REST |
+| `GET /repos/{o}/{r}/pulls/{n}/comments` | Inline review comments: path, line, hunk, replies | REST |
 | `GET /repos/{o}/{r}/pulls/{n}/commits` | PR commits | REST |
 | `GET /repos/{o}/{r}/pulls/{n}/files` | PR changed files with patches | REST |
 | `GET /repos/{o}/{r}/commits/{sha}` | Commit + files | REST |

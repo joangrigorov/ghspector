@@ -43,6 +43,11 @@ type IssueDetails struct {
 	descFocused bool
 	descScroll  int
 
+	// descLines is the description as it was last rendered, keyed on the body
+	// itself. Every clamp measures the description, so without this a keystroke
+	// pays for the whole markdown body.
+	descLines renderedLines[string]
+
 	sess *session
 }
 
@@ -274,10 +279,14 @@ func (d *IssueDetails) descriptionPane(deps Deps, width, height int) []string {
 		take(lines[start:], visible)...)
 }
 
-// descriptionLines is the description as rendered lines, at the same width
-// clamp uses, so the scroll bound and the pane cannot disagree.
+// descriptionLines is the body as rendered lines, from the cache when the body,
+// the width and the palette are the ones it was rendered at. It is what clamp
+// measures and what the pane draws, so neither pays for the body twice.
 func (d *IssueDetails) descriptionLines(deps Deps, width int) []string {
-	return deps.Markdown.Lines(deps.Theme, d.description(), width)
+	body := d.description()
+	return d.descLines.linesFrom(body, markdownKeyOf(deps.Theme, width), func() []string {
+		return deps.Markdown.Lines(deps.Theme, body, width)
+	})
 }
 
 // metadataPane renders the issue sidebar: what the issue is, who is on it, and
@@ -330,6 +339,12 @@ type IssueComments struct {
 	err      error
 	scroll   int
 
+	// version counts the changes to the conversation, so the rendered lines
+	// below are dropped when a fetch lands. Rendering every body on each frame
+	// and each keystroke is what makes a long thread lag.
+	version  int
+	rendered renderedLines[int]
+
 	sess *session
 }
 
@@ -379,6 +394,7 @@ func (c *IssueComments) Update(deps Deps, msg tea.Msg) (Route, tea.Cmd) {
 		c.err = nil
 		c.loaded = true
 		c.comments = msg.comments
+		c.version++
 		c.clamp(deps)
 		return c, nil
 	}
@@ -392,6 +408,14 @@ func (c *IssueComments) Act(deps Deps, action keymap.Action) (Route, tea.Cmd, bo
 		return c, popCmd(), true
 	case keymap.ActionRefresh:
 		return c, tea.Batch(status("Refreshing comments..."), c.load(deps)), true
+	case keymap.ActionDown:
+		c.scroll++
+		c.clamp(deps)
+		return c, nil, true
+	case keymap.ActionUp:
+		c.scroll--
+		c.clamp(deps)
+		return c, nil, true
 	case keymap.ActionScrollUp:
 		c.scroll -= diffStep
 		c.clamp(deps)
@@ -409,9 +433,13 @@ func (c *IssueComments) clamp(deps Deps) {
 	c.scroll = clampOffset(c.scroll, len(c.lines(deps)))
 }
 
-// lines is the conversation as rendered lines.
+// lines is the conversation as rendered lines, from the cache when the data,
+// the width and the palette are the ones it was rendered at.
 func (c *IssueComments) lines(deps Deps) []string {
-	return commentBlockLines(deps, c.comments, c.bodyWidth(deps))
+	key := markdownKeyOf(deps.Theme, c.bodyWidth(deps))
+	return c.rendered.linesFrom(c.version, key, func() []string {
+		return commentBlockLines(deps, c.comments, key.width)
+	})
 }
 
 // bodyWidth is the width the conversation is wrapped to: the pane it is drawn

@@ -38,6 +38,9 @@ type Markdown struct {
 	// builds counts renderer constructions, so a test can prove a frame does
 	// not build one.
 	builds int
+	// renders counts documents rendered, so a test can prove a frame does not
+	// render one either.
+	renders int
 }
 
 // markdownKey identifies a renderer: the palette it draws with and the width it
@@ -83,6 +86,7 @@ func (m *Markdown) Lines(theme Theme, text string, width int) []string {
 	if m.tr == nil {
 		return wrapLines(text, width)
 	}
+	m.renders++
 	out, err := m.tr.Render(text)
 	if err != nil {
 		// A document this parser refuses is not worth a blank pane: it is

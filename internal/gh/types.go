@@ -187,6 +187,37 @@ type IssueComment struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// Review is a review submitted on a pull request.
+//
+// A review is its own kind of contribution: it carries a state (approved,
+// changes requested, or a comment) and usually a summary body. Its inline
+// comments are separate records that name the review they belong to, which is
+// how the conversation is put back in order.
+type Review struct {
+	ID          int64      `json:"id"`
+	User        *User      `json:"user"`
+	Body        string     `json:"body"`
+	State       string     `json:"state"` // APPROVED, CHANGES_REQUESTED, COMMENTED, PENDING
+	HTMLURL     string     `json:"html_url"`
+	SubmittedAt *time.Time `json:"submitted_at"`
+}
+
+// ReviewComment is one comment in a review thread: the file and line it is
+// attached to, the hunk it was written against, and the comment it replies to.
+type ReviewComment struct {
+	ID                  int64     `json:"id"`
+	PullRequestReviewID int64     `json:"pull_request_review_id"`
+	User                *User     `json:"user"`
+	Body                string    `json:"body"`
+	Path                string    `json:"path"`
+	Line                int       `json:"line"`
+	OriginalLine        int       `json:"original_line"`
+	DiffHunk            string    `json:"diff_hunk"`
+	InReplyToID         int64     `json:"in_reply_to_id"`
+	HTMLURL             string    `json:"html_url"`
+	CreatedAt           time.Time `json:"created_at"`
+}
+
 // Issue represents a GitHub issue.
 type Issue struct {
 	ID          int64      `json:"id"`
