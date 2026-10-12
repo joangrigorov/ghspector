@@ -288,6 +288,10 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 Two edges are deliberate. A review the viewer has not submitted — state `PENDING`, or no submission time — is a draft, so it and the inline remarks it holds are left out. A page that comes back full is part of a longer discussion, so the pane says so at the end rather than showing a fraction of it as the whole.
 
+**v2 fix: a thread is the comment it started from.** GitHub posts a reply as part of a *new* review, so the reply names the review that carried it while `in_reply_to_id` names the remark it answers: on the reported pull request, all 25 replies arrived in a later review than the comment they answer, and 13 of the 16 threads spanned more than one review. Grouping one review at a time drew those 41 comments as 41 threads, each with its own `path:line` and its own hunk excerpt. A thread is now identified by the comment it started from, whatever review each remark came with, and it is drawn under the review that opened it — so a review that only replied reads as its own heading with nothing beneath it, and the exchange stays where it was written. A reply whose root is not on the page is gathered under the remark it names rather than dropped or drawn alone.
+
+**v2 fix: the screen links what it names.** The repository and the branch pair in the heading open the repository and the compare between the branches, each inline thread's `path:line` opens the thread on GitHub (the permalink, which lands on the remark after the diff has moved past its line), and both the author and the time of every contribution open that contribution. The links are OSC 8 sequences that a terminal without support ignores and the plain palette the goldens render never emits.
+
 **v2 fix: a keystroke costs nothing.** Merging three lists of markdown bodies made the pane expensive to draw — 163 ms for one render of the pull request this was reported from, twice per key press, once to measure the scroll and once to draw. The rendered lines are now held until the data, the width or the palette changes (`internal/ui/render.go`), which is what a keystroke on the conversation now costs: no markdown work at all. The first render after data arrives still happens on the UI goroutine.
 
 ### 4.15 Issue Details
@@ -301,13 +305,15 @@ Two edges are deliberate. A review the viewer has not submitted — state `PENDI
 - [x] `r` / `Ctrl+R` refreshes the issue details.
 - [x] The metadata sidebar shows state, author, assignees, labels, milestone, and timestamps.
 
-**v2 note.** The sidebar holds no selection, so a scroll key while it has the focus changes nothing; the toggle is what says which pane the keys act on. The route arrives with the issue the list row already carries, so the heading and the sidebar are populated before the fetch lands, and the description is where the fetch lands. A tick refreshes the issue, as the pull request screen's does for its checks.
+**v2 note.** The sidebar holds no selection, so a scroll key while it has the focus changes nothing; the toggle is what says which pane the keys act on. The route arrives with the issue the list row already carries, so the heading and the sidebar are populated before the fetch lands, and the description is where the fetch lands. A tick refreshes the issue, as the pull request screen's does for its checks. The repository named in the heading opens the repository.
 
 ### 4.16 Issue Comments
 
 - [x] `Esc` / `Backspace` returns to Issue Details.
 - [x] `r` / `Ctrl+R` refreshes the comments.
 - [x] The conversation scrolls with `j` / `k` / `Down` / `Up` a line at a time and with `u` / `d` three lines at a time, the pairs the pull request conversation uses (§4.14).
+
+**v2 note.** The heading names the issue and opens it, and the author and time of every comment open that comment (§4.14).
 
 ### 4.17 Context switcher overlay
 

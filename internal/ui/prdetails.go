@@ -825,12 +825,14 @@ func (p *PRDetails) heading(deps Deps, width int) []string {
 	}
 	title = hyperlink(theme, title, prURL(p.pr))
 
-	repo := p.pr.Repository.FullName
-	if repo == "" {
-		repo = p.ref.String()
-	}
-	detail := fmt.Sprintf("Repo: %s | Author: @%s | Source: %s → Base: %s",
-		repo, prAuthor(p.pr), refOr(p.pr.Head.Ref), refOr(p.pr.Base.Ref))
+	repo := repoFullName(p.pr.Repository.FullName, p.ref)
+	// The repository and the branch pair are the two things this line names
+	// that a reader would want to open, so both are links; the branches go to
+	// the compare between them.
+	head, base := refOr(p.pr.Head.Ref), refOr(p.pr.Base.Ref)
+	detail := "Repo: " + hyperlink(theme, repo, repoPageURL(repo)) +
+		" | Author: @" + prAuthor(p.pr) +
+		" | Source: " + hyperlink(theme, head+" → Base: "+base, compareURL(repo, base, head))
 
 	// The rect is the content box, so these lines carry the left gutter
 	// themselves and reach to the gutter on the right.
