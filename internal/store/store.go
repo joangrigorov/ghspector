@@ -14,8 +14,9 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
-	"ghspector/internal/gh"
+	"github.com/joangrigorov/ghspector/internal/gh"
 )
 
 // Domain types are aliases, so a route can name store.WorkflowRun and the
@@ -220,6 +221,10 @@ type Store interface {
 
 	// RateLimit reports the most recent rate limit headers.
 	RateLimit() RateLimitInfo
+	// RateLimitResetIn reports how long the window the headers describe has
+	// left, measured on the API's clock, and whether its end is known. A
+	// countdown from a local clock is wrong by however far the local clock is.
+	RateLimitResetIn() (time.Duration, bool)
 	// Scopes reports the OAuth scopes of the active token, when the API
 	// supplies them. An empty result means unknown, which is not the same as
 	// insufficient.

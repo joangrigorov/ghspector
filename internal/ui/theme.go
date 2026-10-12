@@ -64,7 +64,18 @@ type Theme struct {
 	// without OSC 8 support shows the text and ignores the sequence, which is
 	// why this is on by default rather than opt-in.
 	Hyperlinks bool
+
+	// Dark reports which background the palette was built for. It is not a
+	// colour and no rule uses it for one: the markdown renderer needs to know
+	// which side of the accent contrast it is on, and that question has no
+	// answer in a set of colours.
+	Dark bool
 }
+
+// Colored reports whether the theme paints at all. A plain theme renders
+// identically on every terminal, which is what golden tests and the markdown
+// renderer's plain style both rely on.
+func (t Theme) Colored() bool { return t.Text != nil }
 
 // ThemeFor returns the theme for a terminal background. It is the one place the
 // decision lives, so a background change and the first draw cannot disagree.
@@ -75,6 +86,20 @@ func ThemeFor(dark bool) Theme {
 	return LightTheme()
 }
 
+// The three colours a rendered body draws with, named once because two readers
+// need them: the palette, and the markdown style, which glamour takes as strings
+// rather than as parsed colours. A literal repeated in two places is a hue that
+// can drift between a pane title and a heading in a body.
+const (
+	darkAccent = "#87d7ff"
+	darkText   = "#e4e4e4"
+	darkMuted  = "#9e9e9e"
+
+	lightAccent = "#005f87"
+	lightText   = "#262626"
+	lightMuted  = "#6c6c6c"
+)
+
 // DarkTheme returns the theme for a dark terminal background.
 //
 // The accent is a sky blue: it carries the header trail, the pane that owns the
@@ -84,31 +109,32 @@ func DarkTheme() Theme {
 	return Theme{
 		HeaderBackground: lipgloss.Color("#303030"),
 		HeaderTitle:      lipgloss.Color("#5fd7ff"),
-		HeaderContext:    lipgloss.Color("#87d7ff"),
+		HeaderContext:    lipgloss.Color(darkAccent),
 		HeaderRule:       lipgloss.Color("#3a3a3a"),
 		StatusOK:         lipgloss.Color("#5fd75f"),
 		StatusWarn:       lipgloss.Color("#d7af00"),
 		StatusFail:       lipgloss.Color("#df5f5f"),
 
 		Title:  lipgloss.Color("#5fd7ff"),
-		Text:   lipgloss.Color("#e4e4e4"),
-		Muted:  lipgloss.Color("#9e9e9e"),
-		Accent: lipgloss.Color("#87d7ff"),
+		Text:   lipgloss.Color(darkText),
+		Muted:  lipgloss.Color(darkMuted),
+		Accent: lipgloss.Color(darkAccent),
 
 		KeyHint: lipgloss.Color("#5fd7ff"),
-		KeyDesc: lipgloss.Color("#9e9e9e"),
+		KeyDesc: lipgloss.Color(darkMuted),
 
 		ErrorTitle: lipgloss.Color("#df5f5f"),
-		ErrorBody:  lipgloss.Color("#e4e4e4"),
+		ErrorBody:  lipgloss.Color(darkText),
 
 		SplashLogo: lipgloss.Color("#5fd7ff"),
-		SplashText: lipgloss.Color("#9e9e9e"),
+		SplashText: lipgloss.Color(darkMuted),
 
 		OverlayBorder: lipgloss.Color("#3a3a3a"),
 		OverlayTitle:  lipgloss.Color("#5fd7ff"),
-		OverlayBody:   lipgloss.Color("#e4e4e4"),
+		OverlayBody:   lipgloss.Color(darkText),
 
 		Hyperlinks: true,
+		Dark:       true,
 	}
 }
 
@@ -117,30 +143,30 @@ func DarkTheme() Theme {
 func LightTheme() Theme {
 	return Theme{
 		HeaderBackground: lipgloss.Color("#eaeaea"),
-		HeaderTitle:      lipgloss.Color("#005f87"),
-		HeaderContext:    lipgloss.Color("#005f87"),
+		HeaderTitle:      lipgloss.Color(lightAccent),
+		HeaderContext:    lipgloss.Color(lightAccent),
 		HeaderRule:       lipgloss.Color("#d7d7d7"),
 		StatusOK:         lipgloss.Color("#008700"),
 		StatusWarn:       lipgloss.Color("#af8700"),
 		StatusFail:       lipgloss.Color("#af0000"),
 
-		Title:  lipgloss.Color("#005f87"),
-		Text:   lipgloss.Color("#262626"),
-		Muted:  lipgloss.Color("#6c6c6c"),
-		Accent: lipgloss.Color("#005f87"),
+		Title:  lipgloss.Color(lightAccent),
+		Text:   lipgloss.Color(lightText),
+		Muted:  lipgloss.Color(lightMuted),
+		Accent: lipgloss.Color(lightAccent),
 
-		KeyHint: lipgloss.Color("#005f87"),
-		KeyDesc: lipgloss.Color("#6c6c6c"),
+		KeyHint: lipgloss.Color(lightAccent),
+		KeyDesc: lipgloss.Color(lightMuted),
 
 		ErrorTitle: lipgloss.Color("#af0000"),
-		ErrorBody:  lipgloss.Color("#262626"),
+		ErrorBody:  lipgloss.Color(lightText),
 
-		SplashLogo: lipgloss.Color("#005f87"),
-		SplashText: lipgloss.Color("#6c6c6c"),
+		SplashLogo: lipgloss.Color(lightAccent),
+		SplashText: lipgloss.Color(lightMuted),
 
 		OverlayBorder: lipgloss.Color("#d7d7d7"),
-		OverlayTitle:  lipgloss.Color("#005f87"),
-		OverlayBody:   lipgloss.Color("#262626"),
+		OverlayTitle:  lipgloss.Color(lightAccent),
+		OverlayBody:   lipgloss.Color(lightText),
 
 		Hyperlinks: true,
 	}

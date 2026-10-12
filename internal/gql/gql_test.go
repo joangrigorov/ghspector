@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"ghspector/internal/gh"
+	"github.com/joangrigorov/ghspector/internal/gh"
 )
 
 // testToken is the credential every stub client is built with. Tests assert that
@@ -733,5 +733,27 @@ func TestNewClientPinsTheEndpointUnlessATestOverridesIt(t *testing.T) {
 	c := NewClient(testToken, "", nil)
 	if c == nil {
 		t.Fatal("client = nil")
+	}
+}
+
+// TestSearchCleansTerminalInstructionsFromTheResponse covers the GraphQL side of
+// the boundary the REST transport also guards: an issue title and body are
+// written by whoever opened the issue.
+func TestSearchCleansTerminalInstructionsFromTheResponse(t *testing.T) {
+	node := issueNode()
+	node["title"] = "Add \x1b]52;c;cGF5bG9hZA==\x07the issues view"
+	node["body"] = "Issues are\x1b[2J the third list."
+	_, c := newStub(t, searchReply(t, node, 1, "", false))
+
+	page, err := c.SearchIssues(context.Background(), SearchInput{Owner: "octocat", First: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := page.Items[0]
+	if got.Title != "Add the issues view" {
+		t.Errorf("title = %q, want the instruction removed", got.Title)
+	}
+	if got.Body != "Issues are the third list." {
+		t.Errorf("body = %q, want the instruction removed", got.Body)
 	}
 }

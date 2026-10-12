@@ -5,7 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/keymap"
 )
 
 // Option is one entry of a Method overlay: the action its key fires, the value

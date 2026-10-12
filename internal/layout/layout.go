@@ -111,6 +111,17 @@ func (r Rect) SplitRows(topHeight int) (top, bottom Rect) {
 		Rect{X: r.X, Y: r.Y + topHeight, W: r.W, H: r.H - topHeight}
 }
 
+// SplitRowsFair splits off a top band of at most want rows, and never more than
+// a third of the rect.
+//
+// It exists for a block whose height is not known before it is rendered — a
+// commit message, say, which is as long as its author made it. The cap is what
+// keeps such a block from taking the region the block below it needs, and it is
+// here rather than in a view because it is the same division at every size.
+func (r Rect) SplitRowsFair(want int) (top, bottom Rect) {
+	return r.SplitRows(min(want, max(r.H/3, 1)))
+}
+
 // Fit forces s into exactly w columns and h rows.
 //
 // Lines are truncated or space-padded to w, and the block is padded or clipped

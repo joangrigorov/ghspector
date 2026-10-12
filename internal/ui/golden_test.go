@@ -10,8 +10,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/exp/golden"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/overlay"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/overlay"
 )
 
 // modalModel opens a merge confirmation over m, so the composited frame has a

@@ -1,4 +1,4 @@
-  [1mPull Requests[m                                                 Account: octocat
+  [1mPull Requests[m                                            .    Account: octocat
 ────────────────────────────────────────────────────────────────────────────────
  [1m Pull Requests [m│ Workflows │ Issues                                            
 [1m  ST  PR     TITLE                              AUTHOR          [m                
@@ -21,4 +21,4 @@
                                                                                 
                                                                                 
 ────────────────────────────────────────────────────────────────────────────────
-  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1my/Y[m:Yes, merge  [1mn/N/Esc[m:Cancel   
+  [1mq/Ctrl+C[m:Quit  [1my/Y[m:Yes, merge  [1mn/N/Esc[m:Cancel                                 

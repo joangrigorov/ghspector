@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -107,14 +109,6 @@ func TestClient_GetWorkflowRunsAndJobs(t *testing.T) {
 			_, _ = w.Write([]byte("Job logs line 1\nJob logs line 2"))
 			return
 		}
-		if r.URL.Path == "/repos/owner/repo/actions/jobs/404/logs" {
-			w.Header().Set("Content-Type", "application/xml")
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.
-RequestId:f907b3df-401e-0001-0fa1-0fc4e0000000
-Time:2026-07-09T12:51:16.9150158Z</Message></Error>`))
-			return
-		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
@@ -147,15 +141,56 @@ Time:2026-07-09T12:51:16.9150158Z</Message></Error>`))
 	if logs != "Job logs line 1\nJob logs line 2" {
 		t.Errorf("unexpected logs: %s", logs)
 	}
+}
 
-	// Test XML BlobNotFound error parsing
-	_, err = client.GetJobLogs(context.Background(), "owner", "repo", 404)
-	if err == nil {
-		t.Fatal("expected error for job 404, got nil")
+// TestClient_JobLogErrorsAreParsedAsXML pins the one endpoint that answers with
+// XML: the log download is served by a blob store, whose error body carries a
+// Code and a Message rather than the API's JSON. The message is read to its
+// first line, because the rest of it is a request id and a timestamp. A body
+// that is not that document falls back to the raw text, so an error is never
+// swallowed into an empty message.
+func TestClient_JobLogErrorsAreParsedAsXML(t *testing.T) {
+	cases := []struct {
+		jobID  int64
+		status int
+		body   string
+		want   string
+	}{
+		{
+			jobID: 404, status: http.StatusNotFound,
+			body: `<?xml version="1.0" encoding="utf-8"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.
+RequestId:f907b3df-401e-0001-0fa1-0fc4e0000000
+Time:2026-07-09T12:51:16.9150158Z</Message></Error>`,
+			want: "github api logs error (status 404): BlobNotFound: The specified blob does not exist.",
+		},
+		{
+			jobID: 502, status: http.StatusBadGateway,
+			body: `<html><body>Bad gateway</body></html>`,
+			want: "github api logs error (status 502): <html><body>Bad gateway</body></html>",
+		},
 	}
-	expectedErr := "github api logs error (status 404): BlobNotFound: The specified blob does not exist."
-	if err.Error() != expectedErr {
-		t.Errorf("expected error message %q, got %q", expectedErr, err.Error())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, tc := range cases {
+			if strings.HasSuffix(r.URL.Path, fmt.Sprintf("/jobs/%d/logs", tc.jobID)) {
+				w.Header().Set("Content-Type", "application/xml")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(server.Close)
+
+	client := NewClient("test-token", server.URL)
+	for _, tc := range cases {
+		_, err := client.GetJobLogs(context.Background(), "owner", "repo", tc.jobID)
+		if err == nil {
+			t.Fatalf("job %d: error = nil, want %q", tc.jobID, tc.want)
+		}
+		if err.Error() != tc.want {
+			t.Errorf("job %d: error = %q, want %q", tc.jobID, err.Error(), tc.want)
+		}
 	}
 }
 
@@ -221,10 +256,10 @@ func TestClient_GetCheckRunsDuplicateFiltering(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		t1 := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
 		t2 := time.Date(2026, 7, 10, 10, 30, 0, 0, time.UTC)
-		
+
 		resp := CheckRunsResponse{
 			TotalCount: 4,
 			CheckRuns: []CheckRun{
@@ -399,5 +434,212 @@ func TestClient_ApprovePendingDeployments(t *testing.T) {
 	}
 	if !called {
 		t.Error("expected endpoint to be called with correct body")
+	}
+}
+
+// TestClient_CleansTerminalInstructionsFromAResponse pins the transport
+// boundary: a title, a body, a branch name and a label are written by whoever
+// opened the pull request, and every one of them reaches a screen as cells.
+func TestClient_CleansTerminalInstructionsFromAResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"number": 1,
+			"title": "a\u001b]52;c;cGF5bG9hZA==\u0007title",
+			"body": "one\u001b[2Jtwo",
+			"state": "open",
+			"head": {"ref": "feat/\u001b[31mx"},
+			"labels": [{"name": "bug\u0007fix", "color": "ff0000"}]
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	pr, err := client.GetPullRequest(context.Background(), "owner", "repo", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pr.Title != "atitle" {
+		t.Errorf("title = %q, want the instruction removed", pr.Title)
+	}
+	if pr.Body != "onetwo" {
+		t.Errorf("body = %q, want the instruction removed", pr.Body)
+	}
+	if pr.Head.Ref != "feat/x" {
+		t.Errorf("branch = %q, want the instruction removed", pr.Head.Ref)
+	}
+	if len(pr.Labels) != 1 || pr.Labels[0].Name != "bugfix" {
+		t.Errorf("labels = %+v, want the instruction removed", pr.Labels)
+	}
+}
+
+// TestClient_CleansTerminalInstructionsFromAnError covers the other string the
+// API writes: the message the app puts in a status line.
+func TestClient_CleansTerminalInstructionsFromAnError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"forbidden \u001b[31mnow\u001b[0m"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	_, err := client.GetUser(context.Background())
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+	if strings.Contains(err.Error(), "\x1b") {
+		t.Errorf("the error carries an escape sequence: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "forbidden now") {
+		t.Errorf("error = %q, want the message text", err.Error())
+	}
+}
+
+// TestClient_RateLimitResetUsesTheServersClock covers the one use of the Date
+// header: the countdown to a window's end. The reset moment is the server's
+// absolute time, so a local clock that is off must not move it.
+func TestClient_RateLimitResetUsesTheServersClock(t *testing.T) {
+	const skew = 90 * time.Second
+	reset := time.Now().Add(10 * time.Minute).Truncate(time.Second)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+		w.Header().Set("Date", time.Now().Add(skew).UTC().Format(http.TimeFormat))
+		_, _ = w.Write([]byte(`{"login":"octocat","id":1}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	if _, err := client.GetUser(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	left, ok := client.RateLimitResetIn()
+	if !ok {
+		t.Fatal("the window's end is not reported")
+	}
+	want := reset.Sub(time.Now().Add(skew))
+	if diff := left - want; diff > 2*time.Second || diff < -2*time.Second {
+		t.Errorf("countdown = %v, want about %v", left, want)
+	}
+	if naive := time.Until(reset); left > naive-skew/2 {
+		t.Errorf("countdown = %v, which is the local clock's answer (%v) rather than the server's", left, naive)
+	}
+}
+
+// TestClient_SendsTheDocumentedHeaders covers the request contract from the spec
+// on every path that builds one: a plain read, a read that writes a body, and the
+// job log fetch, which does not go through doRequest.
+func TestClient_SendsTheDocumentedHeaders(t *testing.T) {
+	seen := make(chan http.Header, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen <- r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/logs") {
+			_, _ = w.Write([]byte("log output"))
+			return
+		}
+		_, _ = w.Write([]byte(`{"number":1}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	ctx := context.Background()
+	if _, err := client.GetPullRequest(ctx, "owner", "repo", 1); err != nil {
+		t.Fatalf("GetPullRequest: %v", err)
+	}
+	if err := client.ClosePullRequest(ctx, "owner", "repo", 1); err != nil {
+		t.Fatalf("ClosePullRequest: %v", err)
+	}
+	if _, err := client.GetJobLogs(ctx, "owner", "repo", 1); err != nil {
+		t.Fatalf("GetJobLogs: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		h := <-seen
+		if got := h.Get("Accept"); got != "application/vnd.github+json" {
+			t.Errorf("request %d: Accept = %q", i, got)
+		}
+		if got := h.Get("X-GitHub-Api-Version"); got != "2022-11-28" {
+			t.Errorf("request %d: X-GitHub-Api-Version = %q", i, got)
+		}
+		if got := h.Get("Authorization"); got != "Bearer test-token" {
+			t.Errorf("request %d: Authorization = %q", i, got)
+		}
+	}
+}
+
+// TestClient_WaitsOutAShortRateLimit covers the second half of the rule: a window
+// that resets within 30 s is waited for rather than turned into an error, and the
+// wait ends when the request's context does.
+func TestClient_WaitsOutAShortRateLimit(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		reset := time.Now().Add(1500 * time.Millisecond).Truncate(time.Second)
+		if calls > 1 {
+			reset = time.Now().Add(10 * time.Minute)
+		}
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"login":"octocat","id":1}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	// The first request learns the budget; it is not waiting for anything yet.
+	if _, err := client.GetUser(context.Background()); err != nil {
+		t.Fatalf("priming request: %v", err)
+	}
+
+	start := time.Now()
+	if _, err := client.GetUser(context.Background()); err != nil {
+		t.Fatalf("the client did not wait out a short window: %v", err)
+	}
+	if waited := time.Since(start); waited < 300*time.Millisecond {
+		t.Errorf("waited %v, want the reset to be honoured", waited)
+	}
+
+	// The same wait, abandoned when the caller's context ends first. The window
+	// is set by hand so the case does not depend on how long the last request
+	// took.
+	client.SetRateLimit(RateLimitInfo{Limit: 5000, Remaining: 0, Reset: time.Now().Add(5 * time.Second)})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start = time.Now()
+	if _, err := client.GetUser(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v, want the context's own deadline", err)
+	}
+	if waited := time.Since(start); waited > time.Second {
+		t.Errorf("waited %v, want it abandoned with the context", waited)
+	}
+	if calls != 2 {
+		t.Errorf("the server saw %d requests, want the third abandoned before it was sent", calls)
+	}
+}
+
+// TestClient_MapsAnUnlistedStatus covers the catch-all: a status that is neither
+// a rate limit nor a permission failure still carries the API's message.
+func TestClient_MapsAnUnlistedStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"Server Error"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-token", server.URL)
+	_, err := client.GetUser(context.Background())
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "500") || !strings.Contains(err.Error(), "Server Error") {
+		t.Errorf("error = %q, want the status and the API's message", err.Error())
+	}
+	if errors.Is(err, ErrRateLimited) || errors.Is(err, ErrForbidden) {
+		t.Errorf("error = %v, want neither the rate-limit nor the forbidden classification", err)
 	}
 }

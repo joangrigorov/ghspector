@@ -33,44 +33,46 @@ Explicitly **not** in scope for parity: the README's "Dashboard View" (§ Known 
 
 ### 2.1 Startup sequence
 
-- [ ] Token resolution order: `GH_TOKEN` → `GITHUB_TOKEN` → config file `github_token` → `gh auth token`. If all fail: print instructions to stderr, exit code 1.
-- [ ] `-v` / `-version` prints `ghspector <version>`, `commit: <commit>`, `build date: <date>` and exits 0.
-- [ ] `-org <name>` overrides `DefaultOrg` and clears `DefaultAccount`; `-user <name>` does the reverse.
-- [ ] Program starts in alternate screen mode.
-- [ ] Splash screen renders the ASCII cat logo, the app name, a spinner, and the current `loadingMsg`.
-- [ ] `fetchInitialDataCmd` runs at startup: `GET /user`, then `GET /user/orgs`.
-- [ ] Target list = the authenticated user (first) followed by each org; `selectedTargetIdx` defaults to 0.
-- [ ] If `DefaultOrg` matches an org in the list, that org is selected; else if `DefaultAccount` matches, that user is selected.
-- [ ] After init, the active tab's list is fetched; the first list load (or an error) moves the app from splash to the main view.
-- [ ] On splash, `Esc`/`Backspace` cancels the in-flight context, creates a fresh one, and returns to `prevState` (or the main view), clearing the loading flag.
+- [x] Token resolution order: `GH_TOKEN` → `GITHUB_TOKEN` → config file `github_token` → `gh auth token`. If all fail: print instructions to stderr, exit code 1. `auth.TestResolveTokenWithCliGetter` drives the four sources and the all-fail case; `cmd/ghspector.TestNoCredentialsPrintsInstructionsAndExits` drives the process path the failure belongs to — the instructions are printed once, the exit code is 1, and nothing reaches stdout.
+- [x] `-v` / `-version` prints `ghspector <version>`, `commit: <commit>`, `build date: <date>` and exits 0. `cmd/ghspector.TestVersionFlagPrintsTheBuildStampsAndExits` covers both spellings, and `run` returns before it reads a token or opens a terminal.
+- [x] `-org <name>` overrides `DefaultOrg` and clears `DefaultAccount`; `-user <name>` does the reverse. `cmd/ghspector.TestFlagOverridesPickOneContext` covers all four permutations, including a file that names both. `TestDefaultOwnerPicksTheConfiguredContext` covers what the config becomes once the flags have had their say.
+- [x] Program starts in alternate screen mode. `TestAlternateScreenIsOn` reads `View.AltScreen`, which is where the flag lives in Bubble Tea v2.
+- [x] Splash screen renders the ASCII cat logo, the app name, a spinner, and the current `loadingMsg`. `TestSplashUntilIdentityResolves` reads the name off a live render, and `splash_80x24` and `splash_120x40` pin the logo and the spinner glyph. The message is one sentence — `Resolving account` plus the animated dots — rather than a mutable field, because in v2 the splash has exactly one request and nothing else it could be reporting; `splashFacts` adds the build and the credential source below it, and never a path.
+- [x] `fetchInitialDataCmd` runs at startup: `GET /user`, then `GET /user/orgs`. `TestStartupAsksForTheViewerThenTheirOrgs` asserts both requests and their order against the recorded request log; `store.TestViewerCachesUntilInvalidated` and `store.TestOrganizationsAndRepositories` cover the two reads themselves.
+- [x] Target list = the authenticated user (first) followed by each org; `selectedTargetIdx` defaults to 0. `Model.switcherEntries` builds the viewer first and appends the orgs; `TestSwitcherSelectsAndCloses` reads the rendered list, finds `← active` on the viewer, and steps down once to land on the first organization. The cursor starts on the active entry, which is the v2 form of "defaults to 0".
+- [x] If `DefaultOrg` matches an org in the list, that org is selected; else if `DefaultAccount` matches, that user is selected. **Superseded (box 43).** The match was how v1 recovered the default from a list it had already fetched. v2 selects the configured login itself (`applyIdentity`) and asks GitHub for that context, so a context the token cannot read surfaces as a failed first fetch — the list reports it and keeps its `r` key — rather than being silently replaced by whichever entry matched. `TestStartupUsesTheConfiguredContext` covers the selection, and a context that an organization filter does not contain is covered by the store's scope tests.
+- [x] After init, the active tab's list is fetched; the first list load (or an error) moves the app from splash to the main view. The stage moves to ready on the identity answer and the tab's fetch starts on the same broadcast (`AccountChangedMsg`); `TestSplashUntilIdentityResolves` reads the splash away and the tab strip in, and `TestForbiddenShowsTheErrorScreen` covers the error leg.
+- [x] On splash, `Esc`/`Backspace` cancels the in-flight context, creates a fresh one, and returns to `prevState` (or the main view), clearing the loading flag. **Superseded (box 45).** The splash has one request with a 20-second bound and no other state to return to, so it advertises nothing and takes no keys: the flag path (`q`, `Ctrl+C`) quits. A startup request that fails lands on the error screen, where `r` is the retry the box was asking for, and `TestRateLimitedStartupIsRecoverable` drives both legs of it.
 
 ### 2.2 Header (top bar)
 
-- [ ] Shows the active context name and whether it is an org or a user account.
-- [ ] Shows API rate-limit remaining/limit.
-- [ ] Rate-limit indicator color reflects consumption.
-- [ ] Shows a loading spinner while `isLoading` is true, with `loadingMsg`.
+- [x] Shows the active context name and whether it is an org or a user account. `store.OwnerRef.String()` renders a login alone for a user and `login + " (org)"` for an organization; `TestHeaderCarriesNoWordmark` reads `Account: octocat` off the first line of a live render and `TestStartupUsesTheConfiguredContext` reads `Account: acme (org)`.
+- [x] Shows API rate-limit remaining/limit. `TestHeaderPutsTheAccountAtTheRightEdge` reads `Rate limit: 4999/5000` from a band whose server sends the three `X-RateLimit-*` headers.
+- [x] Rate-limit indicator color reflects consumption. `TestRateLimitBandColours` compares the band against the rendered style for a full budget (`StatusOK`), one below `rateWarnBelow` (`StatusWarn`), and one below `rateFailBelow` (`StatusFail`).
+- [x] Shows a loading spinner while `isLoading` is true, with `loadingMsg`. The splash draws the spinner with `loadingMsg`; on a route, `TestHeaderShowsTheSpinnerWhileAScreenFetches` asserts the header animates while the screen on top reports `Loading()` and stops once it does not. Both are the same `widgets.Dots(tick)` the baseline used.
 
 ### 2.3 Footer (bottom bar)
 
-- [ ] Renders the active route's key hints.
-- [ ] `?:Help` is present on every route.
-- [ ] Displays a transient status message; it auto-clears after 3 seconds (guarded by a monotonic ID so a newer message is not cleared by an older timer).
-- [ ] Fills the terminal width; hints are laid out within that width.
+- [x] Renders the active route's key hints. `TestFooterRendersTheActiveScope` asserts every documented binding of each main scope appears in the footer; `TestEveryRouteFooterPinsTheGlobalKeys` navigates to fifteen screens (the three lists, the pull request sub-tabs, commit details, jobs, logs, the issue screens, help and the switcher) and requires each footer to carry the pinned hints.
+- [x] `?:Help` is present on every route. The footer pins `keymap.Documented(keymap.Global)` ahead of the surface's own hints, so the three global keys are written first; `TestEveryRouteFooterPinsTheGlobalKeys` asserts the hint on every screen, and `TestFooterAdvertisesOnlyTheKeysThatWork` pins where it is deliberately absent (see the v2 note below).
+- [x] Displays a transient status message; it auto-clears after 3 seconds (guarded by a monotonic ID so a newer message is not cleared by an older timer). `statusTTL` is 3 s; `TestStatusMessageAndExpiry` runs the timer, and `TestStaleExpiryDoesNotClearANewerMessage` releases the first message's timer after a second message has taken its place.
+- [x] Fills the terminal width; hints are laid out within that width. `TestFooterTruncatesWhenNarrow` renders 50, 51, 60, 72 and 90 columns, asserts exact geometry at each, and requires the pinned global keys to survive; a hint too long for the row is trimmed rather than dropped.
+
+**v2 note on the pinned global keys.** The footer advertises the keys that work where they are written. A route answers `?`, `o` and quit, so all three are pinned. A modal that is not a text box consumes the keys the route would act on — the root answers quit from anywhere, but `?` and `o` do nothing while it is open — so only quit is pinned. A text box takes characters, so `q`, `o` and `?` are what somebody is typing: the footer offers `Ctrl+C` alone, which is the same rule the model applies when it hands the key to the box instead of quitting (spec §2.4). `TestFooterAdvertisesOnlyTheKeysThatWork` covers all three surfaces.
 
 ### 2.4 Global keys (every route except splash)
 
-- [ ] `?` toggles the help view; closing it returns to the previous route.
-- [ ] `o` toggles the context switcher; closing it returns to the previous route.
-- [ ] `q` and `Ctrl+C` cancel the root context and quit.
-- [ ] `Ctrl+C` also quits from inside input and modal routes.
+- [x] `?` toggles the help view; closing it returns to the previous route. `TestHelpOpensClosesAndScrolls` opens and closes it; `TestFlowThroughTheProgram` drives both through the real runtime.
+- [x] `o` toggles the context switcher; closing it returns to the previous route. `TestSwitcherSelectsAndCloses` covers opening, selecting and `Esc`.
+- [x] `q` and `Ctrl+C` cancel the root context and quit. `TestQuitWorksFromEveryStage` quits from each stage; the root context is the one passed to `tea.WithContext`, and `run`'s deferred `cancel` is what releases the in-flight requests.
+- [x] `Ctrl+C` also quits from inside input and modal routes. `TestCtrlCQuitsFromBehindAModal` covers both a modal and a text box; `TestQuitGivesWayToATextBox` is the other half — a `q` typed into a login filter is a character, not a quit.
 
 ### 2.5 Error handling
 
-- [ ] A fatal error renders a full-screen error view.
-- [ ] In the error view, only `q` and `Ctrl+C` are accepted.
-- [ ] A rate-limit error is recoverable: the tick handler clears the error, resets pagination and selection for all three tabs, and reloads the active tab once the reset time passes.
-- [ ] A non-fatal error on a list load sets a status message and returns to the main view rather than the error screen.
+- [x] A fatal error renders a full-screen error view. `TestForbiddenShowsTheErrorScreen` asserts the title, the scope hint, and that no absolute path reaches the screen; `error_80x24` pins the layout.
+- [x] In the error view, only `q` and `Ctrl+C` are accepted. **Superseded (box 71):** the error view also accepts `r`, which retries in place rather than making the user restart. `TestRetryFromTheErrorScreen` covers the retry and `TestRateLimitedStartupIsRecoverable` covers it for the rate-limit leg; any other key is ignored because the error stage is answered before the route stack.
+- [x] A rate-limit error is recoverable: the tick handler clears the error, resets pagination and selection for all three tabs, and reloads the active tab once the reset time passes. **Superseded (box 72):** recovery is not a timer that clears a screen. A window the client can wait out (30 seconds or less) is waited out inside the request, so the screen never sees an error; a longer one returns `ErrRateLimited`, and the error view's `r` re-runs startup. Nothing is cached to reset: a failed startup never populated a tab, and a runtime failure reports through the status line, which leaves the list it happened to intact. `TestRateLimitedStartupIsRecoverable` drives both legs, and `gh.TestClient_WaitsOutAShortRateLimit` covers the wait, its context cancellation, and the request count the server saw.
+- [x] A non-fatal error on a list load sets a status message and returns to the main view rather than the error screen. `TestRunsTabShowsAFetchFailure`, `TestPRListReportsAFailure` and `TestIssueListReportsAFailure` each assert the status line and that the list stays on screen.
 
 ### 2.6 Hyperlinks
 
@@ -153,7 +155,7 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 - [x] `v` filters by requested reviewer = current user.
 - [x] `f` opens the filter type overlay (free-text user, then pick author/assignee/reviewer).
 - [x] `x` clears author, assignee, reviewer and repo filters and resets the state filter to `open`, then refetches.
-- [ ] `x` also suppresses **all** filters when pressed on the PRs tab (it resets the repo filter for every tab). v2 scopes `x` to the tab it is pressed on: each tab owns its own filters, so a keystroke on one list cannot change what another list is showing.
+- [x] `x` also suppresses **all** filters when pressed on the PRs tab (it resets the repo filter for every tab). **Superseded:** v2 scopes `x` to the tab it is pressed on: each tab owns its own filters, so a keystroke on one list cannot change what another list is showing. `TestPRQuickFiltersToggleIndependently` and `TestRunsTabRepositoryFilterFromThePicker` cover the two tabs keeping their own rows.
 - [x] `w` opens the selected PR's `HTMLURL` **browser**.
 
 **v2 note on the three login keys.** `a`, `i` and `v` are three views of the same question — which pull requests involve me — so setting one clears the other two, and pressing the active one clears it. The free-text path (§4.6-4.7) follows the same rule. This is what the previous version did, and it is what makes the three keys read as a choice rather than three cumulative conditions.
@@ -224,7 +226,7 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 - [x] `d` / `PageDown` scrolls down 3 lines and re-enables follow mode on reaching the bottom.
 - [x] `w` / `W` opens the job in the **browser**.
 - [x] Follow mode keeps the viewport pinned to the newest output as logs are polled in.
-- [ ] Any other key is forwarded to the viewport for scrolling, except the step-navigation keys. v2 binds scrolling explicitly (`u`/`d`, `PgUp`/`PgDn`) and has no catch-all viewport, so an unbound key does nothing.
+- [x] Any other key is forwarded to the viewport for scrolling, except the step-navigation keys. **Superseded:** v2 binds scrolling explicitly (`u`/`d`, `PgUp`/`PgDn`) and has no catch-all viewport, so an unbound key does nothing. `TestLogsScrollUpStopsAtTheBeginning` covers the explicit keys and `TestUnboundKeyReachesTheRoute` pins that an unbound key is delivered to the route rather than swallowed.
 
 ### 4.10 PR Details
 
@@ -274,7 +276,7 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 - [x] `Esc` / `Backspace` returns to PR Details.
 - [x] `r` / `Ctrl+R` refreshes the comments.
-- [ ] Other keys are forwarded to the viewport for scrolling. v2 binds scrolling explicitly (`u`/`d`), the same as the log viewer (§4.9), so an unbound key does nothing.
+- [x] Other keys are forwarded to the viewport for scrolling. **Superseded:** v2 binds scrolling explicitly (`u`/`d`), the same as the log viewer (§4.9), so an unbound key does nothing. `TestIssueCommentsScroll` covers the keys; the conversation keeps the same `u`/`d` binding the log viewer has (`keymap.IssueComments`).
 
 ### 4.15 Issue Details
 
@@ -460,10 +462,10 @@ These are behavior changes the rewrite is expected to make. They are not parity 
 - [x] Move PR author/assignee/reviewer and issue author/assignee filters server-side (GraphQL supports all of them), so filtering is truthful across the whole scope rather than only the current page. **Delivered:** the filters are search qualifiers (`author:`, `assignee:`, `review-requested:`, `repo:`, `state:`), so a filtered list is what the API matched across the scope. The REST fallback still applies its own filter to the page it holds, because the REST list endpoints cannot express one.
 - [x] Unify the workflow actor filter with the other user filters: today it is a `bool` flag plus a prefilled text input, while PRs and Issues use dedicated states.
 - [x] Poll the Issues tab on its own interval. **Delivered:** `keymap.MainIssues` selects the Issues interval, and `polling.issues_interval_seconds` sets it.
-- [ ] Replace the merge-method default cycle, which persists config on a keystroke, with an explicit save or an in-memory default that is written once. **Decided:** the cycle stays, because the method select is the only place it is chosen and a save key would duplicate the `Enter` that already advances. What the item was really about — the write clobbering the file — is fixed: `d` edits the file as a YAML document (`auth.SetDefaultMergeMethod`), so a key this build does not know survives and the token is never re-encoded; a session with no writable path cycles in memory and says "this session only".
+- [x] Replace the merge-method default cycle, which persists config on a keystroke, with an explicit save or an in-memory default that is written once. **Decided, and delivered:** the cycle stays, because the method select is the only place it is chosen and a save key would duplicate the `Enter` that already advances. What the item was really about — the write clobbering the file — is fixed: `d` edits the file as a YAML document (`auth.SetDefaultMergeMethod`), so a key this build does not know survives and the token is never re-encoded; a session with no writable path cycles in memory and says "this session only". `TestMergeMethodDefaultCyclesAndPersists` and `auth.TestSetDefaultMergeMethod` cover both halves.
 - [x] Give the Jobs route an explicit origin instead of the `prevState` field, and give every pushed route an explicit `(owner, repo, number, runID)` rather than reading it back out of shared model fields.
 - [x] Define and test a minimum terminal width with a graceful "terminal too small" state.
-- [ ] Render pull request, issue and commit bodies as markdown. **Open:** planned as its own change, after the palette work, because it is the one place in the program that formats text it did not write. `charm.land/glamour/v2` v2.0.1 is available and depends only on the v2 Charm modules. The rules it has to follow: one renderer per (scheme, width), a style fixed at construction, the renderer built when the scheme or the width changes and reused, and no terminal query and no renderer construction inside a view. The baseline's markdown renderer called `lipgloss.HasDarkBackground()` inside the render path — one blocking probe per frame — which is why one version rendered markdown well and was unusable at the same time.
+- [x] Render pull request, issue and commit bodies as markdown. **Delivered.** `internal/ui/markdown.go` holds one `glamour/v2` renderer per `(palette, width)`, built by `Prepare` when the geometry or the palette changes and reused by every frame in between — the root calls it on `WindowSizeMsg`, on a background-colour answer, and at construction, so no view builds a renderer and no view probes the terminal (rule 9). The style starts from glamour's plain ASCII configuration and adds this palette's accent, text and muted colours, so a body cannot introduce a hue the chrome does not use; a plain theme renders with the ASCII style, which is what keeps the goldens free of escape sequences. Four call sites: the pull request description, the issue description, a comment body, and a commit message. Two renderer behaviours are undone because they are not the pane's to draw — the pad every line is filled to the wrap width with, and the blank lines the document is wrapped in — and a body is sanitized at this boundary as it is at the transport one. `:shortcode:` emoji are drawn as the character they name, because GitHub's own release notes are written that way. Tests: `TestMarkdownPaintsWithThePalette`, `TestMarkdownUsesOnlyPaletteColours` (every RGB triple in a render is in the palette), `TestMarkdownRebuildsOnlyWhenThePaletteOrWidthChanges` (five frames, one build), `TestMarkdownKeepsTerminalInstructionsOut`, `TestMarkdownLinesCarryNoPad`, `TestMarkdownWithoutAHyperlinkCapabilityStripsTheTokens`, `TestMarkdownWithoutARendererFallsBackToWrapping`, `TestPRDescriptionIsRenderedAsMarkdown`, `TestPRDescriptionScrollsOverItsRenderedBody`, `TestCommitDetailsShowsTheMessageBody`, `TestCommitDetailsWithoutABodyKeepsTheRegion`.
 
 **v2 notes on the three closed items.**
 
@@ -577,12 +579,12 @@ REST calls made by the current implementation. `o` = owner, `r` = repo.
 
 Cross-cutting client behavior to preserve:
 
-- [ ] `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`.
-- [ ] Rate-limit state parsed from `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
-- [ ] Server clock offset derived from the `Date` header, used for rate-limit countdown.
-- [ ] If the rate limit is exhausted and resets in more than 30 s, return a rate-limited error rather than sleeping. If it resets sooner, wait for the reset subject to context cancellation.
-- [ ] `429` → rate-limited error; `401`/`403` → forbidden error including the API message; other `4xx`/`5xx` → error including the API message.
-- [ ] Job-log errors are parsed as XML (`Code`, `Message`) before falling back to the raw body.
+- [x] `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`. `gh.TestClient_SendsTheDocumentedHeaders` reads both off the wire for the GET path, the body-writing path and the logs path, and asserts the bearer token arrived in `Authorization` on all three. The logs path writes both headers itself (`GetJobLogs` does not go through `doRequest`), which is why it is checked separately. The GraphQL transport's version of the credential check is `stub.checkTokenStayedInTheHeader`, which fails a test if the token appears in a URL or a request body and asserts the bearer header on every request the stub recorded.
+- [x] Rate-limit state parsed from `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`. `gh.TestClient_RateLimitBackup` covers the parse and the tighter-window rule, `store.TestRateLimitAndScopesAreForwarded` covers the store's pass-through, and `TestHeaderPutsTheAccountAtTheRightEdge` reads the parsed numbers off a rendered header.
+- [x] Server clock offset derived from the `Date` header, used for rate-limit countdown. `gh.TestClient_RateLimitResetUsesTheServersClock` sends a `Date` ninety seconds ahead and rejects the answer a local clock would give; `TestHeaderCountsDownTheRateLimitReset` renders `resets in 11m` from a server a minute ahead of the machine running the test.
+- [x] If the rate limit is exhausted and resets in more than 30 s, return a rate-limited error rather than sleeping. If it resets sooner, wait for the reset subject to context cancellation. `gh.TestClient_WaitsOutAShortRateLimit` measures the wait, then cancels inside a longer window and asserts `context.DeadlineExceeded` with the server having seen two requests; `store.TestRateLimiterRespectsContextCancellation` covers the limiter's own cancellation; `TestRateLimitedStartupIsRecoverable` covers both legs through the UI.
+- [x] `429` → rate-limited error; `401`/`403` → forbidden error including the API message; other `4xx`/`5xx` → error including the API message. `gh.TestClient_RateLimitBackup` and `gh.TestClient_Forbidden` cover the first two, `gh.TestClient_MapsAnUnlistedStatus` covers a `500` and asserts it is classified as neither of them, and `gh.TestClient_CleansTerminalInstructionsFromAnError` covers that the API's message is cleaned on its way into the error.
+- [x] Job-log errors are parsed as XML (`Code`, `Message`) before falling back to the raw body. `gh.TestClient_JobLogErrorsAreParsedAsXML` covers both halves: a `BlobNotFound` document, whose message is read to its first line, and a body that is not that document, which comes back as its own text.
 - [x] Every GraphQL query asks for `rateLimit { limit cost remaining resetAt }`, and the cost the API reports is what the next query reserves from the shared limiter (v2). The header renders whichever of the two transports has less left, since either can cut the app off.
 
 ---
@@ -608,15 +610,15 @@ These are the behaviors most worth porting directly as pure functions rather tha
 
 | Section | Items | Checked |
 | --- | --- | --- |
-| Startup, context, chrome (§2.1–2.5) | 26 | 0 |
+| Startup, context, chrome (§2.1–2.5) | 26 | 26 |
 | Hyperlinks (§2.6) | 3 | 3 |
-| Route map (§3) | 19 states mapped | 15 |
-| Route behaviors (§4.1–4.20) | 131 | 108 |
-| Filters / pagination / polling (§5.1–5.4) | 20 | 19 |
-| CLI and config (§6.1–6.3) | 16 | 16 |
-| Fix in v2 (§7) | 7 | 3 |
+| Route map (§3) | 19 states mapped | 19 |
+| Route behaviors (§4.1–4.20) | 132 | 132 |
+| Filters / pagination / polling (§5.1–5.4) | 25 | 25 |
+| CLI and config (§6.1–6.3) | 17 | 17 |
+| Fix in v2 (§7) | 8 | 8 |
 | Drift decisions (D1–D8) | 8 | 8 |
-| API map (§9) | 24 endpoints, 6 client behaviors | 0 |
+| API map (§9) | 25 endpoints, 6 client behaviors | 6 |
 | Parallel anchors (§10) | 8 | 8 |
 
 A box is checked when the behavior is implemented **and** covered by a test, so
@@ -625,16 +627,25 @@ Workflows, Jobs and Logs rows it delivers (§4.1, §4.4–4.5, §4.8–4.9, §4.
 workflow rows of §5, and the anchors the logs package ports). Phase 3 checked
 the pull request rows (§4.2, §4.6–4.7, §4.10–4.14, §4.17–4.19), the rows of §5
 its poller touches, every row of §6, §10, the three §7 items the shell
-delivered, and the new hyperlink contract in §2.6.
+delivered, and the new hyperlink contract in §2.6. Phase 4 checked the issue
+rows. Phase 5 checked the aggregation rows of §5 and the §7 items the search
+queries settled.
 
-Two groups stay at zero on purpose, because their verification pass has not run:
-§2.1–2.5 (startup, context, and chrome) and §9 (the transport). Both are
-implemented and partly tested — the shell tests behind them are
-`TestSplashUntilIdentityResolves`, `TestForbiddenShowsTheErrorScreen`,
-`TestRetryFromTheErrorScreen`, `TestFooterRendersTheActiveScope`,
-`TestQuitWorksFromEveryStage`, `TestStatusMessageAndExpiry`, and the transport
-behaviors live in `internal/gh` — but the boxes are not ticked until each one
-has been read against its own test. Ticking a row without that pass would turn
-the checklist into a claim.
+**Phase 6 ran the pass the last two groups were waiting for.** Every box in
+§2.1–2.5 (startup, context, and chrome) and §9 (the transport) was read against
+its own test, and each row now names the test behind it. Reading them found four
+behaviors that were implemented but unobserved — the header's loading spinner
+was wired to a `false` constant, the status message's TTL was 5 s where the spec
+says 3, the rate-limit countdown had no client callers, and a `q` typed into a
+filter box quit the program — plus one that was observed and wrong: the footer
+advertised `?`, `o` and quit over a modal and over a text box, where two or
+three of those keys do nothing. All five are fixed and covered. The rows that
+describe v1 behavior the rewrite deliberately changed are ticked and marked
+**Superseded**, with the decision and its test in the row: box 43 (default
+context matching), box 45 (splash cancel), boxes 71–72 (error-view keys and
+rate-limit recovery), and the three viewport-forwarding rows in §4.
 
-Sections 4 (route behaviors), 5 (filters/pagination/polling), and 6 (CLI/config) are the parity gate. Section 7 is the improvement backlog. Section 8 requires a written decision per item before the README is finalized.
+Every section is now at zero open boxes. Sections 4 (route behaviors), 5
+(filters/pagination/polling), and 6 (CLI/config) are the parity gate. Section 7
+records the improvement backlog, all delivered or decided. Section 8 carries a
+written decision per item.

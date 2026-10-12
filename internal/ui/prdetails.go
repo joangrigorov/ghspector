@@ -10,9 +10,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // prTab is one of the five sub-tabs of the pull request details view.
@@ -202,6 +202,9 @@ func (p *PRDetails) Scope() keymap.Scope { return prTabMeta[p.tab].Scope }
 
 // Stop releases the requests this route has in flight.
 func (p *PRDetails) Stop() { p.sess.Stop() }
+
+// Loading reports a fetch this route is waiting on.
+func (p *PRDetails) Loading() bool { return p.loading }
 
 // Available narrows the footer: merge and close are offered only once the
 // viewer is known to have write permission, so a key that would refuse is never
@@ -489,7 +492,7 @@ func (p *PRDetails) clamp(deps Deps) {
 	p.checkCursor = clampIndex(p.checkCursor, len(p.checks))
 	p.commitCursor = clampIndex(p.commitCursor, len(p.commits))
 	p.fileCursor = clampIndex(p.fileCursor, len(p.files))
-	p.descScroll = clampOffset(p.descScroll, len(wrapLines(p.description(), p.bodyWidth(deps))))
+	p.descScroll = clampOffset(p.descScroll, len(p.descriptionLines(deps, p.bodyWidth(deps))))
 	p.commentScroll = clampOffset(p.commentScroll, len(p.commentLines(deps, p.bodyWidth(deps))))
 	p.diffScroll = clampOffset(p.diffScroll, len(diffLines(p.diffText())))
 }
@@ -856,13 +859,20 @@ func paneTitle(theme Theme, name string, focused bool) string {
 	return style(theme.Muted, bold).Render(name)
 }
 
-// descriptionPane renders the pull request body, wrapped and scrolled.
+// descriptionPane renders the pull request body, rendered as markdown and
+// scrolled.
 func (p *PRDetails) descriptionPane(deps Deps, width, height int) []string {
-	lines := wrapLines(p.description(), width)
+	lines := p.descriptionLines(deps, width)
 	start := clampOffset(p.descScroll, len(lines))
 	visible := max(height-2, 0)
 	return append([]string{paneTitle(deps.Theme, "DESCRIPTION", p.descFocused), ""},
 		take(lines[start:], visible)...)
+}
+
+// descriptionLines is the description as rendered lines, at the same width
+// clamp uses, so the scroll bound and the pane cannot disagree.
+func (p *PRDetails) descriptionLines(deps Deps, width int) []string {
+	return deps.Markdown.Lines(deps.Theme, p.description(), width)
 }
 
 // metadataPane renders the details sidebar.

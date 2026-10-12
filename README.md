@@ -9,7 +9,7 @@
     g h s p e c t o r
 ```
 
-`ghspector` is a sleek, terminal-native developer dashboard (TUI) for universal GitHub operations. Built in Go using the Bubble Tea framework, it provides a unified interface to browse, monitor, and manage your workflows and pull requests across entire user or organization scopes in real-time.
+`ghspector` is a sleek, terminal-native developer dashboard (TUI) for universal GitHub operations. Built in Go using the Bubble Tea framework, it provides a unified interface to browse, monitor, and manage your workflows, pull requests and issues across entire user or organization scopes in real-time.
 
 With `ghspector`, you can tail workflow logs, cycle through run attempts, inspect pull request checks and metadata, and merge or close pull requests directly from your terminal.
 
@@ -34,9 +34,11 @@ Monitoring GitHub Actions workflows across multiple active repositories typicall
 - **Workflow & Log Viewer**: Cycle through historical attempts of multi-run workflows and tail active jobs in real-time.
 - **Keyboard-Driven PR Management**: Read PR descriptions, inspect Action checks/comments, and merge (Squash, Normal, Rebase) or close PRs directly.
 - **Issue Browser**: Read issue descriptions and metadata, and follow a thread's comments, with author/assignee filters.
+- **Rendered Markdown**: Pull request and issue descriptions, comments and commit messages are rendered as documents — headings, lists, quotes, inline code — in the same palette as the rest of the screen, in either light or dark mode.
 - **Actor Filtering**: Quick text filtering to isolate workflow runs, PRs or issues by specific users.
 - **Context Switcher**: Swap between user profiles and organization scopes on the fly.
 - **Terminal Hyperlinks**: Support for clickable OSC 8 links and quick keys to open runs, jobs, and PRs in your default browser.
+- **Honest Counts**: A list says "Load More" while the API reports matches left, rather than when a page happened to come back full.
 
 ---
 
@@ -169,19 +171,29 @@ polling:
 
 ## Usage & Keybindings
 
-Below is the complete keybindings map for navigating the application. Press `?` in any view to display the help overlay.
+Below is the keybindings map for navigating the application. Press `?` in any view to display the help overlay.
 
-### Global Keys
+### Switching Tabs
+Available on the three top-level lists (`Tab` and `Shift+Tab` cycle the tabs, and a tab fetches when it is first opened):
+
 | Key | Action |
 | --- | --- |
 | `Tab` | Switch to the **next** main tab (Pull Requests → Workflows → Issues) |
 | `Shift+Tab` | Switch to the **previous** main tab |
+
+The tabs are **Pull Requests**, **Workflows**, **Issues**, and the app opens on
+Pull Requests.
+
+### Global Keys
+Available on every screen, including inside the detail views:
+
+| Key | Action |
+| --- | --- |
 | `?` | Toggle the help screen |
 | `o` | Open the context switcher to swap account/organization scope |
 | `q` or `Ctrl+C` | Quit `ghspector` |
 
-The tabs are **Pull Requests**, **Workflows**, **Issues**, and the app opens on
-Pull Requests.
+Over a modal, `q`/`Ctrl+C` still quits; over a text box, `Ctrl+C` does, and `q` is a character you are typing.
 
 ### Full Keybinding Reference
 Every key, grouped by the view it applies in, is in

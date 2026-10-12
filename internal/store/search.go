@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"ghspector/internal/gql"
+	"github.com/joangrigorov/ghspector/internal/gql"
 )
 
 // The scope-wide pull request and issue lists are search queries: one request

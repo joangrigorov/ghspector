@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"ghspector/internal/auth"
+	"github.com/joangrigorov/ghspector/internal/auth"
+	"github.com/joangrigorov/ghspector/internal/store"
 )
 
 // TestVersionFlagPrintsTheBuildStampsAndExits pins spec §6.1: the flag prints
@@ -70,5 +71,57 @@ func TestUnknownFlagFailsWithoutStartingTheProgram(t *testing.T) {
 	var out strings.Builder
 	if code := run([]string{"-nope"}, &out); code == 0 {
 		t.Errorf("run(-nope) = 0, want a failure exit code")
+	}
+}
+
+// TestDefaultOwnerPicksTheConfiguredContext pins how the config's default
+// becomes the context the session starts in: an organization wins, an account
+// is a user, and nothing configured means the authenticated user.
+func TestDefaultOwnerPicksTheConfiguredContext(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  auth.Config
+		want *store.OwnerRef
+	}{
+		{"nothing configured", auth.Config{}, nil},
+		{"an organization", auth.Config{DefaultOrg: "acme"}, &store.OwnerRef{Login: "acme", IsOrg: true}},
+		{"an account", auth.Config{DefaultAccount: "octocat"}, &store.OwnerRef{Login: "octocat"}},
+		{"both, as a hand-edited file can", auth.Config{DefaultOrg: "acme", DefaultAccount: "octocat"}, &store.OwnerRef{Login: "acme", IsOrg: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := defaultOwner(&tc.cfg)
+			if (got == nil) != (tc.want == nil) {
+				t.Fatalf("defaultOwner() = %v, want %v", got, tc.want)
+			}
+			if got != nil && *got != *tc.want {
+				t.Errorf("defaultOwner() = %+v, want %+v", *got, *tc.want)
+			}
+		})
+	}
+}
+
+// TestNoCredentialsPrintsInstructionsAndExits pins the last clause of §2.1: when
+// every source fails, the program says how to authenticate and returns 1 instead
+// of falling through to a terminal that cannot fetch anything.
+func TestNoCredentialsPrintsInstructionsAndExits(t *testing.T) {
+	instructions := 0
+	restore := resolveToken
+	resolveToken = func() (string, *auth.Config, error) {
+		return "", nil, auth.ErrUnauthenticated
+	}
+	t.Cleanup(func() { resolveToken = restore })
+	restorePrint := printAuthInstructions
+	printAuthInstructions = func() { instructions++ }
+	t.Cleanup(func() { printAuthInstructions = restorePrint })
+
+	var out strings.Builder
+	if code := run(nil, &out); code != 1 {
+		t.Errorf("run() with no credentials = %d, want 1", code)
+	}
+	if instructions != 1 {
+		t.Errorf("instructions printed %d times, want 1", instructions)
+	}
+	if out.Len() != 0 {
+		t.Errorf("run() wrote %q to stdout, want nothing", out.String())
 	}
 }

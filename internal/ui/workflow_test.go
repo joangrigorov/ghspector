@@ -14,7 +14,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/keymap"
 )
 
 // The workflow fixtures are built from a list of runs rather than from a static

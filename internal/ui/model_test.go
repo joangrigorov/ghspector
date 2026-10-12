@@ -2,17 +2,22 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
-	"ghspector/internal/keymap"
-	"ghspector/internal/layout"
-	"ghspector/internal/overlay"
-	"ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/keymap"
+	"github.com/joangrigorov/ghspector/internal/layout"
+	"github.com/joangrigorov/ghspector/internal/overlay"
+	"github.com/joangrigorov/ghspector/internal/store"
+	"github.com/joangrigorov/ghspector/internal/ui/widgets"
 )
 
 // ghServer serves canned JSON per path, so the tests exercise the real store
@@ -253,6 +258,49 @@ func TestSplashUntilIdentityResolves(t *testing.T) {
 	}
 }
 
+// TestStartupUsesTheConfiguredContext pins the top of the config's reach: the
+// context the file or a flag names is where the session starts, and the header
+// says which kind of context it is.
+func TestStartupUsesTheConfiguredContext(t *testing.T) {
+	srv := ghServer(t, defaultFixtures())
+	m := readyModel(t, srv, 80, 24, func(o *Options) {
+		o.DefaultOwner = &store.OwnerRef{Login: "acme", IsOrg: true}
+	})
+
+	if got := m.deps.Account.Owner; got.Login != "acme" || !got.IsOrg {
+		t.Fatalf("owner = %+v, want acme as an organization", got)
+	}
+	if out := m.View().Content; !strings.Contains(out, "Account: acme (org)") {
+		t.Errorf("the header does not name the configured context:\n%s", out)
+	}
+}
+
+// TestStartupAsksForTheViewerThenTheirOrgs pins the startup sequence: the
+// account first, then the organizations it may switch into. The order matters,
+// because the organizations answer decides which contexts the switcher offers
+// and the account is what the header names.
+func TestStartupAsksForTheViewerThenTheirOrgs(t *testing.T) {
+	log := newRequestLog()
+	m := newModel(t, prServerWithLog(t, log), 80, 24)
+
+	m, _ = send(t, m, m.loadIdentity()())
+	if m.stage != stageReady {
+		t.Fatalf("stage = %v, want ready", m.stage)
+	}
+
+	log.mu.Lock()
+	entries := append([]string(nil), log.entries...)
+	log.mu.Unlock()
+	if len(entries) < 2 {
+		t.Fatalf("startup made %d requests, want at least the two identity reads: %v", len(entries), entries)
+	}
+	for i, want := range []string{"GET /user", "GET /user/orgs"} {
+		if entries[i] != want {
+			t.Errorf("request %d = %q, want %q", i, entries[i], want)
+		}
+	}
+}
+
 func TestForbiddenShowsTheErrorScreen(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -319,6 +367,85 @@ func TestRetryFromTheErrorScreen(t *testing.T) {
 	if m.stage != stageReady {
 		t.Fatalf("stage after a successful retry = %v, err = %v", m.stage, m.err)
 	}
+}
+
+// TestRateLimitedStartupIsRecoverable covers a budget that is already spent when
+// the program starts. A window longer than the client is willing to sleep
+// through becomes a full-screen error that names the failure and the way out; a
+// window that is about to roll over is waited out inside the request, so the
+// next screen arrives without a detour.
+func TestRateLimitedStartupIsRecoverable(t *testing.T) {
+	fixtures := defaultFixtures()
+	exhausted := func(w http.ResponseWriter, reset time.Time) {
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+	}
+	serveFixtures := func(w http.ResponseWriter, r *http.Request) {
+		body, ok := fixtures[r.URL.Path]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"no fixture"}`))
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}
+
+	t.Run("a long window is reported rather than slept through", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			exhausted(w, time.Now().Add(10*time.Minute))
+		}))
+		t.Cleanup(srv.Close)
+
+		m := newModel(t, srv, 80, 24)
+		next, _ := send(t, m, m.loadIdentity()())
+		m = next
+		if m.stage != stageError {
+			t.Fatalf("stage = %v, want error", m.stage)
+		}
+		if !errors.Is(m.err, store.ErrRateLimited) {
+			t.Fatalf("error = %v, want a rate-limited error", m.err)
+		}
+		out := m.View().Content
+		for _, want := range []string{"Rate limited", "Wait for the limit to reset, then retry."} {
+			if !strings.Contains(out, want) {
+				t.Errorf("error screen is missing %q:\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("a window that is about to roll over is waited out", func(t *testing.T) {
+		requests := 0
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests++
+			if requests == 1 {
+				exhausted(w, time.Now().Add(time.Second))
+				return
+			}
+			serveFixtures(w, r)
+		}))
+		t.Cleanup(srv.Close)
+
+		m := newModel(t, srv, 80, 24)
+		next, _ := send(t, m, m.loadIdentity()())
+		m = next
+		if m.stage != stageError {
+			t.Fatalf("stage = %v, want error", m.stage)
+		}
+
+		next, cmd := send(t, m, press(t, "r"))
+		m = next
+		if cmd == nil {
+			t.Fatal("retry returned no command")
+		}
+		next, _ = send(t, m, m.loadIdentity()())
+		m = next
+		if m.stage != stageReady {
+			t.Fatalf("stage after the limit resets = %v, err = %v", m.stage, m.err)
+		}
+	})
 }
 
 // TestTabCyclingOrder pins the tab order from spec D2: PRs, Workflows, Issues.
@@ -411,6 +538,105 @@ func TestFooterTruncatesWhenNarrow(t *testing.T) {
 	}
 }
 
+// TestEveryRouteFooterPinsTheGlobalKeys walks the screens a session reaches and
+// checks the footer carries the help hint on each one. The footer pins the
+// global keys ahead of the surface's own, so `?`, `o` and quit are always on
+// hand wherever a key works (spec §2.3).
+func TestEveryRouteFooterPinsTheGlobalKeys(t *testing.T) {
+	srv := prServer(t)
+	const w, h = 120, 40
+
+	for _, tc := range []struct {
+		name string
+		keys []string
+	}{
+		{"pull requests", nil},
+		{"workflow runs", []string{"tab"}},
+		{"issues", []string{"tab", "tab"}},
+		{"help", []string{"?"}},
+		{"context switcher", []string{"o"}},
+		{"pull request details", []string{"enter", "1"}},
+		{"pull request commits", []string{"enter", "2"}},
+		{"pull request files", []string{"enter", "3"}},
+		{"pull request checks", []string{"enter", "4"}},
+		{"pull request comments", []string{"enter", "5"}},
+		{"commit details", []string{"enter", "2", "enter"}},
+		{"jobs from a check", []string{"enter", "tab", "enter"}},
+		{"logs", []string{"enter", "tab", "enter", "j", "enter"}},
+		{"issue details", []string{"tab", "tab", "enter"}},
+		{"issue conversation", []string{"tab", "tab", "enter", "c"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := pressAndDrive(t, prsModel(t, srv, w, h), tc.keys...)
+			footer := ansi.Strip(lastLines(m.View().Content, layout.FooterHeight))
+			// Only the first pinned hint is asserted here: the footer drops the
+			// tail of the global keys when a surface's own hints and its status
+			// message take the room, which is the truncation policy and has its
+			// own test.
+			if !strings.Contains(footer, "?:Help") {
+				t.Errorf("footer is missing the help hint:\n%s", footer)
+			}
+		})
+	}
+}
+
+// TestFooterAdvertisesOnlyTheKeysThatWork covers the three surfaces that differ.
+// A route answers every global key; a modal eats the keys the route would act
+// on, so only quit is left; a text box takes characters, so `q`, `o` and `?` are
+// what somebody is typing and Ctrl+C is the way out (spec §2.4).
+func TestFooterAdvertisesOnlyTheKeysThatWork(t *testing.T) {
+	srv := prServer(t)
+	const w, h = 120, 30
+
+	footerOf := func(m Model) string { return ansi.Strip(lastLines(m.View().Content, layout.FooterHeight)) }
+	base := func() Model { return prsModel(t, srv, w, h) }
+
+	t.Run("a route pins every global key", func(t *testing.T) {
+		footer := footerOf(base())
+		for _, want := range []string{"?:Help", "o:Switch account/org", "q/Ctrl+C:Quit"} {
+			if !strings.Contains(footer, want) {
+				t.Errorf("footer is missing %q:\n%s", want, footer)
+			}
+		}
+	})
+
+	t.Run("a modal keeps quit alone", func(t *testing.T) {
+		m := base()
+		m.overlays = m.overlays.Push(overlay.Confirm{
+			Scope:   keymap.MergeConfirm,
+			Heading: "Confirm merge",
+			Body:    []string{"This will squash-merge pull request #16."},
+			OnYes:   func() tea.Msg { return nil },
+		})
+		footer := footerOf(m)
+		if !strings.Contains(footer, "q/Ctrl+C:Quit") {
+			t.Errorf("a modal footer dropped quit:\n%s", footer)
+		}
+		for _, unwanted := range []string{"?:Help", "o:Switch account/org"} {
+			if strings.Contains(footer, unwanted) {
+				t.Errorf("a modal footer advertises %q, which the modal eats:\n%s", unwanted, footer)
+			}
+		}
+	})
+
+	t.Run("a text box keeps Ctrl+C alone", func(t *testing.T) {
+		m := pressAndDrive(t, base(), "f", "u")
+		if !m.overlays.TakesText() {
+			t.Fatalf("f then u did not open a text box: %d overlays", m.overlays.Len())
+		}
+		footer := footerOf(m)
+		if !strings.Contains(footer, "Ctrl+C:Quit") {
+			t.Errorf("a text box footer dropped the way out:\n%s", footer)
+		}
+		for _, unwanted := range []string{"?:Help", "o:Switch account/org", "q/Ctrl+C:Quit"} {
+			if strings.Contains(footer, unwanted) {
+				t.Errorf("a text box footer advertises %q, which the box types:\n%s", unwanted, footer)
+			}
+		}
+	})
+}
+
+// TestHelpOpensClosesAndScrolls opens the reference and drives it.
 func TestHelpOpensClosesAndScrolls(t *testing.T) {
 	srv := ghServer(t, defaultFixtures())
 	// Wide enough for the help scope's own hints to survive alongside the
@@ -683,6 +909,50 @@ func TestCtrlCQuitsFromBehindAModal(t *testing.T) {
 	if _, ok := cmd().(tea.QuitMsg); !ok {
 		t.Error("ctrl+c did not quit")
 	}
+
+	// An input route takes raw keys, so quit has to be settled before the
+	// overlay is offered the press (spec §2.4). A modal that is not a text box
+	// gives up `q` as well.
+	_, cmd = send(t, m, tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if cmd == nil {
+		t.Fatal("q returned no command from behind a modal")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Error("q did not quit from behind a modal")
+	}
+}
+
+// TestQuitGivesWayToATextBox covers the exception to the global quit binding: a
+// character somebody is typing is not a command, and Ctrl+C is the way out of a
+// box (spec §2.4).
+func TestQuitGivesWayToATextBox(t *testing.T) {
+	srv := ghServer(t, defaultFixtures())
+	m := readyModel(t, srv, 80, 24)
+	m.overlays = m.overlays.Push(overlay.Prompt{
+		Scope:   keymap.UserInput,
+		Heading: "Filter by user",
+		Input:   newPromptInput(m.deps.Theme),
+	})
+
+	next, cmd := send(t, m, tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if cmd != nil {
+		if _, quit := cmd().(tea.QuitMsg); quit {
+			t.Fatal("q quit from inside a text box")
+		}
+	}
+	prompt, ok := next.overlays.Top().(overlay.Prompt)
+	if !ok {
+		t.Fatalf("the prompt was replaced by %T", next.overlays.Top())
+	}
+	if got := prompt.Input.Value(); got != "q" {
+		t.Errorf("the box holds %q, want the character that was typed", got)
+	}
+
+	if _, cmd := send(t, next, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd == nil {
+		t.Fatal("ctrl+c returned no command from inside a text box")
+	} else if _, quit := cmd().(tea.QuitMsg); !quit {
+		t.Error("ctrl+c did not quit from inside a text box")
+	}
 }
 
 // TestUnboundKeyReachesTheRoute checks the fall-through path that routes taking
@@ -781,4 +1051,47 @@ func lastLines(s string, n int) string {
 		return s
 	}
 	return strings.Join(lines[len(lines)-n:], "\n")
+}
+
+// headerBand is the header row of a frame with its styling removed.
+func headerBand(t *testing.T, m Model) string {
+	t.Helper()
+	return ansi.Strip(strings.Split(m.View().Content, "\n")[0])
+}
+
+// TestHeaderShowsTheSpinnerWhileAScreenFetches covers the chrome side of §2.2:
+// the header says that something is in flight, and the pane says what is being
+// waited for.
+func TestHeaderShowsTheSpinnerWhileAScreenFetches(t *testing.T) {
+	srv := prServer(t)
+	m := prsModel(t, srv, 120, 40)
+
+	if band := headerBand(t, m); strings.Contains(band, widgets.Dots(m.tick)+" ") {
+		t.Errorf("a settled screen shows a spinner: %q", band)
+	}
+	if _, spin := send(t, m, spinnerMsg{}); spin != nil {
+		t.Error("the spinner keeps ticking on a settled screen")
+	}
+
+	details, cmd := newPRDetails(m.deps, store.PullRequest{Number: 1, Title: "A pull request"})
+	if !details.Loading() {
+		t.Fatal("a fresh details route does not report a fetch in flight")
+	}
+	next, _ := send(t, m, PushMsg{Route: details, Then: cmd})
+
+	if band := headerBand(t, next); !strings.Contains(band, widgets.Dots(next.tick)+" ") {
+		t.Errorf("the header does not show the spinner while the screen fetches: %q", band)
+	}
+	if _, spin := send(t, next, spinnerMsg{}); spin == nil {
+		t.Error("the spinner stopped while a fetch is in flight")
+	}
+}
+
+// TestAlternateScreenIsOn pins the terminal mode: the program owns the screen
+// while it runs (spec §2.1).
+func TestAlternateScreenIsOn(t *testing.T) {
+	srv := ghServer(t, defaultFixtures())
+	if v := readyModel(t, srv, 80, 24).View(); !v.AltScreen {
+		t.Error("the program does not start in the alternate screen")
+	}
 }
