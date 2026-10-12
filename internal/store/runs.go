@@ -8,11 +8,16 @@ import (
 	"sync"
 )
 
-// maxAggregateRepos caps the scope-wide fan-out. Every repository costs one
-// request per page, so the runs view covers the repositories pushed to most
-// recently rather than every repository in the context. Scope-wide aggregation
-// with real cursor pagination arrives with the GraphQL transport; this is the
-// REST fan-out it replaces.
+// maxAggregateRepos caps the run fan-out. Every repository costs one request per
+// page, and no transport offers a scope-wide run list: the GraphQL schema's only
+// run connection is Workflow.runs, which hangs off a single workflow file, and
+// search has no run index. So the runs view covers the repositories pushed to
+// most recently rather than every repository in the context.
+//
+// Eight repositories per five-second poll is 1.6 requests a second against the
+// shared five-a-second allowance, which leaves room for the scope lists, whose
+// searches cost one query each per ten-second poll. The cap is therefore a
+// measured choice rather than a leftover.
 const maxAggregateRepos = 8
 
 // ScopeRuns lists runs across the context's repositories, most recently pushed

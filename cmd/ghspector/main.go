@@ -65,7 +65,7 @@ func run(args []string, stdout io.Writer) int {
 	polling := config.PollingIntervals()
 
 	model := ui.New(ui.Options{
-		Store: store.NewREST(token, ""),
+		Store: store.New(token, "", ""),
 		// The model asks the terminal for its background and rebuilds the
 		// palette from the answer, so this is only what the first frame draws
 		// before the reply arrives.

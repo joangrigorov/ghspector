@@ -41,7 +41,7 @@ func TestGoldenScreens(t *testing.T) {
 
 	// The Workflows tab is the one shell screen that needs run data: its
 	// fixture server answers the startup requests as well as the run lists.
-	wfSrv := workflowServer(t, fixtureRuns(8))
+	wfSrv := workflowServer(t, fixtureRuns(9))
 
 	forbidden := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -105,7 +105,7 @@ func TestGoldenScreens(t *testing.T) {
 //
 //	go test ./internal/ui -run TestGoldenWorkflowScreens -update
 func TestGoldenWorkflowScreens(t *testing.T) {
-	srv := workflowServer(t, fixtureRuns(8))
+	srv := workflowServer(t, fixtureRuns(9))
 	waiting := workflowServer(t, waitingFixture())
 
 	cases := []struct {

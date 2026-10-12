@@ -121,6 +121,16 @@ func listOf[T any](items []T, size int) List[T] {
 	return List[T]{Items: items, HasMore: len(items) == size}
 }
 
+// listOfTotal builds a List from a page whose response reported how many items
+// match the query. A full page no longer has to stand in for "there may be
+// more": the count answers it, so the Load More row is offered exactly while
+// items remain. An empty page ends the list whatever the count says, because
+// there is nothing more to load from it.
+func listOfTotal[T any](items []T, page, size, total int) List[T] {
+	fetched := (page-1)*size + len(items)
+	return List[T]{Items: items, HasMore: len(items) > 0 && fetched < total}
+}
+
 // Viewer returns the authenticated account.
 func (r *REST) Viewer(ctx context.Context) (User, error) {
 	return fetch(ctx, r, "viewer", func(ctx context.Context) (User, error) {
@@ -167,11 +177,11 @@ func (r *REST) WorkflowRuns(ctx context.Context, repo RepoRef, q RunQuery) (List
 	number, size := pageArgs(q.Page, defaultRunPageSize)
 	key := fmt.Sprintf("runs|%s|%d|%d|%s", repo, number, size, q.Actor)
 	page, err := fetch(ctx, r, key, func(ctx context.Context) (List[WorkflowRun], error) {
-		runs, err := r.client.GetWorkflowRuns(ctx, repo.Owner, repo.Repo, number, size, q.Actor)
+		runs, total, err := r.client.GetWorkflowRuns(ctx, repo.Owner, repo.Repo, number, size, q.Actor)
 		if err != nil {
 			return List[WorkflowRun]{}, err
 		}
-		return listOf(runs, size), nil
+		return listOfTotal(runs, number, size, total), nil
 	})
 	if err != nil {
 		return List[WorkflowRun]{}, err
