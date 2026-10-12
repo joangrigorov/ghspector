@@ -468,7 +468,7 @@ func (c *CommitDetails) View(deps Deps, r layout.Rect) string {
 		"  " + style(theme.Title, bold).Render(layout.Truncate(commitSubject(c.commit), max(r.W-14, 8))),
 		"  " + style(theme.Muted, normal).Render(fmt.Sprintf("%s | %s | %s",
 			shortSHA(c.commit.SHA), commitAuthor(c.commit), formatTime(c.commit.Commit.Author.Date))),
-		"  " + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(r.W-4, 1))),
+		"  " + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(r.W-layout.Gutter, 1))),
 		"",
 	}
 	if c.err != nil {
@@ -485,10 +485,13 @@ func (c *CommitDetails) View(deps Deps, r layout.Rect) string {
 	}
 
 	_, body := r.SplitRows(len(lines))
+	// The message and the file panes are one block, so they are shifted into the
+	// content box together; the heading above carries the same gutter.
+	inner := paneRect(body)
 	// The commit message is as long as its author made it, so it takes the rows
 	// it needs up to a fair share of the region and the files keep the rest.
-	message := c.messageLines(deps, body.W)
-	msgRect, rest := body.SplitRowsFair(len(message))
+	message := c.messageLines(deps, inner.W)
+	msgRect, rest := inner.SplitRowsFair(len(message))
 	msg := layout.Fit(joinLines(message), msgRect.W, msgRect.H)
 
 	fileW, diffW := fileDiffColumns(rest.W)
@@ -501,7 +504,7 @@ func (c *CommitDetails) View(deps Deps, r layout.Rect) string {
 	for row := 0; row < rest.H; row++ {
 		rows = append(rows, columns[0][row]+separator+columns[1][row])
 	}
-	lines = append(lines, msg, joinLines(rows))
+	lines = append(lines, gutterRows(msg+"\n"+joinLines(rows), body.W, body.H)...)
 	return layout.Fit(joinLines(lines), r.W, r.H)
 }
 

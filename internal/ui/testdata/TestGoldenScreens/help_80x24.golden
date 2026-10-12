@@ -1,24 +1,24 @@
-  [1mPull Requests › Help & Keybindings[m                            Account: octocat
-────────────────────────────────────────────────────────────────────────────────
-[1mStatus[m                                                                          
-  ◆ waiting   □ queued   ■ running   ■ success   ■ failed                       
+  [1mPull Requests › Help & Keybindings[m                          Account: octocat  
+  ────────────────────────────────────────────────────────────────────────────  
+  [1mStatus[m                                                                        
+    ◆ waiting   □ queued   ■ running   ■ success   ■ failed                     
                                                                                 
-[1mGlobal[m                                                                          
-  [1m?[m         Help                                                                
-  [1mo[m         Switch account/org                                                  
-  [1mq/Ctrl+C[m  Quit                                                                
+  [1mGlobal[m                                                                        
+    [1m?[m         Help                                                              
+    [1mo[m         Switch account/org                                                
+    [1mq/Ctrl+C[m  Quit                                                              
                                                                                 
-[1mWorkflow runs[m                                                                   
-  [1mj/↓[m        Move down                                                          
-  [1mk/↑[m        Move up                                                            
-  [1mEnter[m      View jobs                                                          
-  [1mr/Ctrl+R[m   Refresh                                                            
-  [1ma[m          Approve waiting run                                                
-  [1mm[m          Filter to my runs                                                  
-  [1mf[m          Filter                                                             
-  [1mx[m          Clear filters                                                      
-  [1mw[m          Open in browser                                                    
-  [1mTab[m        Next tab                                                           
-  [1mShift+Tab[m  Previous tab                                                       
-────────────────────────────────────────────────────────────────────────────────
-  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mj/↓[m:Scroll down  [1mk/↑[m:Scroll up   
+  [1mWorkflow runs[m                                                                 
+    [1mj/↓[m        Move down                                                        
+    [1mk/↑[m        Move up                                                          
+    [1mEnter[m      View jobs                                                        
+    [1mr/Ctrl+R[m   Refresh                                                          
+    [1ma[m          Approve waiting run                                              
+    [1mm[m          Filter to my runs                                                
+    [1mf[m          Filter                                                           
+    [1mx[m          Clear filters                                                    
+    [1mw[m          Open in browser                                                  
+    [1mTab[m        Next tab                                                         
+    [1mShift+Tab[m  Previous tab                                                     
+  ────────────────────────────────────────────────────────────────────────────  
+  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mj/↓[m:Scroll down                  

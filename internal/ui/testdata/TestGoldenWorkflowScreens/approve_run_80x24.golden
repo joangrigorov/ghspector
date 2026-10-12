@@ -1,5 +1,5 @@
-  [1mWorkflows › Jobs[m                                              Account: octocat
-────────────────────────────────────────────────────────────────────────────────
+  [1mWorkflows › Jobs[m                                            Account: octocat  
+  ────────────────────────────────────────────────────────────────────────────  
   [1mWorkflow: Build 900[m                                                           
   Repo: octocat/api | Branch: main | SHA: abcdef1                               
   ────────────────────────────────────────────────────────────────────────────  
@@ -20,5 +20,5 @@
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
-  [1mq/Ctrl+C[m:Quit  [1my/Y/Enter[m:Yes, approve  [1mw/W[m:Approve on GitHub  [1mn/N/Esc[m:Cancel  
+  ────────────────────────────────────────────────────────────────────────────  
+  [1mq/Ctrl+C[m:Quit  [1my/Y/Enter[m:Yes, approve  [1mw/W[m:Approve on GitHub                  

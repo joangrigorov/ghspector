@@ -196,6 +196,40 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
+// TestBoxWidthsLeaveRoomForTheGutter pins the two widths the frame is built
+// from: the box a route renders into, and the text area inside it.
+func TestBoxWidthsLeaveRoomForTheGutter(t *testing.T) {
+	for _, tc := range []struct {
+		width int
+		box   int
+		text  int
+	}{
+		{140, 138, 136},
+		{120, 118, 116},
+		{80, 78, 76},
+		{50, 48, 46},
+		// Below two gutters there is nothing to divide, so both report the
+		// smallest region a caller can be handed.
+		{4, 2, 1},
+		{1, 1, 1},
+	} {
+		if got := BoxWidth(tc.width); got != tc.box {
+			t.Errorf("BoxWidth(%d) = %d, want %d", tc.width, got, tc.box)
+		}
+		if got := ContentWidth(tc.width); got != tc.text {
+			t.Errorf("ContentWidth(%d) = %d, want %d", tc.width, got, tc.text)
+		}
+	}
+
+	// The two are the same number of cells apart everywhere a box exists, which
+	// is what lets a route and the chrome agree on one right edge.
+	for w := 2*Gutter + 1; w <= 400; w++ {
+		if got, want := BoxWidth(w)-ContentWidth(w), Gutter; got != want {
+			t.Fatalf("width %d: box and text are %d cells apart, want %d", w, got, want)
+		}
+	}
+}
+
 func TestTooSmall(t *testing.T) {
 	if TooSmall(MinWidth, MinHeight) {
 		t.Error("exact minimum reported as too small")

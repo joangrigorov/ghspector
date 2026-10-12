@@ -56,7 +56,11 @@ func (h *Help) View(deps Deps, r layout.Rect) string {
 		Title: deps.Theme.Title,
 		Muted: deps.Theme.Muted,
 	}
-	lines := append(legendLines(deps.Theme, r.W), widgets.HelpLines(st, r.W)...)
+	// The reference is one block, so it is built at the width of the content box
+	// and shifted into it: a section heading starts where the bars' text does,
+	// and the keys under it keep their own indent.
+	inner := paneRect(r).W
+	lines := append(legendLines(deps.Theme, inner), widgets.HelpLines(st, inner)...)
 	h.total = len(lines)
 	h.visible = r.H
 
@@ -70,7 +74,7 @@ func (h *Help) View(deps Deps, r layout.Rect) string {
 	if start > len(lines) {
 		start = len(lines)
 	}
-	return layout.Fit(joinLines(lines[start:end]), r.W, r.H)
+	return gutterBlock(layout.Fit(joinLines(lines[start:end]), inner, r.H), r.W, r.H)
 }
 
 // scroll moves the offset by delta lines and clamps it to the content.

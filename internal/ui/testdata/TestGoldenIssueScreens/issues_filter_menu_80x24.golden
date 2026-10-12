@@ -1,5 +1,5 @@
-  [1mIssues[m                                                        Account: octocat
-────────────────────────────────────────────────────────────────────────────────
+  [1mIssues[m                                                      Account: octocat  
+  ────────────────────────────────────────────────────────────────────────────  
   Pull Requests │ Workflows │[1m Issues [m                                           
 [1m  ST  ISSUE   TITLE                                AUTHOR          [m             
 [1m› ■   #3      Add the issues view                  octocat         [m             
@@ -20,5 +20,5 @@
                                                                                 
                                                                                 
                                                                                 
-────────────────────────────────────────────────────────────────────────────────
+  ────────────────────────────────────────────────────────────────────────────  
   [1mq/Ctrl+C[m:Quit  [1mu/U[m:Filter by user  [1mr/R[m:Filter by repository  [1mEsc[m:Cancel       

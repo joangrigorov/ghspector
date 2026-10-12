@@ -1,7 +1,7 @@
-  [1mPull Requests[m                                                                                    .    Account: octocat
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [1mPull Requests[m                                                                                  .    Account: octocat  
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
  [1m Pull Requests [m│ Workflows │ Issues                                                                                    
-[1m  ST  PR     TITLE                                     AUTHOR           REPOSITORY       REVIEWERS        LABELS        [m
+[1m  ST  PR     TITLE                                   AUTHOR           REPOSITORY       REVIEWERS        LABELS        [m  
                                                                                                                         
   Loading pull requests...                                                                                              
                                                                                                                         
@@ -36,5 +36,5 @@
                                                                                                                         
                                                                                                                         
                                                                                                                         
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
   [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mj/↓[m:Move down  [1mk/↑[m:Move up  [1mEnter[m:View details  [1mr/Ctrl+R[m:Refresh         

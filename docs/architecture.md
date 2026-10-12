@@ -87,6 +87,8 @@ Rules:
 - Truncation and wrapping go through `charmbracelet/x/ansi` so wide runes and ANSI sequences are handled by measurement, never by rune indexing.
 - The frame is computed once per `WindowSizeMsg`, and a body too small to render produces one documented "terminal too small" view rather than a malformed screen.
 
+**One content box.** `layout.Gutter` (2 cells) is the space every screen keeps clear at its left and right edge, and one screen's rows all share one box: a bar's text, a rule, a table row and a pane start at cell 2 and end at `width-3`. The chrome measures itself with `layout.ContentWidth`, a route is handed `layout.BoxWidth`, and the left gutter is the surface's own — a table row reserves it for the selection marker, a heading and a pane write it out, and `gutterBlock` shifts a pane block into it. `TestEveryScreenKeepsTheGutter` walks fifteen screens at three sizes and fails on a row that writes into either gutter, which is the check the defect it replaces needed: the description and the sidebar used to start in column zero, so the body ran into both edges while the bars above it were inset.
+
 **Enforced by:** a resize test that asserts every rendered line is exactly `width` cells and the line count is exactly `height`, across a range of sizes including very narrow and very wide.
 
 ### 3.2 Routes instead of `viewState`
@@ -366,6 +368,13 @@ These are the rules that keep the design from regressing. Each is enforceable.
     A route gets the global keys pinned; a modal that consumes them gets quit
     alone; a text box gets Ctrl+C. Advertising a key that the surface in front of
     it swallows is the same defect as documenting a key that does nothing.
+14. **One content box per screen.** Every row of a screen — a bar, a rule, a
+    table row, a pane — starts at `layout.Gutter` and ends at `width-Gutter-1`.
+    The chrome measures with `layout.ContentWidth`, a route is handed
+    `layout.BoxWidth`, and a block that has to move asks for `paneRect` rather
+    than adding spaces. A length that runs from the left gutter to the far edge
+    is written as `width - layout.Gutter` by the surface that owns the indent,
+    which is what keeps a rule the same length as the text above it.
 
 ---
 

@@ -1,5 +1,5 @@
-  [1mWorkflows › Jobs › Logs[m                                                           Account: octocat
-────────────────────────────────────────────────────────────────────────────────────────────────────
+  [1mWorkflows › Jobs › Logs[m                                                         Account: octocat  
+  ────────────────────────────────────────────────────────────────────────────────────────────────  
   [1mJob: build[m                                                                                        
                                                                                                     
 [1m  STEPS[m                            2024-05-01T10:01:00.0000000Z Run tests                           
@@ -26,5 +26,5 @@
                                                                                                     
                                                                                                     
                                                                                                     
-────────────────────────────────────────────────────────────────────────────────────────────────────
-  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEsc/Backspace[m:Back  [1mr/Ctrl+R[m:Refresh  [1mj/↓[m:Next step  
+  ────────────────────────────────────────────────────────────────────────────────────────────────  
+  [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEsc/Backspace[m:Back  [1mr/Ctrl+R[m:Refresh                 

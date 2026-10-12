@@ -1,16 +1,16 @@
-  [1mIssues › Issue #3[m                         Account: octocat
-────────────────────────────────────────────────────────────
+  [1mIssues › Issue #3[m                       Account: octocat  
+  ────────────────────────────────────────────────────────  
   [1m[OPEN][m [1mIssue #3: Add the issues view[m                      
   Repo: octocat/api | Author: @octocat | Assignees: hubot   
   ────────────────────────────────────────────────────────  
-[1m▶ DESCRIPTION[m                      │[1mDETAILS[m                 
-                                   │                        
-Issues are the third list of the   │  State:      OPEN      
-app.                               │  Author:     @octocat  
-                                   │  Assignees:  @hubot    
-They have no reviewers and no diff,│  Milestone:  0.7.0     
-so the sidebar carries what the    │  Labels:     enhancemen
-list cannot: the assignees, the    │              t         
-labels and the milestone.          │  Created:    2024-04-29
-────────────────────────────────────────────────────────────
+  [1m▶ DESCRIPTION[m                  │ [1mDETAILS[m                  
+                                 │                          
+  Issues are the third list of   │   State:      OPEN       
+  the app.                       │   Author:     @octocat   
+                                 │   Assignees:  @hubot     
+  They have no reviewers and no  │   Milestone:  0.7.0      
+  diff, so the sidebar carries   │   Labels:     enhanceme  
+  what the list cannot: the      │               nt         
+  assignees, the labels and the  │   Created:    2024-04-   
+  ────────────────────────────────────────────────────────  
   [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit               
