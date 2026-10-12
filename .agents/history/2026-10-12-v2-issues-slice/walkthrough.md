@@ -75,6 +75,12 @@ The seven checks, on the final commit of the branch:
 | `go mod tidy -diff` | pass (no change) |
 | `gofmt -l internal/ cmd/` | clean except the pre-existing `internal/gh/{client,client_test,types}.go` drift |
 
+**CI.** The `Test and Lint` workflow on this branch passed on the code commit
+`2394f3a` in 1m05s (run
+[38273325960](https://github.com/joangrigorov/ghspector/actions/runs/38273325960)) —
+the same checks, run by the workflow's own steps, so the results above are not
+only local.
+
 Because this is a terminal program, browser verification has no equivalent here.
 What stands in for it:
 
