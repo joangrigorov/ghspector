@@ -18,6 +18,13 @@ type PollingConfig struct {
 	PRsIntervalSeconds       int `yaml:"prs_interval_seconds,omitempty"`
 }
 
+// CurrentConfigVersion is the configuration schema version written by this build.
+const CurrentConfigVersion = 2
+
+// legacyConfigVersion is the version reported for config files written before
+// the version key existed.
+const legacyConfigVersion = 1
+
 // Config holds the configuration options.
 type Config struct {
 	GitHubToken            string        `yaml:"github_token"`
@@ -26,6 +33,7 @@ type Config struct {
 	PollingIntervalSeconds int           `yaml:"polling_interval_seconds,omitempty"`
 	Polling                PollingConfig `yaml:"polling,omitempty"`
 	DefaultMergeMethod     string        `yaml:"default_merge_method,omitempty"`
+	Version                int           `yaml:"version,omitempty"`
 	TokenSource            string        `yaml:"-"`
 }
 
@@ -65,6 +73,9 @@ func LoadConfig(path string) (*Config, error) {
 	if err := dec.Decode(&cfg); err != nil {
 		return nil, err
 	}
+	if cfg.Version == 0 {
+		cfg.Version = legacyConfigVersion
+	}
 	return &cfg, nil
 }
 
@@ -80,6 +91,9 @@ func SaveConfig(cfg *Config) error {
 	if err != nil {
 		return err
 	}
+
+	// The file now carries the current schema, so stamp it before writing.
+	cfg.Version = CurrentConfigVersion
 
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
