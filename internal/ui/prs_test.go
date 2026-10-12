@@ -38,7 +38,7 @@ type prSpec struct {
 const prFixtureNumber = 7
 
 // prCheckRunID is the fixture run the standard check's URL names: the first run
-// in fixtureRuns(8) that has finished, so the job table is what opens.
+// in fixtureRuns(9) that has finished, so the job table is what opens.
 const prCheckRunID = 898
 
 // fixturePRs is the standard pull request list: one open pull request in the
@@ -181,7 +181,7 @@ func prServerWithLog(t *testing.T, log *requestLog, opts ...prServerOption) *htt
 	config := prServerConfig{
 		prs:        fixturePRs(),
 		issues:     fixtureIssues(),
-		runs:       fixtureRuns(8),
+		runs:       fixtureRuns(9),
 		permission: "write",
 		checks:     fixtureChecks(),
 	}
@@ -197,6 +197,11 @@ func prServerWithLog(t *testing.T, log *requestLog, opts ...prServerOption) *htt
 		}
 
 		switch {
+		case path == graphQLPath:
+			// The fixture serves REST only; see graphql_test.go for what covers
+			// the search path instead.
+			w.WriteHeader(http.StatusNotImplemented)
+			writeBody(w, `{"message":"the fixture serves REST only"}`)
 		case path == "/user":
 			writeBody(w, `{"login":"octocat","id":1}`)
 		case path == "/user/orgs":
@@ -232,11 +237,7 @@ func prServerWithLog(t *testing.T, log *requestLog, opts ...prServerOption) *htt
 		case strings.HasSuffix(path, "/check-runs"):
 			writeBody(w, checksBody(t, config.checks))
 		case strings.HasSuffix(path, "/actions/runs") && r.Method == http.MethodGet:
-			if r.URL.Query().Get("page") == "2" {
-				writeBody(w, runsBody(t, "octocat"))
-				return
-			}
-			writeBody(w, runsBody(t, "octocat", forRepo(config.runs, repoFromRunPath(path))...))
+			writeBody(w, runsPageBody(t, "octocat", config.runs, repoFromRunPath(path), r.URL.Query()))
 		case strings.HasSuffix(path, "/jobs"):
 			writeBody(w, jobsBody(t))
 		case strings.Contains(path, "/collaborators/") && strings.HasSuffix(path, "/permission"):

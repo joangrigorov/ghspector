@@ -195,7 +195,10 @@ func TestWorkflowRunsPaginationAndHasMore(t *testing.T) {
 	// The actor is part of the fixture because the store re-checks the filter
 	// against the page it was given, and a run that does not report its actor
 	// cannot be confirmed to match.
-	runs := `{"workflow_runs":[{"id":1,"actor":{"login":"octocat"}},{"id":2,"actor":{"login":"octocat"}}]}`
+	//
+	// The count is the repository's rather than the page's, which is what tells
+	// a page that is not the last one apart from the last page.
+	runs := `{"total_count":5,"workflow_runs":[{"id":1,"actor":{"login":"octocat"}},{"id":2,"actor":{"login":"octocat"}}]}`
 	rec := newRecorder().serve("/repos/acme/one/actions/runs", runs)
 	s := newTestStore(t, rec)
 	repo := RepoRef{Owner: "acme", Repo: "one"}
@@ -205,19 +208,39 @@ func TestWorkflowRunsPaginationAndHasMore(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(full.Items) != 2 || !full.HasMore {
-		t.Fatalf("full page = %+v, want 2 items and HasMore", full)
+		t.Fatalf("page 2 of 5 = %+v, want 2 items and HasMore", full)
 	}
 	q := rec.query("/repos/acme/one/actions/runs")
 	if q.Get("page") != "2" || q.Get("per_page") != "2" || q.Get("actor") != "octocat" {
 		t.Errorf("query = %v", q)
 	}
 
+	// Page 3 of a size-3 page starts past the fifth run, so nothing is left.
 	short, err := s.WorkflowRuns(context.Background(), repo, RunQuery{Page: Page{Number: 3, Size: 3}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if short.HasMore {
-		t.Error("HasMore true when the page is shorter than the page size")
+		t.Error("HasMore true for a page past the end of the list")
+	}
+}
+
+func TestWorkflowRunsEndsOnAFullLastPage(t *testing.T) {
+	// Two runs, a page size of two: the page is full and the list has ended, so
+	// the count is what says there is nothing more to load.
+	runs := `{"total_count":2,"workflow_runs":[{"id":1},{"id":2}]}`
+	rec := newRecorder().serve("/repos/acme/one/actions/runs", runs)
+	s := newTestStore(t, rec)
+
+	got, err := s.WorkflowRuns(context.Background(), RepoRef{Owner: "acme", Repo: "one"}, RunQuery{Page: Page{Number: 1, Size: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Items) != 2 {
+		t.Fatalf("items = %d, want the whole list", len(got.Items))
+	}
+	if got.HasMore {
+		t.Error("HasMore true for a full page that holds the whole list")
 	}
 }
 

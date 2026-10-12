@@ -15,7 +15,7 @@ With `ghspector`, you can tail workflow logs, cycle through run attempts, inspec
 
 ### The Problem It Solves
 
-Monitoring GitHub Actions workflows across multiple active repositories typically requires opening dozens of browser tabs, navigating back and forth, and constantly reloading pages. `ghspector` solves this friction by aggregating all workflow runs and pull requests within a user account or organization into a single, cohesive dashboard. It eliminates tab clutter and context switching, bringing real-time observability and GitHub operations directly into your terminal.
+Monitoring GitHub Actions workflows across multiple active repositories typically requires opening dozens of browser tabs, navigating back and forth, and constantly reloading pages. `ghspector` solves this friction by aggregating workflow runs and pull requests across a user account or organization into a single, cohesive dashboard. It eliminates tab clutter and context switching, bringing real-time observability and GitHub operations directly into your terminal.
 
 ## Table of Contents
 - [Features](#features)
@@ -29,7 +29,7 @@ Monitoring GitHub Actions workflows across multiple active repositories typicall
 
 ## Features
 - **Unified GitHub Operations**: A single, clean terminal interface to manage CI/CD workflow runs, pull requests and issues.
-- **Aggregated Scopes**: View combined workflows, pull requests and issues aggregated across a user account or an entire organization.
+- **Aggregated Scopes**: View combined workflows, pull requests and issues aggregated across a user account or an entire organization. Pull requests and issues are one cursor-paginated GraphQL search query per page, so their filters and their count cover the whole scope; workflow runs cover the repositories pushed to most recently, because GitHub's GraphQL schema exposes no scope-wide run list.
 - **Real-Time Polling**: Active background status updates for runs, jobs, logs, pull requests and issues.
 - **Workflow & Log Viewer**: Cycle through historical attempts of multi-run workflows and tail active jobs in real-time.
 - **Keyboard-Driven PR Management**: Read PR descriptions, inspect Action checks/comments, and merge (Squash, Normal, Rebase) or close PRs directly.

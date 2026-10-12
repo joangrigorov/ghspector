@@ -164,7 +164,7 @@ func TestFlowTooSmallThenRecovered(t *testing.T) {
 // the same screens by running commands by hand, so this is where the wiring
 // between Init, the command loop and the stack is exercised rather than assumed.
 func TestFlowFromTheRunListToTheLog(t *testing.T) {
-	srv := workflowServer(t, fixtureRuns(8))
+	srv := workflowServer(t, fixtureRuns(9))
 	const w, h = 120, 40
 
 	tm := teatest.NewTestModel(t, newModel(t, srv, w, h), teatest.WithInitialTermSize(w, h))

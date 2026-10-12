@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -107,7 +109,9 @@ type runSpec struct {
 // repository, cycling through the states a row can be drawn in, plus one run in
 // the second repository so the list has to merge two of them.
 //
-// The page size is 8, so apiCount=8 makes the Load More row appear.
+// The page size is 8, so apiCount=9 makes the Load More row appear: eight fill
+// the page and the ninth is beyond it. apiCount=8 fills the page and ends the
+// list, which is the case the sentinel has to stay away from.
 func fixtureRuns(apiCount int) []runSpec {
 	states := []struct{ status, conclusion string }{
 		{"waiting", ""},
@@ -216,8 +220,9 @@ func withLog(body string) serverOption {
 	return func(c *serverConfig) { c.log = body }
 }
 
-// workflowServer serves the workflow endpoints for a fixed run list. Page 2 of
-// every run list is empty, which is how the list ends.
+// workflowServer serves the workflow endpoints for a fixed run list. Run lists
+// are paged the way the API pages them, so the last page is the one where the
+// repository's count runs out.
 //
 // The endpoint paths are the ones the transport builds: repositories for the
 // context, a run list per repository, one job list per attempt, one log per
@@ -252,11 +257,7 @@ func workflowServer(t *testing.T, runs []runSpec, opts ...serverOption) *httptes
 				writeBody(w, `{"message":"no fixture"}`)
 				return
 			}
-			if r.URL.Query().Get("page") == "2" {
-				writeBody(w, runsBody(t, config.owner))
-				return
-			}
-			writeBody(w, runsBody(t, config.owner, forRepo(runs, repoFromRunPath(path))...))
+			writeBody(w, runsPageBody(t, config.owner, runs, repoFromRunPath(path), r.URL.Query()))
 		case strings.HasSuffix(path, "/jobs"):
 			if config.failJobs {
 				w.WriteHeader(http.StatusNotFound)
@@ -352,13 +353,39 @@ func repoJSON(name string, index int, owner string) map[string]any {
 // runsBody builds a run list response. The runs belong to owner, which is not
 // always the viewer: whether they own the repository decides how a run is
 // approved.
-func runsBody(t *testing.T, owner string, runs ...runSpec) string {
+// runsPageBody renders one page of a run list the way the API pages it: the
+// count is every run the repository has rather than the page, which is what tells
+// a page that is not the last one apart from the last page.
+func runsPageBody(t *testing.T, owner string, runs []runSpec, repo string, query url.Values) string {
 	t.Helper()
-	items := make([]map[string]any, 0, len(runs))
-	for _, r := range runs {
+	matching := forRepo(runs, repo)
+	page, size := queryPage(query)
+	start := (page - 1) * size
+	if start > len(matching) {
+		start = len(matching)
+	}
+	end := start + size
+	if end > len(matching) {
+		end = len(matching)
+	}
+	items := make([]map[string]any, 0, end-start)
+	for _, r := range matching[start:end] {
 		items = append(items, runJSON(r, owner))
 	}
-	return jsonBody(t, map[string]any{"total_count": len(items), "workflow_runs": items})
+	return jsonBody(t, map[string]any{"total_count": len(matching), "workflow_runs": items})
+}
+
+// queryPage reads the page and its size out of a list request, defaulting the
+// way the API does.
+func queryPage(query url.Values) (page, size int) {
+	page, size = 1, 8
+	if v, err := strconv.Atoi(query.Get("page")); err == nil && v > 0 {
+		page = v
+	}
+	if v, err := strconv.Atoi(query.Get("per_page")); err == nil && v > 0 {
+		size = v
+	}
+	return page, size
 }
 
 // runJSON builds one run. The actor is always present: the client-side actor

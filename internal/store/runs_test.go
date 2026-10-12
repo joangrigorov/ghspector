@@ -30,7 +30,14 @@ func reposFixture(t *testing.T, names ...string) string {
 // runsFixture builds a runs list response.
 func runsFixture(t *testing.T, runs ...map[string]any) string {
 	t.Helper()
-	return mustJSON(t, map[string]any{"total_count": len(runs), "workflow_runs": runs})
+	return runsFixtureTotal(t, len(runs), runs...)
+}
+
+// runsFixtureTotal builds a run list whose response reports total matches, which
+// is how a page that is not the last one is told apart from the last page.
+func runsFixtureTotal(t *testing.T, total int, runs ...map[string]any) string {
+	t.Helper()
+	return mustJSON(t, map[string]any{"total_count": total, "workflow_runs": runs})
 }
 
 // run builds one run fixture. Status and conclusion drive both sorting and the
@@ -169,14 +176,16 @@ func TestScopeRunsReportsAnErrorWhenEveryRepositoryFails(t *testing.T) {
 	}
 }
 
-func TestScopeRunsReportsMoreWhenAnyRepositoryHasAFullPage(t *testing.T) {
+func TestScopeRunsReportsMoreWhenARepositoryHasRunsBeyondThePage(t *testing.T) {
 	full := make([]map[string]any, 0, defaultRunPageSize)
 	for i := 0; i < defaultRunPageSize; i++ {
 		full = append(full, run(int64(i+1), "api", "completed", "success", now))
 	}
 	rec := newRecorder().
 		serve("/users/acme/repos", reposFixture(t, "api")).
-		serve("/repos/acme/api/actions/runs", runsFixture(t, full...))
+		// The page holds eight and the repository has nine, so there is one more
+		// to load. The page being full is not what says so; the count is.
+		serve("/repos/acme/api/actions/runs", runsFixtureTotal(t, defaultRunPageSize+1, full...))
 	s := newTestStore(t, rec)
 
 	got, err := s.ScopeRuns(context.Background(), OwnerRef{Login: "acme"}, RunQuery{})
@@ -184,7 +193,28 @@ func TestScopeRunsReportsMoreWhenAnyRepositoryHasAFullPage(t *testing.T) {
 		t.Fatalf("ScopeRuns: %v", err)
 	}
 	if !got.HasMore {
-		t.Error("HasMore = false for a full page, want true")
+		t.Error("HasMore = false with a run beyond the page, want true")
+	}
+}
+
+func TestScopeRunsEndsWhenTheCountHoldsNothingMore(t *testing.T) {
+	full := make([]map[string]any, 0, defaultRunPageSize)
+	for i := 0; i < defaultRunPageSize; i++ {
+		full = append(full, run(int64(i+1), "api", "completed", "success", now))
+	}
+	rec := newRecorder().
+		serve("/users/acme/repos", reposFixture(t, "api")).
+		// A page that holds the whole repository offers no Load More row, even
+		// though it came back full.
+		serve("/repos/acme/api/actions/runs", runsFixture(t, full...))
+	s := newTestStore(t, rec)
+
+	got, err := s.ScopeRuns(context.Background(), OwnerRef{Login: "acme"}, RunQuery{})
+	if err != nil {
+		t.Fatalf("ScopeRuns: %v", err)
+	}
+	if got.HasMore {
+		t.Errorf("HasMore = true for a repository of exactly %d runs", len(got.Items))
 	}
 }
 

@@ -264,7 +264,9 @@ func (c *Client) GetRepos(ctx context.Context, ownerType, owner string, page, pe
 }
 
 // GetWorkflowRuns fetches the workflow runs for a specific repository, optionally filtered by actor.
-func (c *Client) GetWorkflowRuns(ctx context.Context, owner, repo string, page, perPage int, actor string) ([]WorkflowRun, error) {
+// The second result is the total number of runs the filter matches, so a caller
+// can tell a full page from the last page.
+func (c *Client) GetWorkflowRuns(ctx context.Context, owner, repo string, page, perPage int, actor string) ([]WorkflowRun, int, error) {
 	var wrResp WorkflowRunsResponse
 	q := params{
 		"page":     strconv.Itoa(page),
@@ -276,9 +278,9 @@ func (c *Client) GetWorkflowRuns(ctx context.Context, owner, repo string, page, 
 	path := fmt.Sprintf("/repos/%s/%s/actions/runs", owner, repo)
 	err := c.doRequest(ctx, "GET", path, q, &wrResp)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return wrResp.WorkflowRuns, nil
+	return wrResp.WorkflowRuns, wrResp.TotalCount, nil
 }
 
 // GetWorkflowRun fetches a single workflow run by ID.

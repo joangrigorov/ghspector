@@ -121,9 +121,12 @@ Time:2026-07-09T12:51:16.9150158Z</Message></Error>`))
 
 	client := NewClient("test-token", server.URL)
 
-	runs, err := client.GetWorkflowRuns(context.Background(), "owner", "repo", 1, 10, "")
+	runs, total, err := client.GetWorkflowRuns(context.Background(), "owner", "repo", 1, 10, "")
 	if err != nil {
 		t.Fatalf("unexpected error fetching runs: %v", err)
+	}
+	if total != 1 {
+		t.Errorf("total = %d, want 1", total)
 	}
 	if len(runs) != 1 || runs[0].ID != 101 {
 		t.Errorf("expected run ID 101, got: %+v", runs)
@@ -175,7 +178,7 @@ func TestClient_GetWorkflowRuns_ActorFilter(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient("test-token", server.URL)
-	runs, err := client.GetWorkflowRuns(context.Background(), "owner", "repo", 1, 10, "octocat")
+	runs, _, err := client.GetWorkflowRuns(context.Background(), "owner", "repo", 1, 10, "octocat")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
