@@ -14,6 +14,7 @@ package layout
 import (
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -189,6 +190,17 @@ func Truncate(s string, w int) string {
 // Width reports the display width of s in cells, ignoring ANSI sequences.
 func Width(s string) int {
 	return ansi.StringWidth(s)
+}
+
+// Wrap soft-wraps text to at most width cells at word boundaries, returning the
+// wrapped block with newlines. It is here rather than in a route so no route
+// reaches for a text library, and so the wrapping rule is the same everywhere a
+// paragraph is wrapped.
+func Wrap(text string, width int) string {
+	if width < 1 {
+		return text
+	}
+	return lipgloss.Wrap(text, width, "")
 }
 
 // PadRight pads s with spaces to exactly w cells. A string already at or past w

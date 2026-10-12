@@ -3,16 +3,16 @@
   Pull Requests │[1m Workflows [m│ Issues                                            
 [1m  ST  REPOSITORY       WORKFLOW RUN           EVENT          DURATION   [m        
 [1m  □   api              Build 896              push           queued     [m        
-  ■   api              Build 899              push           1m00s              
-  ■╭────────────────────────────────────────────────────────────────────────╮   
-  ◆│                                                                        │   
-  ■│  [1mFilter by user[m                                                        │   
-  ■│                                                                        │   
-  ■│  Show only runs started by this GitHub login.                          │   
-  ◆│  Current actor filter: none.                                           │   
-  ■│                                                                        │   
-  [│  login                                                                 │   
-   │                                                                        │   
+ ╭────────────────────────────────────────────────────────────────────────╮     
+ │ ╭────────────────────────────────────────────────────────────────────────╮   
+ │ │                                                                        │   
+ │ │  [1mFilter by user[m                                                        │   
+ │ │                                                                        │   
+ │ │  Show only runs started by this GitHub login.                          │   
+ │ │  Current actor filter: none.                                           │   
+ │ │                                                                        │   
+ │ │  login                                                                 │   
+ ╰─│                                                                        │   
    │  Submit an empty value to clear the filter.                            │   
    │                                                                        │   
    ╰────────────────────────────────────────────────────────────────────────╯   

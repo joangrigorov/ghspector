@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"ghspector/internal/auth"
 	"ghspector/internal/keymap"
 	"ghspector/internal/layout"
 	"ghspector/internal/overlay"
@@ -35,6 +36,12 @@ type Options struct {
 	// Clock is the time source. Nil means the real clock; a test supplies one
 	// it can release by hand instead of sleeping.
 	Clock Clock
+	// MergeMethod is the default merge method from the config file, resolved to
+	// one of squash, merge or rebase.
+	MergeMethod string
+	// SaveMergeMethod persists a new default merge method. Nil means there is
+	// no config file to write to.
+	SaveMergeMethod func(method string) error
 	// OverlayChrome styles the modal stack.
 	OverlayChrome overlay.Chrome
 }
@@ -92,15 +99,17 @@ func New(opts Options) Model {
 		stage:    stageLoading,
 	}
 	m.deps = Deps{
-		Store:         opts.Store,
-		Theme:         opts.Theme,
-		Ctx:           opts.Context,
-		Version:       opts.Version,
-		ConfigPath:    opts.ConfigPath,
-		TokenSource:   opts.TokenSource,
-		PollWorkflows: opts.PollWorkflows,
-		PollPRs:       opts.PollPRs,
-		Clock:         opts.Clock,
+		Store:           opts.Store,
+		Theme:           opts.Theme,
+		Ctx:             opts.Context,
+		Version:         opts.Version,
+		ConfigPath:      opts.ConfigPath,
+		TokenSource:     opts.TokenSource,
+		PollWorkflows:   opts.PollWorkflows,
+		PollPRs:         opts.PollPRs,
+		Clock:           opts.Clock,
+		MergeMethod:     auth.ResolveMergeMethod(opts.MergeMethod),
+		SaveMergeMethod: opts.SaveMergeMethod,
 	}
 	return m
 }
@@ -307,6 +316,15 @@ func (m Model) applyAction(action keymap.Action) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case keymap.ActionBack:
+		// The route on screen owns what Back means, so a route can step back
+		// inside itself — a pull request leaving a sub-tab for its Info tab —
+		// before the stack gives up a screen. A route that does not handle it
+		// is asking to be popped.
+		route, cmd, handled := m.routes.Top().Act(m.deps, action)
+		if handled {
+			m.routes = m.routes.Replace(route)
+			return m, cmd
+		}
 		if m.routes.Len() > 1 {
 			m.popRoute()
 		}

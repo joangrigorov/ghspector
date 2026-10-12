@@ -205,6 +205,49 @@ func TestViewDrawsTheTopmostOverlayLast(t *testing.T) {
 	}
 }
 
+// TestViewOffsetsAChainSoBothRead is the fix for a chain that rendered as one
+// box with a doubled border: each overlay below the topmost is stepped up and
+// to the left, so its corner shows and the chain reads as a stack.
+func TestViewOffsetsAChainSoBothRead(t *testing.T) {
+	const w, h = 80, 20
+	base := &stubOverlay{title: "first", body: "underneath"}
+	top := &stubOverlay{title: "second", body: "on top"}
+
+	out := NewStack(plainChrome()).Push(base).Push(top).View(renderBackground(rand.New(rand.NewSource(3)), w, h), w, h)
+	lines := strings.Split(out, "\n")
+
+	// Two boxes, drawn from the deepest first, so the corners come in order.
+	// The column is measured in display cells, because the border runes are
+	// wider than one byte.
+	var corners [][2]int
+	for row, line := range lines {
+		if at := strings.Index(line, "╭"); at >= 0 {
+			corners = append(corners, [2]int{row, layout.Width(line[:at])})
+		}
+	}
+	if len(corners) != 2 {
+		t.Fatalf("found %d box corners, want both boxes on screen:\n%s", len(corners), out)
+	}
+	if got := corners[1][0] - corners[0][0]; got != 2 {
+		t.Errorf("the chain steps down by %d rows, want 2", got)
+	}
+	if got := corners[1][1] - corners[0][1]; got != 2 {
+		t.Errorf("the chain steps right by %d columns, want 2", got)
+	}
+
+	// Each box is drawn whole, and the overlay in front is the one on top: the
+	// box behind contributes its corner and nothing over the box in front.
+	if got := strings.Count(out, "╰"); got != 2 {
+		t.Errorf("found %d bottom borders, want one per box:\n%s", got, out)
+	}
+	if !strings.Contains(out, "on top") {
+		t.Errorf("the topmost overlay is not drawn:\n%s", out)
+	}
+	if strings.Contains(out, "underneath") {
+		t.Errorf("the box behind was drawn over the one in front:\n%s", out)
+	}
+}
+
 // TestViewOnTinyTerminalDoesNotPanic covers the degenerate sizes that arrive
 // while a terminal is being resized.
 func TestViewOnTinyTerminalDoesNotPanic(t *testing.T) {

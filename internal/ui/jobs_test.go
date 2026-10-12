@@ -85,8 +85,10 @@ func TestJobsEnterOnAFinishedJobOpensLogs(t *testing.T) {
 		t.Errorf("the log viewer does not name the job:\n%s", screen(t, m, 110, 30))
 	}
 
-	// Esc returns to the job list.
-	back, _ := pressKey(t, m, "esc")
+	// Esc returns to the job list: the route hands the stack a pop, which is
+	// what the runtime would run.
+	back, cmd := pressKey(t, m, "esc")
+	back = drive(t, back, cmd)
 	if back.routes.Len() != 2 {
 		t.Fatalf("stack depth after esc = %d, want 2", back.routes.Len())
 	}
@@ -293,7 +295,8 @@ func TestJobsStopReleasesItsRequests(t *testing.T) {
 	if err := jobs.sess.Ctx().Err(); err != nil {
 		t.Fatalf("the route's context is already done: %v", err)
 	}
-	back, _ := pressKey(t, m, "esc")
+	back, cmd := pressKey(t, m, "esc")
+	back = drive(t, back, cmd)
 	if back.routes.Len() != 1 {
 		t.Fatalf("stack depth = %d, want 1", back.routes.Len())
 	}

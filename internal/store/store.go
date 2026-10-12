@@ -35,6 +35,7 @@ type (
 	CommitFile        = gh.CommitFile
 	RepositoryCommit  = gh.RepositoryCommit
 	CheckRun          = gh.CheckRun
+	CheckApp          = gh.CheckApp
 	Issue             = gh.Issue
 	IssueComment      = gh.IssueComment
 	RateLimitInfo     = gh.RateLimitInfo
@@ -121,6 +122,10 @@ type RunQuery struct {
 type PRQuery struct {
 	Page  Page
 	State string
+	// Repo narrows the scope-wide list to one repository by exact name. Empty
+	// means every repository in the context. The single-repository PullRequests
+	// call ignores it.
+	Repo string
 	// Author, Assignee and Reviewer narrow by login. Empty means no filter.
 	Author   string
 	Assignee string
@@ -162,6 +167,10 @@ type Store interface {
 
 	// PullRequests lists pull requests in one repository.
 	PullRequests(ctx context.Context, repo RepoRef, q PRQuery) (List[PullRequest], error)
+	// ScopePRs lists pull requests across the context's repositories, merged
+	// into one list in display order. It is what the pull request view asks
+	// for; PullRequests exists for the single-repository case and for tests.
+	ScopePRs(ctx context.Context, owner OwnerRef, q PRQuery) (List[PullRequest], error)
 	// PullRequest fetches one pull request.
 	PullRequest(ctx context.Context, repo RepoRef, number int) (PullRequest, error)
 	// PullRequestCommits lists the commits of a pull request.

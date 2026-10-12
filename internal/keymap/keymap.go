@@ -92,6 +92,12 @@ const (
 	ActionComments       Action = "comments"
 	ActionCommits        Action = "commits"
 	ActionDiff           Action = "diff"
+	// ActionTabInfo and ActionTabChecks select the two PR-detail sub-tabs that
+	// have no dedicated letter: the overview and the checks list. The other
+	// three sub-tabs reuse ActionCommits, ActionDiff and ActionComments, which
+	// are the same destinations the letters open (spec §4.10).
+	ActionTabInfo   Action = "tab-info"
+	ActionTabChecks Action = "tab-checks"
 
 	ActionFilterType     Action = "filter-type"
 	ActionFilterMine     Action = "filter-mine"
@@ -203,6 +209,7 @@ var table = map[Scope][]Binding{
 
 	PRDetails: {
 		{Action: ActionBack, Keys: []string{"esc", "backspace"}, Help: "Back to list"},
+		{Action: ActionTabInfo, Keys: []string{"1"}, Help: "Info"},
 		{Action: ActionToggleFocus, Keys: []string{"tab", "shift+tab"}, Help: "Switch focus"},
 		{Action: ActionDown, Keys: []string{"j", "down"}, Help: "Down"},
 		{Action: ActionUp, Keys: []string{"k", "up"}, Help: "Up"},
@@ -211,15 +218,20 @@ var table = map[Scope][]Binding{
 		{Action: ActionOpen, Keys: []string{"enter"}, Help: "Open check"},
 		{Action: ActionOpenBrowser, Keys: []string{"w"}, Help: "Open in browser"},
 		{Action: ActionMerge, Keys: []string{"m"}, Help: "Merge", Destructive: true},
-		{Action: ActionComments, Keys: []string{"c"}, Help: "Comments"},
+		{Action: ActionComments, Keys: []string{"5", "c"}, Help: "Comments"},
 		{Action: ActionClose, Keys: []string{"C"}, Help: "Close PR", Destructive: true},
-		{Action: ActionCommits, Keys: []string{"v"}, Help: "Commits"},
-		{Action: ActionDiff, Keys: []string{"D"}, Help: "Diff"},
+		{Action: ActionCommits, Keys: []string{"2", "v"}, Help: "Commits"},
+		{Action: ActionDiff, Keys: []string{"3", "D"}, Help: "Files & diff"},
+		{Action: ActionTabChecks, Keys: []string{"4"}, Help: "Checks"},
 		{Action: ActionRefresh, Keys: []string{"r", "ctrl+r"}, Help: "Refresh"},
 	},
 
 	PRCommits: {
 		{Action: ActionBack, Keys: []string{"esc", "backspace"}, Help: "Back"},
+		{Action: ActionTabInfo, Keys: []string{"1"}, Help: "Info"},
+		{Action: ActionTabChecks, Keys: []string{"4"}, Help: "Checks"},
+		{Action: ActionComments, Keys: []string{"5"}, Help: "Comments"},
+		{Action: ActionDiff, Keys: []string{"3"}, Help: "Files & diff"},
 		{Action: ActionDown, Keys: []string{"j", "down"}, Help: "Move down"},
 		{Action: ActionUp, Keys: []string{"k", "up"}, Help: "Move up"},
 		{Action: ActionOpen, Keys: []string{"enter"}, Help: "View commit"},
@@ -236,6 +248,10 @@ var table = map[Scope][]Binding{
 
 	PRDiff: {
 		{Action: ActionBack, Keys: []string{"esc", "backspace"}, Help: "Back"},
+		{Action: ActionTabInfo, Keys: []string{"1"}, Help: "Info"},
+		{Action: ActionTabChecks, Keys: []string{"4"}, Help: "Checks"},
+		{Action: ActionComments, Keys: []string{"5"}, Help: "Comments"},
+		{Action: ActionCommits, Keys: []string{"2"}, Help: "Commits"},
 		{Action: ActionDown, Keys: []string{"j", "down"}, Help: "Next file"},
 		{Action: ActionUp, Keys: []string{"k", "up"}, Help: "Previous file"},
 		{Action: ActionScrollUp, Keys: []string{"u"}, Help: "Scroll up"},
@@ -245,7 +261,13 @@ var table = map[Scope][]Binding{
 
 	PRComments: {
 		{Action: ActionBack, Keys: []string{"esc", "backspace"}, Help: "Back"},
+		{Action: ActionTabInfo, Keys: []string{"1"}, Help: "Info"},
+		{Action: ActionTabChecks, Keys: []string{"4"}, Help: "Checks"},
+		{Action: ActionCommits, Keys: []string{"2"}, Help: "Commits"},
+		{Action: ActionDiff, Keys: []string{"3"}, Help: "Files & diff"},
 		{Action: ActionRefresh, Keys: []string{"r", "ctrl+r"}, Help: "Refresh"},
+		{Action: ActionScrollUp, Keys: []string{"u", "pgup"}, Help: "Scroll up"},
+		{Action: ActionScrollDown, Keys: []string{"d", "pgdown"}, Help: "Scroll down"},
 	},
 
 	IssueDetails: {

@@ -15,13 +15,21 @@ import (
 //
 // teatest.WaitFor consumes what it reads and the v2 renderer emits cell diffs,
 // so a second wait on the same frame hangs and a wait for text that only moved
-// bytes can miss. Behaviour is asserted on the model the program exits with;
-// the stream is used only to know that startup has rendered.
+// bytes can miss.
+//
+// readyMarker is the tab strip, which the first ready frame writes in one
+// piece. A marker inside a list body would be unreliable: a list that arrives
+// after the frame it replaces is patched cell by cell, so "no pull requests"
+// can reach the stream split around a cursor move. Behaviour is asserted on the
+// model the program exits with; the stream is used only to know that a screen
+// has rendered.
+const readyMarker = "Workflows │ Issues"
+
 func startProgram(t *testing.T, srv *httptest.Server, w, h int) *teatest.TestModel {
 	t.Helper()
 	tm := teatest.NewTestModel(t, newModel(t, srv, w, h), teatest.WithInitialTermSize(w, h))
 	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
-		return bytes.Contains(out, []byte("No pull requests loaded yet."))
+		return bytes.Contains(out, []byte(readyMarker))
 	}, teatest.WithDuration(10*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
 	return tm
 }
@@ -130,7 +138,7 @@ func TestFlowTooSmallThenRecovered(t *testing.T) {
 		t.Fatalf("stage = %v, want ready", final.stage)
 	}
 	assertGeometry(t, "recovered frame", final.View().Content, 100, 30)
-	if !bytes.Contains([]byte(final.View().Content), []byte("No pull requests loaded yet.")) {
+	if !bytes.Contains([]byte(final.View().Content), []byte("No open pull requests found.")) {
 		t.Error("the list did not come back after the terminal grew")
 	}
 }
@@ -158,7 +166,7 @@ func TestFlowFromTheRunListToTheLog(t *testing.T) {
 
 	// The default tab is Pull Requests, and the run list is fetched when the
 	// Workflows tab is first opened.
-	waitFor("No pull requests loaded yet.")
+	waitFor(readyMarker)
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyTab})
 	waitFor("Load More Workflow Runs...")
 
@@ -185,4 +193,116 @@ func TestFlowFromTheRunListToTheLog(t *testing.T) {
 		t.Errorf("the viewer opened on step %d of %q, want step 1 of build", logs.step, logs.job.Name)
 	}
 	assertGeometry(t, "final frame", final.View().Content, w, h)
+}
+
+// TestFlowThroughThePullRequestScreens drives the pull request path through the
+// real runtime: the list, the details view with its sub-tabs, and the merge
+// overlays.
+//
+// Every marker is text written by a wholesale frame redraw — a route push, a
+// sub-tab switch, an overlay composite — because the v2 renderer patches a list
+// body cell by cell and a marker inside one can arrive split.
+func TestFlowThroughThePullRequestScreens(t *testing.T) {
+	srv := prServer(t)
+	const w, h = 120, 40
+
+	tm := teatest.NewTestModel(t, newModel(t, srv, w, h), teatest.WithInitialTermSize(w, h))
+	waitFor := func(marker string) {
+		t.Helper()
+		teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+			return bytes.Contains(out, []byte(marker))
+		}, teatest.WithDuration(10*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
+	}
+
+	waitFor(readyMarker)
+
+	// Enter pushes the details view; the pane titles are drawn with the push.
+	tm.Send(press(t, "enter"))
+	waitFor("DESCRIPTION")
+
+	// The sub-tab strip switches the body; Esc steps back to Info without
+	// leaving the route.
+	tm.Send(press(t, "2"))
+	waitFor("SHA")
+	tm.Send(press(t, "esc"))
+	waitFor("DETAILS")
+
+	// A merge is two overlays: the method chooser, then the confirmation.
+	tm.Send(press(t, "m"))
+	waitFor("Squash and merge")
+	tm.Send(press(t, "s"))
+	waitFor("Confirm merge")
+
+	// n cancels the confirmation. Nothing is waited for after it: closing a
+	// modal rewrites the box's own rows, and the text underneath them was
+	// already written before the box opened, so there is no new marker to wait
+	// for. The keys are queued in order, and the assertions below say what
+	// happened: the stack and the open overlays are only what they are if the
+	// cancel closed the confirmation and the Esc popped the details view.
+	tm.Send(press(t, "n"))
+	tm.Send(press(t, "esc"))
+
+	final := finish(t, tm)
+
+	if got := final.routes.Titles(); !slices.Equal(got, []string{"Pull Requests"}) {
+		t.Fatalf("breadcrumb = %v, want the list alone", got)
+	}
+	if final.overlays.Len() != 0 {
+		t.Errorf("%d overlays are open at the end, want none", final.overlays.Len())
+	}
+	if got := prsTabOf(t, final).prs; len(got) != len(fixturePRs()) {
+		t.Errorf("the list holds %d pull requests, want %d", len(got), len(fixturePRs()))
+	}
+	assertGeometry(t, "final frame", final.View().Content, w, h)
+}
+
+// TestFlowTabCyclingKeepsThePullRequestList checks the tab strip through the
+// runtime: walking all the way around comes back to the list the session
+// started on, and a tab that already has its data is not fetched again.
+func TestFlowTabCyclingKeepsThePullRequestList(t *testing.T) {
+	log := newRequestLog()
+	srv := prServerWithLog(t, log)
+	const w, h = 100, 30
+
+	tm := teatest.NewTestModel(t, newModel(t, srv, w, h), teatest.WithInitialTermSize(w, h))
+	waitFor := func(marker string) {
+		t.Helper()
+		teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+			return bytes.Contains(out, []byte(marker))
+		}, teatest.WithDuration(10*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
+	}
+
+	waitFor(readyMarker)
+
+	// The list's request is the barrier: a request that reached the server
+	// cannot be patched out of the stream the way a cell can.
+	listPath := "/repos/octocat/" + fixtureRepo + "/pulls"
+	deadline := time.Now().Add(10 * time.Second)
+	for log.count(listPath) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("the list was never fetched from %s", listPath)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	before := log.count(listPath)
+
+	// The tabs are walked in one go: the keys are queued in order, so the model
+	// sees them in this order before the quit. The Issues tab is the only tab
+	// whose body is a single fresh sentence, so it is the one marker here.
+	tm.Send(press(t, "tab"))
+	tm.Send(press(t, "tab"))
+	waitFor("No issues loaded yet.")
+	tm.Send(press(t, "tab"))
+
+	final := finish(t, tm)
+
+	if got := tab(t, final); got != TabPRs {
+		t.Fatalf("after a full cycle the active tab is %v, want Pull Requests", got)
+	}
+	if got := len(prsTabOf(t, final).prs); got != len(fixturePRs()) {
+		t.Errorf("the recycled tab holds %d pull requests, want %d", got, len(fixturePRs()))
+	}
+	if got := log.count(listPath); got != before {
+		t.Errorf("returning to the tab refetched it (%d requests, was %d)", got, before)
+	}
 }

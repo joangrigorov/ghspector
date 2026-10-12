@@ -28,29 +28,32 @@ const tabCount = 3
 var tabMeta = [tabCount]struct {
 	Name  string
 	Scope keymap.Scope
-	// Empty is the placeholder a tab without a data layer shows. The Workflows
-	// tab has a data layer and renders its own loading, failure and empty
-	// states, so it has no placeholder.
+	// Empty is the placeholder a tab without a data layer shows. The Pull
+	// Request and Workflow tabs have a data layer and render their own loading,
+	// failure and empty states, so they have no placeholder.
 	Empty string
 }{
-	TabPRs:       {Name: "Pull Requests", Scope: keymap.MainPRs, Empty: "No pull requests loaded yet."},
+	TabPRs:       {Name: "Pull Requests", Scope: keymap.MainPRs},
 	TabWorkflows: {Name: "Workflows", Scope: keymap.MainWorkflows},
 	TabIssues:    {Name: "Issues", Scope: keymap.MainIssues, Empty: "No issues loaded yet."},
 }
 
 // Main is the primary screen: a tab strip over the active list.
 //
-// It owns the tab strip, the key routing that is common to the tabs, and the
-// Workflows tab's state. A tab's data and behaviour live in a value of its own
-// — runsTab today — so this route stays a host rather than growing a field per
+// It owns the tab strip, the key routing that is common to the tabs, and each
+// tab's state. A tab's data and behaviour live in a value of its own — prsTab
+// and runsTab — so this route stays a host rather than growing a field per
 // screen, which is what the previous version's single model did.
 type Main struct {
 	tab  Tab
 	runs runsTab
+	prs  prsTab
 }
 
 // NewMain returns the main route on its default tab.
-func NewMain() Main { return Main{tab: TabPRs, runs: newRunsTab()} }
+func NewMain() Main {
+	return Main{tab: TabPRs, runs: newRunsTab(), prs: newPRsTab()}
+}
 
 // Title is the breadcrumb label for the active tab.
 func (m Main) Title() string { return tabMeta[m.tab].Name }
@@ -75,25 +78,36 @@ func (m Main) Update(deps Deps, msg tea.Msg) (Route, tea.Cmd) {
 		// Everything on screen belonged to the previous context, so it is
 		// dropped. A tab that is not on screen fetches when it is next opened.
 		m.runs = newRunsTab()
-		if m.tab != TabWorkflows {
-			return m, nil
+		m.prs = newPRsTab()
+		switch m.tab {
+		case TabWorkflows:
+			return m.startRuns(deps, true)
+		case TabPRs:
+			return m.startPRs(deps)
 		}
-		return m.startRuns(deps, true)
+		return m, nil
 	case pollMsg:
-		if m.tab != TabWorkflows {
-			return m, nil
-		}
 		var cmd tea.Cmd
-		m.runs, cmd = m.runs.poll(deps)
+		switch m.tab {
+		case TabWorkflows:
+			m.runs, cmd = m.runs.poll(deps)
+		case TabPRs:
+			m.prs, cmd = m.prs.poll(deps)
+		}
 		return m, cmd
 	}
 
-	if m.tab != TabWorkflows {
-		return m, nil
+	switch m.tab {
+	case TabWorkflows:
+		var cmd tea.Cmd
+		m.runs, cmd = m.runs.update(deps, msg)
+		return m, cmd
+	case TabPRs:
+		var cmd tea.Cmd
+		m.prs, cmd = m.prs.update(deps, msg)
+		return m, cmd
 	}
-	var cmd tea.Cmd
-	m.runs, cmd = m.runs.update(deps, msg)
-	return m, cmd
+	return m, nil
 }
 
 // Act handles the tab strip and delegates everything else to the active tab.
@@ -105,37 +119,53 @@ func (m Main) Act(deps Deps, action keymap.Action) (Route, tea.Cmd, bool) {
 		return m.switchTab(deps, (m.tab+tabCount-1)%tabCount)
 	}
 
-	if m.tab != TabWorkflows {
-		// The pull request and issue tabs arrive with the data layer. Until
-		// then their keys are accepted and do nothing beyond a status line.
-		switch action {
-		case keymap.ActionRefresh:
-			return m, status("Refreshed"), true
-		case keymap.ActionClearFilters:
-			return m, status("Filters cleared"), true
-		}
-		return m, nil, false
+	switch m.tab {
+	case TabWorkflows:
+		var cmd tea.Cmd
+		var handled bool
+		m.runs, cmd, handled = m.runs.act(deps, action)
+		return m, cmd, handled
+	case TabPRs:
+		var cmd tea.Cmd
+		var handled bool
+		m.prs, cmd, handled = m.prs.act(deps, action)
+		return m, cmd, handled
 	}
 
-	var cmd tea.Cmd
-	var handled bool
-	m.runs, cmd, handled = m.runs.act(deps, action)
-	return m, cmd, handled
+	// The Issues tab arrives with its data layer (Phase 4). Until then its keys
+	// are accepted and do nothing beyond a status line.
+	switch action {
+	case keymap.ActionRefresh:
+		return m, status("Refreshed"), true
+	case keymap.ActionClearFilters:
+		return m, status("Filters cleared"), true
+	}
+	return m, nil, false
 }
 
-// switchTab moves the strip to another tab. Each tab keeps its own selection,
-// so nothing carries across, and a tab that has not been opened yet fetches
-// when it first appears.
+// switchTab moves the strip to another tab. Each tab keeps its own selection
+// and its own filters, so nothing carries across, and a tab that has not been
+// opened yet fetches when it first appears.
 func (m Main) switchTab(deps Deps, tab Tab) (Route, tea.Cmd, bool) {
 	if tab == m.tab {
 		return m, nil, true
 	}
 	m.tab = tab
-	if tab != TabWorkflows || m.runs.loaded || m.runs.loading {
-		return m, nil, true
+	switch tab {
+	case TabWorkflows:
+		if m.runs.loaded || m.runs.loading {
+			return m, nil, true
+		}
+		next, cmd := m.startRuns(deps, false)
+		return next, cmd, true
+	case TabPRs:
+		if m.prs.loaded || m.prs.loading {
+			return m, nil, true
+		}
+		next, cmd := m.startPRs(deps)
+		return next, cmd, true
 	}
-	next, cmd := m.startRuns(deps, false)
-	return next, cmd, true
+	return m, nil, true
 }
 
 // startRuns begins the Workflows tab's fetch, clearing what it replaces. The
@@ -144,6 +174,13 @@ func (m Main) switchTab(deps Deps, tab Tab) (Route, tea.Cmd, bool) {
 func (m Main) startRuns(deps Deps, dropApprovals bool) (Main, tea.Cmd) {
 	next, cmd := m.runs.start(deps, dropApprovals)
 	m.runs = next
+	return m, cmd
+}
+
+// startPRs begins the Pull Requests tab's fetch, clearing what it replaces.
+func (m Main) startPRs(deps Deps) (Main, tea.Cmd) {
+	next, cmd := m.prs.start(deps)
+	m.prs = next
 	return m, cmd
 }
 
@@ -160,10 +197,13 @@ func (m Main) View(deps Deps, r layout.Rect) string {
 	return layout.Fit(strings.Join(lines, "\n"), r.W, r.H)
 }
 
-// content renders the body of the active tab into body.
+// content renders the body of the active tab.
 func (m Main) content(deps Deps, body layout.Rect) string {
-	if m.tab == TabWorkflows {
+	switch m.tab {
+	case TabWorkflows:
 		return m.runs.view(deps, body)
+	case TabPRs:
+		return m.prs.view(deps, body)
 	}
 	muted := func(s string) string { return "  " + style(deps.Theme.Muted, normal).Render(s) }
 	lines := []string{

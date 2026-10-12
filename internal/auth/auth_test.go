@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -267,5 +268,176 @@ func TestConfigFileTokenSourceHidesThePath(t *testing.T) {
 	}
 	if strings.ContainsAny(source, `/\`) {
 		t.Errorf("the source label contains a path separator: %q", source)
+	}
+}
+
+// TestSetDefaultMergeMethod covers the one write the TUI performs: it must
+// change the merge method and nothing else, because re-encoding the file would
+// drop keys this build does not know about.
+func TestSetDefaultMergeMethod(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("APPDATA", tmpDir)
+
+	path, err := ResolveConfigPath()
+	if err != nil {
+		t.Fatalf("failed to resolve config path: %v", err)
+	}
+
+	t.Run("creates the file when there is none", func(t *testing.T) {
+		if err := SetDefaultMergeMethod("rebase"); err != nil {
+			t.Fatalf("SetDefaultMergeMethod: %v", err)
+		}
+		loaded, err := LoadConfig(path)
+		if err != nil {
+			t.Fatalf("failed to load the created config: %v", err)
+		}
+		if loaded.DefaultMergeMethod != "rebase" {
+			t.Errorf("default_merge_method = %q, want rebase", loaded.DefaultMergeMethod)
+		}
+		if loaded.Version != CurrentConfigVersion {
+			t.Errorf("version = %d, want %d", loaded.Version, CurrentConfigVersion)
+		}
+	})
+
+	t.Run("preserves the other keys and the token", func(t *testing.T) {
+		file := "github_token: keep_me\n" +
+			"default_org: my-org\n" +
+			"polling_interval_seconds: 7\n" +
+			"future_key: future_value\n"
+		if err := os.WriteFile(path, []byte(file), 0600); err != nil {
+			t.Fatalf("failed to write config: %v", err)
+		}
+
+		if err := SetDefaultMergeMethod("merge"); err != nil {
+			t.Fatalf("SetDefaultMergeMethod: %v", err)
+		}
+
+		loaded, err := LoadConfig(path)
+		if err != nil {
+			t.Fatalf("failed to load config: %v", err)
+		}
+		if loaded.GitHubToken != "keep_me" {
+			t.Errorf("github_token = %q, want it untouched", loaded.GitHubToken)
+		}
+		if loaded.DefaultOrg != "my-org" {
+			t.Errorf("default_org = %q, want it untouched", loaded.DefaultOrg)
+		}
+		if loaded.PollingIntervalSeconds != 7 {
+			t.Errorf("polling_interval_seconds = %d, want it untouched", loaded.PollingIntervalSeconds)
+		}
+		if loaded.DefaultMergeMethod != "merge" {
+			t.Errorf("default_merge_method = %q, want merge", loaded.DefaultMergeMethod)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("failed to read config: %v", err)
+		}
+		if !strings.Contains(string(data), "future_key") {
+			t.Errorf("a key this build does not know was dropped: %s", data)
+		}
+	})
+
+	t.Run("rejects an unknown method", func(t *testing.T) {
+		if err := SetDefaultMergeMethod("fast-forward"); err == nil {
+			t.Fatal("SetDefaultMergeMethod accepted an unknown method")
+		}
+	})
+}
+
+// TestConfigFileSurface covers what §6.2 of the spec promises about the file
+// itself: the modes it is created with, the warning a too-open file produces,
+// and the keys that are left out rather than written empty.
+func TestConfigFileSurface(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes and the permission warning are unix-only")
+	}
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("APPDATA", tmpDir)
+
+	path, err := ResolveConfigPath()
+	if err != nil {
+		t.Fatalf("failed to resolve config path: %v", err)
+	}
+	if err := SaveConfig(&Config{GitHubToken: "tok"}); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	t.Run("the file is 0600 and its directory is 0700", func(t *testing.T) {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("failed to stat the config: %v", err)
+		}
+		if got := info.Mode().Perm(); got != 0600 {
+			t.Errorf("config mode = %o, want 600", got)
+		}
+		dir, err := os.Stat(filepath.Dir(path))
+		if err != nil {
+			t.Fatalf("failed to stat the config directory: %v", err)
+		}
+		if got := dir.Mode().Perm(); got != 0700 {
+			t.Errorf("config directory mode = %o, want 700", got)
+		}
+	})
+
+	t.Run("a token-only config omits the optional keys", func(t *testing.T) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("failed to read the config: %v", err)
+		}
+		for _, key := range []string{"default_org", "default_account", "polling", "default_merge_method"} {
+			if strings.Contains(string(data), key) {
+				t.Errorf("%s is written even though it is empty:\n%s", key, data)
+			}
+		}
+	})
+
+	t.Run("a group-readable file warns on stderr and a 0600 file does not", func(t *testing.T) {
+		var out strings.Builder
+		restore := warnOut
+		warnOut = &out
+		defer func() { warnOut = restore }()
+
+		if err := os.Chmod(path, 0644); err != nil {
+			t.Fatalf("failed to loosen the config mode: %v", err)
+		}
+		if _, err := LoadConfig(path); err != nil {
+			t.Fatalf("failed to load the config: %v", err)
+		}
+		if !strings.Contains(out.String(), "permissions are too open") {
+			t.Errorf("a 0644 config produced no warning, got %q", out.String())
+		}
+
+		out.Reset()
+		if err := os.Chmod(path, 0600); err != nil {
+			t.Fatalf("failed to tighten the config mode: %v", err)
+		}
+		if _, err := LoadConfig(path); err != nil {
+			t.Fatalf("failed to load the config: %v", err)
+		}
+		if out.String() != "" {
+			t.Errorf("a 0600 config warned anyway: %q", out.String())
+		}
+	})
+}
+
+func TestMergeMethodCycling(t *testing.T) {
+	if got := ResolveMergeMethod(""); got != "squash" {
+		t.Errorf("ResolveMergeMethod(\"\") = %q, want squash", got)
+	}
+	if got := ResolveMergeMethod("squash"); got != "squash" {
+		t.Errorf("ResolveMergeMethod(squash) = %q, want squash", got)
+	}
+	if got := ResolveMergeMethod("nonsense"); got != "squash" {
+		t.Errorf("ResolveMergeMethod(nonsense) = %q, want squash", got)
+	}
+
+	cases := map[string]string{"squash": "merge", "merge": "rebase", "rebase": "squash", "": "squash"}
+	for from, want := range cases {
+		if got := NextMergeMethod(from); got != want {
+			t.Errorf("NextMergeMethod(%q) = %q, want %q", from, got, want)
+		}
 	}
 }

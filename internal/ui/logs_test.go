@@ -225,7 +225,8 @@ func TestLogsStopsItsRequestsWhenPopped(t *testing.T) {
 	m := openLogs(t, 110, 24, srv)
 	logs := logsRoute(t, m)
 
-	back, _ := pressKey(t, m, "esc")
+	back, cmd := pressKey(t, m, "esc")
+	back = drive(t, back, cmd)
 	if back.routes.Len() != 2 {
 		t.Fatalf("stack depth = %d, want the job list", back.routes.Len())
 	}

@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/exp/golden"
@@ -142,6 +144,93 @@ func TestGoldenWorkflowScreens(t *testing.T) {
 		}},
 		{"repo_picker_80x24", func(t *testing.T) Model {
 			return pressAndDrive(t, workflowsModel(t, srv, 80, 24), "f", "r")
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			golden.RequireEqual(t, tc.build(t).View().Content)
+		})
+	}
+}
+
+// TestGoldenPullRequestScreens pins the screens the pull request phase adds:
+// the list with data at three widths, every sub-tab of the details view, the
+// commit view, and the three overlays a merge or a close opens.
+//
+// The fixture server answers the pull request, commit, file, comment and check
+// endpoints, and the clock is fixed, so every timestamp and duration on screen
+// is a function of the fixtures.
+//
+// Regenerate with:
+//
+//	go test ./internal/ui -run TestGoldenPullRequestScreens -update
+func TestGoldenPullRequestScreens(t *testing.T) {
+	srv := prServer(t)
+	opened := func(t *testing.T, w, h int) Model {
+		return openPRDetails(t, prsModel(t, srv, w, h))
+	}
+
+	cases := []struct {
+		name  string
+		build func(t *testing.T) Model
+	}{
+		{"prs_120x40", func(t *testing.T) Model { return prsModel(t, srv, 120, 40) }},
+		{"prs_80x24", func(t *testing.T) Model { return prsModel(t, srv, 80, 24) }},
+		// The narrow frame is where the list has to give up its rightmost
+		// columns rather than overlap them.
+		{"prs_60x16", func(t *testing.T) Model { return prsModel(t, srv, 60, 16) }},
+		{"prs_filtered_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, prsModel(t, srv, 120, 40), "a", "s")
+		}},
+		// A chain of two overlays: the picker above the filter menu.
+		{"prs_repo_picker_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, prsModel(t, srv, 120, 40), "f", "r")
+		}},
+		{"prs_load_more_80x24", func(t *testing.T) Model {
+			full := make([]prSpec, 0, 8)
+			for i := 0; i < 8; i++ {
+				full = append(full, prSpec{
+					number: 100 + i, repo: fixtureRepo, title: "Pull request " + fmt.Sprint(i),
+					state: "open", author: "octocat",
+					updated: workflowNow.Add(-time.Duration(i) * time.Minute),
+				})
+			}
+			return prsModel(t, prServer(t, withPRs(full...)), 80, 24)
+		}},
+		{"pr_details_120x40", func(t *testing.T) Model { return opened(t, 120, 40) }},
+		{"pr_details_80x24", func(t *testing.T) Model { return opened(t, 80, 24) }},
+		// Below the width three panes need, the metadata pane is given up.
+		{"pr_details_60x16", func(t *testing.T) Model { return opened(t, 60, 16) }},
+		{"pr_commits_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 120, 40), "2")
+		}},
+		{"pr_files_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 120, 40), "3")
+		}},
+		{"pr_checks_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 120, 40), "4")
+		}},
+		{"pr_comments_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 120, 40), "5")
+		}},
+		{"commit_details_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 120, 40), "2", "enter")
+		}},
+		{"merge_method_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 120, 40), "m")
+		}},
+		{"merge_confirm_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 120, 40), "m", "s")
+		}},
+		{"close_confirm_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, opened(t, 120, 40), "C")
+		}},
+		// A viewer without write permission is told why instead of being shown
+		// a merge it cannot perform (finding F1).
+		{"pr_details_read_only_80x24", func(t *testing.T) Model {
+			readOnly := prServer(t, withPRPermission("read"))
+			return openPRDetails(t, prsModel(t, readOnly, 80, 24))
 		}},
 	}
 
