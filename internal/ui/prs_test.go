@@ -65,11 +65,24 @@ type prServerConfig struct {
 	failPulls bool
 	// failIssues makes every issue list fail.
 	failIssues bool
-	// failComments makes every conversation fail.
+	// failComments makes the conversation-comment list fail, which is the whole
+	// conversation on an issue.
 	failComments bool
+	// failReviews and failInline make the review and inline-comment endpoints
+	// fail, which is the state a sub-tab reading three lists has to report
+	// rather than draw the lists that did arrive as the whole discussion.
+	failReviews bool
+	failInline  bool
 	// comments is how many comments the conversation holds. Zero means the
 	// standard two-comment fixture.
 	comments int
+	// noComments empties the comment list, which is the shape a review-heavy
+	// pull request has.
+	noComments bool
+	// reviews and inline replace the review and inline-comment fixtures. Nil
+	// asks for the standard review and the thread under it.
+	reviews []reviewSpec
+	inline  []inlineSpec
 	// failMerge makes the merge endpoint refuse.
 	failMerge bool
 	// failPermission makes the collaborators endpoint fail, which is the state
@@ -90,6 +103,31 @@ type checkSpec struct {
 	runID int64
 	// htmlURL overrides the URL entirely.
 	htmlURL string
+}
+
+// reviewSpec is one review in the conversation fixture. A PENDING review is one
+// its author has not submitted, which the fixture renders without a submission
+// time.
+type reviewSpec struct {
+	id     int64
+	author string
+	state  string
+	body   string
+	at     time.Time
+}
+
+// inlineSpec is one inline review comment in the conversation fixture. replyTo
+// names the comment it answers, which is how a thread is built.
+type inlineSpec struct {
+	id      int64
+	review  int64
+	author  string
+	body    string
+	path    string
+	line    int
+	hunk    string
+	at      time.Time
+	replyTo int64
 }
 
 // prServerOption adjusts the fixture server.
@@ -136,6 +174,40 @@ func withComments(n int) prServerOption {
 	return func(c *prServerConfig) { c.comments = n }
 }
 
+// withoutConversationComments empties the comment list, leaving the reviews as
+// the only things in the discussion.
+func withoutConversationComments() prServerOption {
+	return func(c *prServerConfig) { c.noComments = true }
+}
+
+// failReviewList makes the reviews endpoint fail.
+func failReviewList() prServerOption {
+	return func(c *prServerConfig) { c.failReviews = true }
+}
+
+// failConversation makes every list the conversation is assembled from fail, so
+// a test can cover the sub-tab that has nothing to draw and has to say why.
+func failConversation() prServerOption {
+	return func(c *prServerConfig) {
+		c.failComments = true
+		c.failReviews = true
+		c.failInline = true
+	}
+}
+
+// withReviews replaces the review fixture. A review that is not the standard one
+// leaves the standard inline comments without a review to belong to, so a test
+// that replaces the reviews usually replaces the thread with it.
+func withReviews(reviews ...reviewSpec) prServerOption {
+	return func(c *prServerConfig) { c.reviews = reviews }
+}
+
+// withInlineComments replaces the inline review comments. No arguments is a
+// conversation review without inline remarks.
+func withInlineComments(comments ...inlineSpec) prServerOption {
+	return func(c *prServerConfig) { c.inline = comments }
+}
+
 // failMergeEndpoint makes the merge endpoint refuse.
 func failMergeEndpoint() prServerOption {
 	return func(c *prServerConfig) { c.failMerge = true }
@@ -162,6 +234,57 @@ func fixtureChecks() []checkSpec {
 		{name: "lint", status: "completed", conclusion: "success", app: "GitHub Actions", runID: prCheckRunID},
 		{name: "codecov", status: "completed", conclusion: "success", app: "Codecov", htmlURL: "https://codecov.io/gh/octocat/api/pull/7"},
 	}
+}
+
+// reviewFixtureID is the standard review's id, which the standard thread names.
+const reviewFixtureID = 3001
+
+// fixtureHunk is the diff context the standard inline comment was written
+// against: one removed line, one added line, and the line between them.
+const fixtureHunk = "@@ -10,4 +10,5 @@\n func width() int {\n-    return 40\n+    return tableWidth\n }\n"
+
+// fixtureReviews is the standard review: an approval with a summary, submitted
+// after both conversation comments.
+func fixtureReviews() []reviewSpec {
+	return []reviewSpec{
+		{
+			id: reviewFixtureID, author: "carol", state: "APPROVED",
+			body: "Ship it once the checks pass.", at: workflowNow.Add(3 * time.Minute),
+		},
+	}
+}
+
+// fixtureInline is the standard inline thread: two remarks on one file, the
+// second answering the first.
+func fixtureInline() []inlineSpec {
+	return []inlineSpec{
+		{
+			id: 4001, review: reviewFixtureID, author: "carol", path: "internal/ui/table.go",
+			line: 12, hunk: fixtureHunk, at: workflowNow.Add(3 * time.Minute),
+			body: "This width needs a name.",
+		},
+		{
+			id: 4002, review: reviewFixtureID, author: "octocat", path: "internal/ui/table.go",
+			line: 12, hunk: fixtureHunk, at: workflowNow.Add(4 * time.Minute), replyTo: 4001,
+			body: "Named it tableWidth.",
+		},
+	}
+}
+
+// manyReviews is n reviews with distinct ids and times, which is what a page
+// that comes back full looks like.
+func manyReviews(n int) []reviewSpec {
+	reviews := make([]reviewSpec, 0, n)
+	for i := 0; i < n; i++ {
+		reviews = append(reviews, reviewSpec{
+			id:     reviewFixtureID + int64(i),
+			author: "carol",
+			state:  "COMMENTED",
+			body:   fmt.Sprintf("Review %d.", i+1),
+			at:     workflowNow.Add(time.Duration(i) * time.Minute),
+		})
+	}
+	return reviews
 }
 
 // prServer serves the pull request endpoints for a fixed fixture, plus the run,
@@ -227,10 +350,32 @@ func prServerWithLog(t *testing.T, log *requestLog, opts ...prServerOption) *htt
 			writeBody(w, commitsBody(t))
 		case strings.HasSuffix(path, "/files"):
 			writeBody(w, filesBody(t))
+		case strings.Contains(path, "/pulls/") && strings.HasSuffix(path, "/reviews"):
+			if config.failReviews {
+				w.WriteHeader(http.StatusNotFound)
+				writeBody(w, `{"message":"no fixture"}`)
+				return
+			}
+			writeBody(w, reviewsBody(t, config.reviews))
+		// A review's inline comments live on the pull request path and an
+		// issue's comments on the issues path, so the pull request case comes
+		// first: the two share the /comments suffix and would otherwise shadow
+		// each other.
+		case strings.Contains(path, "/pulls/") && strings.HasSuffix(path, "/comments"):
+			if config.failInline {
+				w.WriteHeader(http.StatusNotFound)
+				writeBody(w, `{"message":"no fixture"}`)
+				return
+			}
+			writeBody(w, inlineCommentsBody(t, config.inline))
 		case strings.HasSuffix(path, "/comments"):
 			if config.failComments {
 				w.WriteHeader(http.StatusNotFound)
 				writeBody(w, `{"message":"no fixture"}`)
+				return
+			}
+			if config.noComments {
+				writeBody(w, `[]`)
 				return
 			}
 			writeBody(w, commentsBody(t, config.comments))
@@ -648,6 +793,60 @@ func commentsBody(t *testing.T, count int) string {
 	return jsonBody(t, items)
 }
 
+// reviewsBody renders a review list. Nil asks for the standard review.
+func reviewsBody(t *testing.T, reviews []reviewSpec) string {
+	t.Helper()
+	if reviews == nil {
+		reviews = fixtureReviews()
+	}
+	items := make([]map[string]any, 0, len(reviews))
+	for _, spec := range reviews {
+		item := map[string]any{
+			"id":       spec.id,
+			"state":    spec.state,
+			"body":     spec.body,
+			"user":     map[string]any{"login": spec.author},
+			"html_url": fmt.Sprintf("https://github.com/octocat/api/pull/7#pullrequestreview-%d", spec.id),
+		}
+		// A review still being written has no submission time, which is what
+		// makes it a draft.
+		if spec.state != "PENDING" {
+			item["submitted_at"] = spec.at.Format(time.RFC3339)
+		}
+		items = append(items, item)
+	}
+	return jsonBody(t, items)
+}
+
+// inlineCommentsBody renders an inline review comment list. Nil asks for the
+// standard thread.
+func inlineCommentsBody(t *testing.T, comments []inlineSpec) string {
+	t.Helper()
+	if comments == nil {
+		comments = fixtureInline()
+	}
+	items := make([]map[string]any, 0, len(comments))
+	for _, spec := range comments {
+		item := map[string]any{
+			"id":                     spec.id,
+			"pull_request_review_id": spec.review,
+			"body":                   spec.body,
+			"path":                   spec.path,
+			"line":                   spec.line,
+			"original_line":          spec.line,
+			"diff_hunk":              spec.hunk,
+			"created_at":             spec.at.Format(time.RFC3339),
+			"user":                   map[string]any{"login": spec.author},
+			"html_url":               fmt.Sprintf("https://github.com/octocat/api/pull/7#discussion_r%d", spec.id),
+		}
+		if spec.replyTo != 0 {
+			item["in_reply_to_id"] = spec.replyTo
+		}
+		items = append(items, item)
+	}
+	return jsonBody(t, items)
+}
+
 // checksBody renders the check-run list.
 func checksBody(t *testing.T, checks []checkSpec) string {
 	t.Helper()
@@ -984,6 +1183,120 @@ func TestPRDetailsRendersEverySubTab(t *testing.T) {
 		if !strings.Contains(out, marker) {
 			t.Errorf("sub-tab %s is missing %q:\n%s", key, marker, out)
 		}
+	}
+}
+
+// TestPRCommentsShowsTheThreeListsInOneConversation covers the feature the
+// Comments sub-tab exists for: the API keeps comments, reviews and inline review
+// comments apart, and a review-heavy pull request has nothing in the first of
+// the three.
+func TestPRCommentsShowsTheThreeListsInOneConversation(t *testing.T) {
+	log := newRequestLog()
+	srv := prServerWithLog(t, log)
+	m := openPRDetails(t, prsModel(t, srv, 120, 40))
+
+	m = pressAndDrive(t, m, "5")
+	out := ansi.Strip(screen(t, m, 120, 40))
+	for _, want := range []string{
+		// The conversation comment.
+		"Comment 1 looks good to me.",
+		// The review, with its conclusion and its summary.
+		"carol", "[approved]", "Ship it once the checks pass.",
+		// The inline thread: where it is, and the exchange under it.
+		"internal/ui/table.go:12", "This width needs a name.", "Named it tableWidth.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the conversation is missing %q:\n%s", want, out)
+		}
+	}
+	// The conversation comments come before the review, which was submitted
+	// after them, and the review carries the thread.
+	if first, review := strings.Index(out, "Comment 1 looks good to me."), strings.Index(out, "Ship it once the checks pass."); first > review {
+		t.Errorf("the conversation is not in the order it happened:\n%s", out)
+	}
+
+	for _, path := range []string{
+		"/repos/octocat/api/issues/7/comments",
+		"/repos/octocat/api/pulls/7/reviews",
+		"/repos/octocat/api/pulls/7/comments",
+	} {
+		if log.count(path) == 0 {
+			t.Errorf("the Comments sub-tab did not read %s", path)
+		}
+	}
+}
+
+// TestPRCommentsReportsAFailedList covers a partial failure: the lists that
+// arrived are drawn, and the one that did not is remembered, rather than the
+// discussion being presented as complete.
+func TestPRCommentsReportsAFailedList(t *testing.T) {
+	srv := prServer(t, failReviewList())
+	m := openPRDetails(t, prsModel(t, srv, 120, 40))
+	m = pressAndDrive(t, m, "5")
+
+	if prDetailsRoute(t, m).failed[prSectionReviews] == nil {
+		t.Error("a failed review fetch left no record on the route")
+	}
+	if out := ansi.Strip(screen(t, m, 120, 40)); !strings.Contains(out, "Comment 1 looks good to me.") {
+		t.Errorf("the lists that arrived are not on screen:\n%s", out)
+	}
+}
+
+// TestPRCommentsReportWhenNothingArrived covers the whole conversation failing:
+// the pane says what went wrong rather than drawing an empty discussion.
+func TestPRCommentsReportWhenNothingArrived(t *testing.T) {
+	srv := prServer(t, failConversation())
+	m := openPRDetails(t, prsModel(t, srv, 120, 40))
+	m = pressAndDrive(t, m, "5")
+
+	out := ansi.Strip(screen(t, m, 120, 40))
+	if !strings.Contains(out, "Could not load:") {
+		t.Errorf("the failure is not on screen:\n%s", out)
+	}
+	if strings.Contains(out, "No comments or reviews") {
+		t.Errorf("a failed conversation reads as an empty one:\n%s", out)
+	}
+}
+
+// TestPRCommentsSkipsAReviewDraft covers the review its author has not
+// submitted: the API reports it with no submission time, so it is not part of
+// the discussion and neither are the inline remarks it is still holding.
+func TestPRCommentsSkipsAReviewDraft(t *testing.T) {
+	srv := prServer(t,
+		withReviews(reviewSpec{id: 3002, author: "dave", state: "PENDING"}),
+		withInlineComments(),
+	)
+	m := openPRDetails(t, prsModel(t, srv, 120, 40))
+	m = pressAndDrive(t, m, "5")
+
+	out := ansi.Strip(screen(t, m, 120, 40))
+	if strings.Contains(out, "dave") {
+		t.Errorf("an unsubmitted review is on screen:\n%s", out)
+	}
+	if !strings.Contains(out, "Comment 1 looks good to me.") {
+		t.Errorf("the conversation comments are missing:\n%s", out)
+	}
+}
+
+// TestPRCommentsSayWhenAPageWasCut covers the full page: a review page that
+// comes back at the API's maximum is part of a longer discussion, and the pane
+// says so at the end of it rather than showing a fraction as the whole.
+func TestPRCommentsSayWhenAPageWasCut(t *testing.T) {
+	srv := prServer(t, withReviews(manyReviews(conversationPageSize)...), withInlineComments())
+	m := openPRDetails(t, prsModel(t, srv, 120, 40))
+	m = pressAndDrive(t, m, "5")
+
+	details := prDetailsRoute(t, m)
+	if !details.conversationHasMore {
+		t.Fatal("a full review page did not mark the conversation truncated")
+	}
+
+	content := details.commentLines(m.deps, details.bodyWidth(m.deps))
+	for i := 0; i <= len(content)/diffStep+1; i++ {
+		m = pressAndDrive(t, m, "d")
+	}
+	if out := ansi.Strip(screen(t, m, 120, 40)); !strings.Contains(out, truncatedNote) {
+		t.Errorf("the end of a cut conversation does not say so:\n%s", out)
 	}
 }
 

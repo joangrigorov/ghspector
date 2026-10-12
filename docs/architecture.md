@@ -769,6 +769,52 @@ sent. What a golden cannot prove is that the markdown is *good* — glamour's ow
 choices are pinned by the palette test instead, which asserts that every RGB
 triple in a render is one of the theme's.
 
+### Fix — the conversation is three lists (this change)
+
+The Comments sub-tab read one endpoint. GitHub keeps a pull request's discussion
+in three: conversation comments, reviews, and the inline comments a review
+carries. A pull request that was reviewed and never discussed therefore had
+nothing in the first list and everything in the other two, and the sub-tab drew
+its empty sentence over the top of it.
+
+The route now reads all three and merges them. `internal/ui/conversation.go` is
+the whole of it: `newConversation` buckets the inline comments by the review that
+owns them, drops a review the viewer has not submitted together with the drafts
+it holds, keeps a thread whose review is not in the page as a contribution of its
+own, and sorts the result by time with an unknown time last.
+`conversationLines` renders one block per contribution with a rule between them.
+A review's state is a badge the rest of the app already knows how to draw, and
+its threads read as `path:line`, the last three lines of the hunk, and the
+exchange.
+
+| Package | State |
+| --- | --- |
+| `internal/gh` | `GetPullRequestReviews`, `GetPullRequestReviewComments`, and the `Review`/`ReviewComment` records they decode into. |
+| `internal/store` | `Reviews` and `ReviewComments`, cached under their own keys and read at `defaultConversationPageSize` (100, the API's maximum): one page per endpoint is what keeps a review-heavy pull request a fixed cost, and `List.HasMore` says when the pane is showing part of it. |
+| `internal/ui/conversation.go` | New. The merge, the ordering, and the rendering. |
+| `internal/ui/prdetails.go`, `prpanes.go` | The Comments sub-tab loads three sections instead of one; `PRDetails.failed` remembers which sections failed, so a list that never arrived is not lost when a later one succeeds; `commentBlock` is the single-comment renderer the issue conversation and the pull request conversation now share. |
+| `docs/spec.md` | The endpoint table gains the two routes, and §4.14 records the fix and its two deliberate edges. |
+
+Fixed while building it:
+
+- **One `err` could not describe three fetches.** `PRDetails.err` is set by
+  whichever section failed last and cleared by whichever succeeded last, so a
+  failed review list followed by a successful comment list left the tab unable to
+  tell "still loading" from "never arrived". `PRDetails.failed` is per section,
+  and `loadMessage` reads it. The same correction fixes the commits and files
+  panes, which had the same latent bug behind a single-section tab.
+- **A refresh kept the truncation note.** `conversationHasMore` was set and never
+  cleared, so a pane that had once seen a full page said so for the rest of the
+  session. It is reset with the sections the refresh drops.
+
+Verification: the checks the other phases list, plus a live run of the built
+binary. There is no browser to drive for a terminal UI; the substitutes are
+`teatest` through the real runtime, three new goldens (the standard conversation
+at two widths, and the review-heavy shape that was reported as broken), unit
+tests for the merge, the ordering, the draft, the orphan thread, the hunk tail
+and the truncation note, and scripted request assertions that the sub-tab reads
+all three endpoints.
+
 ### Security findings
 
 | Finding | Status |

@@ -278,6 +278,14 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 - [x] `r` / `Ctrl+R` refreshes the comments.
 - [x] Other keys are forwarded to the viewport for scrolling. **Superseded:** v2 binds scrolling explicitly (`u`/`d`), the same as the log viewer (§4.9), so an unbound key does nothing. `TestIssueCommentsScroll` covers the keys; the conversation keeps the same `u`/`d` binding the log viewer has (`keymap.IssueComments`).
 
+**v2 fix: the conversation is three lists, not one.** The tab read `GET /issues/{n}/comments` alone, so a pull request reviewed and never discussed showed "No comments" while the API was holding dozens of reviews (the reported case, `getpup/backend#1536`: 0 conversation comments, 30 reviews, 30 inline review comments). The sub-tab now reads all three lists at the API maximum of one page each (`per_page=100`) and merges them in the order they were written:
+
+- a conversation comment reads as it did;
+- a review reads as its author, its conclusion (`[approved]`, `[changes requested]`, `[reviewed]`), its submission time, and its summary, with the inline threads it carries underneath;
+- an inline thread reads as `path:line`, the last three lines of the hunk it was written against, and the exchange, replies under the comment they answer.
+
+Two edges are deliberate. A review the viewer has not submitted — state `PENDING`, or no submission time — is a draft, so it and the inline remarks it holds are left out. A page that comes back full is part of a longer discussion, so the pane says so at the end rather than showing a fraction of it as the whole.
+
 ### 4.15 Issue Details
 
 - [x] `Esc` / `Backspace` returns to the issue list.
@@ -566,6 +574,8 @@ REST calls made by the current implementation. `o` = owner, `r` = repo.
 | `GET /repos/{o}/{r}/issues/{n}` | Single issue | REST |
 | `GET /repos/{o}/{r}/pulls/{n}` | Single PR | REST |
 | `GET /repos/{o}/{r}/issues/{n}/comments` | PR and issue comments | REST |
+| `GET /repos/{o}/{r}/pulls/{n}/reviews` | PR reviews: state, summary, submission time | REST |
+| `GET /repos/{o}/{r}/pulls/{n}/comments` | Inline review comments: path, line, hunk, replies | REST |
 | `GET /repos/{o}/{r}/pulls/{n}/commits` | PR commits | REST |
 | `GET /repos/{o}/{r}/pulls/{n}/files` | PR changed files with patches | REST |
 | `GET /repos/{o}/{r}/commits/{sha}` | Commit + files | REST |

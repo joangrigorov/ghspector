@@ -39,6 +39,8 @@ type (
 	CheckApp          = gh.CheckApp
 	Issue             = gh.Issue
 	IssueComment      = gh.IssueComment
+	Review            = gh.Review
+	ReviewComment     = gh.ReviewComment
 	RateLimitInfo     = gh.RateLimitInfo
 )
 
@@ -203,6 +205,14 @@ type Store interface {
 	Issue(ctx context.Context, repo RepoRef, number int) (Issue, error)
 	// Comments lists the comments on a pull request or issue.
 	Comments(ctx context.Context, repo RepoRef, number int, page Page) (List[IssueComment], error)
+	// Reviews lists the reviews submitted on a pull request. A pull request's
+	// conversation lives here as often as it lives in Comments: a review carries
+	// a state and usually a summary body, and its inline comments are separate
+	// records.
+	Reviews(ctx context.Context, repo RepoRef, number int, page Page) (List[Review], error)
+	// ReviewComments lists the inline comments of a pull request's reviews,
+	// across every thread, oldest first.
+	ReviewComments(ctx context.Context, repo RepoRef, number int, page Page) (List[ReviewComment], error)
 
 	// Merge merges a pull request. Method is one of merge, squash or rebase.
 	Merge(ctx context.Context, repo RepoRef, number int, method, title, message string) error

@@ -273,8 +273,8 @@ func (p *PRDetails) loadMessage(section prSection, empty string) string {
 	switch {
 	case p.loading && !p.loaded[section]:
 		return "Loading..."
-	case p.err != nil && !p.loaded[section]:
-		return "Could not load: " + p.err.Error()
+	case !p.loaded[section] && p.failed[section] != nil:
+		return "Could not load: " + p.failed[section].Error()
 	default:
 		return empty
 	}
@@ -283,48 +283,75 @@ func (p *PRDetails) loadMessage(section prSection, empty string) string {
 // commentsView is the Comments sub-tab: the conversation, scrolled.
 func (p *PRDetails) commentsView(deps Deps, r layout.Rect) string {
 	lines := []string{paneTitle(deps.Theme, "COMMENTS", true), ""}
-	if len(p.comments) == 0 {
-		lines = append(lines, "  "+style(deps.Theme.Muted, normal).Render(p.loadMessage(prSectionComments, "No comments")))
+	conv := p.conversation()
+	if conv.empty() {
+		lines = append(lines, "  "+style(deps.Theme.Muted, normal).Render(p.conversationMessage()))
 		return layout.Fit(joinLines(lines), r.W, r.H)
 	}
 
 	_, body := r.SplitRows(len(lines))
-	content := p.commentLines(deps, body.W)
+	content := conversationLines(deps, conv, body.W)
 	start := clampOffset(p.commentScroll, len(content))
 	lines = append(lines, take(content[start:], body.H)...)
 	return layout.Fit(joinLines(lines), r.W, r.H)
 }
 
-// commentLines renders the conversation as lines, one block per comment.
+// conversation is the discussion the Comments sub-tab shows: the conversation
+// comments, the reviews, and the inline threads the reviews carry, in the order
+// they were written.
+func (p *PRDetails) conversation() conversation {
+	return newConversation(p.comments, p.reviews, p.reviewComments, p.conversationHasMore)
+}
+
+// commentLines renders the conversation as lines, which is what the scroll is
+// clamped against.
 func (p *PRDetails) commentLines(deps Deps, width int) []string {
-	return commentBlockLines(deps, p.comments, width)
+	return conversationLines(deps, p.conversation(), width)
+}
+
+// conversationMessage is what the Comments sub-tab says when it holds no
+// entries. The tab reads three lists, so it reports the first one that is still
+// loading or failed, and says the discussion is empty only once all three
+// arrived.
+func (p *PRDetails) conversationMessage() string {
+	for _, section := range conversationSections {
+		if !p.loaded[section] {
+			return p.loadMessage(section, "Loading...")
+		}
+	}
+	return "No comments or reviews"
 }
 
 // commentBlockLines renders a conversation as lines, one block per comment.
 // Every body is rendered as markdown, so a conversation reads the way its author
-// wrote it, and the pull request and issue screens both read it.
+// wrote it, and the issue screen and the pull request's standalone comments both
+// read it.
 func commentBlockLines(deps Deps, comments []store.IssueComment, width int) []string {
 	var out []string
 	for i, comment := range comments {
 		if i > 0 {
 			out = append(out, "", style(deps.Theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-2, 1))), "")
 		}
-		author := style(deps.Theme.Title, bold).Render(commentAuthor(comment))
-		if comment.HTMLURL != "" {
-			author = hyperlink(deps.Theme, author, comment.HTMLURL)
-		}
-		out = append(out, "  "+author+style(deps.Theme.Muted, normal).Render("  "+formatTime(comment.CreatedAt)))
-		for _, line := range deps.Markdown.Lines(deps.Theme, comment.Body, max(width-4, 8)) {
-			out = append(out, "  "+line)
-		}
+		out = append(out, commentBlock(deps, comment, width)...)
 	}
 	return out
 }
 
-// commentAuthor is the login that wrote a comment.
-func commentAuthor(comment store.IssueComment) string {
-	if comment.User != nil && comment.User.Login != "" {
-		return comment.User.Login
+// commentBlock renders one comment: who wrote it, when, and the body as
+// markdown.
+func commentBlock(deps Deps, comment store.IssueComment, width int) []string {
+	out := []string{authorLine(deps, userLogin(comment.User), comment.HTMLURL, comment.CreatedAt, "")}
+	for _, line := range deps.Markdown.Lines(deps.Theme, comment.Body, max(width-4, 8)) {
+		out = append(out, "  "+line)
+	}
+	return out
+}
+
+// userLogin is the login of the user who wrote something, with a placeholder
+// when the API omitted it.
+func userLogin(user *store.User) string {
+	if user != nil && user.Login != "" {
+		return user.Login
 	}
 	return "unknown"
 }

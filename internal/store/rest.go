@@ -20,6 +20,12 @@ const (
 	defaultRepoPageSize    = 100
 	defaultCommitPageSize  = 30
 	defaultCommentPageSize = 30
+	// defaultConversationPageSize is the page a pull request's reviews and
+	// inline review comments are read at. The conversation is assembled from
+	// three endpoints, and a review-heavy pull request carries dozens of each,
+	// so the page is the API's maximum: one request per endpoint rather than
+	// several, and the pane says when it truncated.
+	defaultConversationPageSize = 100
 )
 
 // DefaultCacheTTL is deliberately shorter than the fastest poll interval (5s),
@@ -429,6 +435,35 @@ func (r *REST) Comments(ctx context.Context, repo RepoRef, number int, page Page
 		comments, err := r.client.GetPullRequestComments(ctx, repo.Owner, repo.Repo, number, n, size)
 		if err != nil {
 			return List[IssueComment]{}, err
+		}
+		return listOf(comments, size), nil
+	})
+}
+
+// Reviews lists the reviews submitted on a pull request.
+func (r *REST) Reviews(ctx context.Context, repo RepoRef, number int, page Page) (List[Review], error) {
+	n, size := pageArgs(page, defaultConversationPageSize)
+	key := fmt.Sprintf("reviews|%s|%d|%d|%d", repo, number, n, size)
+	return fetch(ctx, r, key, func(ctx context.Context) (List[Review], error) {
+		reviews, err := r.client.GetPullRequestReviews(ctx, repo.Owner, repo.Repo, number, n, size)
+		if err != nil {
+			return List[Review]{}, err
+		}
+		return listOf(reviews, size), nil
+	})
+}
+
+// ReviewComments lists the inline comments of a pull request's reviews.
+//
+// The endpoint returns them oldest first, which is the order the conversation is
+// assembled in; a thread's replies follow the comment they answer.
+func (r *REST) ReviewComments(ctx context.Context, repo RepoRef, number int, page Page) (List[ReviewComment], error) {
+	n, size := pageArgs(page, defaultConversationPageSize)
+	key := fmt.Sprintf("review-comments|%s|%d|%d|%d", repo, number, n, size)
+	return fetch(ctx, r, key, func(ctx context.Context) (List[ReviewComment], error) {
+		comments, err := r.client.GetPullRequestReviewComments(ctx, repo.Owner, repo.Repo, number, n, size)
+		if err != nil {
+			return List[ReviewComment]{}, err
 		}
 		return listOf(comments, size), nil
 	})

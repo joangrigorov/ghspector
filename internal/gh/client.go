@@ -612,6 +612,40 @@ func (c *Client) GetPullRequestComments(ctx context.Context, owner, repo string,
 	return comments, nil
 }
 
+// GetPullRequestReviews fetches the reviews submitted on a pull request.
+//
+// This is the endpoint the conversation needs and the issue-comments one does
+// not answer: a pull request whose discussion is reviews reports nothing there.
+func (c *Client) GetPullRequestReviews(ctx context.Context, owner, repo string, number, page, perPage int) ([]Review, error) {
+	var reviews []Review
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/reviews", owner, repo, number)
+	q := params{
+		"page":     strconv.Itoa(page),
+		"per_page": strconv.Itoa(perPage),
+	}
+	err := c.doRequest(ctx, "GET", path, q, &reviews)
+	if err != nil {
+		return nil, err
+	}
+	return reviews, nil
+}
+
+// GetPullRequestReviewComments fetches the inline comments of a pull request's
+// reviews, across every thread.
+func (c *Client) GetPullRequestReviewComments(ctx context.Context, owner, repo string, number, page, perPage int) ([]ReviewComment, error) {
+	var comments []ReviewComment
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/comments", owner, repo, number)
+	q := params{
+		"page":     strconv.Itoa(page),
+		"per_page": strconv.Itoa(perPage),
+	}
+	err := c.doRequest(ctx, "GET", path, q, &comments)
+	if err != nil {
+		return nil, err
+	}
+	return comments, nil
+}
+
 // GetPullRequestCommits fetches commits for a pull request.
 func (c *Client) GetPullRequestCommits(ctx context.Context, owner, repo string, number, page, perPage int) ([]RepositoryCommit, error) {
 	var commits []RepositoryCommit
