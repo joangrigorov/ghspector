@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/joangrigorov/ghspector/internal/layout"
 	"github.com/joangrigorov/ghspector/internal/store"
 )
@@ -119,6 +121,16 @@ const (
 // threadIndent is the indent an inline thread is drawn at, inside the indent a
 // top-level contribution uses, because a thread is part of the review above it.
 const threadIndent = "    "
+
+// cardIndent is how far a contribution indents its own text: a heading, the row of
+// air under it, and a body all start here, and it is the column a comment's wash
+// begins at.
+const cardIndent = "  "
+
+// contentRight is the last cell a route's content reaches. A route is handed the
+// screen less the gutter on its right, so a card's box stops on the route's last
+// usable cell and the margin past it keeps the terminal's own colour.
+func contentRight(width int) int { return width - 1 }
 
 // hunkTail is how much of a diff hunk is shown above an inline comment. GitHub
 // sends a few lines of context around the commented line, and the tail of that
@@ -422,7 +434,8 @@ func offsetControls(drawn []threadControl, at int, controls []threadControl) []t
 func appendReview(out []string, controls []threadControl, deps Deps, review store.Review, threads []reviewThread, width int, view threadView) ([]string, []threadControl) {
 	author := userLogin(review.User)
 	head := authorLine(deps, author, review.HTMLURL, reviewTime(review), reviewStateLabel(deps.Theme, review))
-	out = append(out, cardLines(deps, author, width, head, "", bodyLines(deps, review.Body, "  ", width))...)
+	out = append(out, cardLines(deps, author, cardIndent, head, "",
+		bodyLines(deps, review.Body, cardIndent, width), contentRight(width))...)
 	return appendThreads(out, controls, deps, threads, width, view)
 }
 
@@ -509,8 +522,8 @@ func threadLines(deps Deps, thread reviewThread, width int, view threadView) ([]
 // how much of it there is — and the state that folded it away. The button leads
 // the row, so the controls of a conversation line up in one column.
 //
-// The row wears the shade of the remark it folded, so a thread keeps its
-// author's wash while it is out of the way, and unfolds back into it.
+// The row is a summary rather than a comment, so it carries no wash: opening the
+// thread puts its remark's body back in its author's shade.
 func foldedThreadLines(deps Deps, thread reviewThread, width int) ([]string, []threadControl) {
 	theme := deps.Theme
 	button := threadButton(theme, threadShowLabel)
@@ -518,8 +531,7 @@ func foldedThreadLines(deps Deps, thread reviewThread, width int) ([]string, []t
 	room := max(width-len(threadIndent)-layout.Width(button)-1, 8)
 
 	row := threadIndent + button + " " + layout.Truncate(summary, room)
-	tint := authorTint(theme, userLogin(thread.first().User))
-	return []string{"", paintLine(tint, width, row)}, []threadControl{{thread: thread.rootID(), row: 1}}
+	return []string{"", row}, []threadControl{{thread: thread.rootID(), row: 1}}
 }
 
 // threadPlace is where a thread was written, as the frame's title and a folded
@@ -563,52 +575,76 @@ func threadButton(theme Theme, label string) string {
 
 // rootCard draws the remark a thread started from: its heading, marked so the
 // eye finds where the thread began, its body, and the rule that closes it. The
-// card wears its author's wash, and an answer follows the rule.
+// body wears its author's wash, and an answer follows the rule.
 func rootCard(deps Deps, comment store.ReviewComment, indent string, innerWidth, width int) []string {
 	theme := deps.Theme
 	author := userLogin(comment.User)
+	text := indent + cardIndent
 
 	head := indent + layout.Truncate(style(theme.Accent, normal).Render(rootMark)+" "+
 		authorHeading(deps, author, comment.HTMLURL, comment.CreatedAt, ""), innerWidth)
-	out := cardLines(deps, author, width, head, indent, bodyLines(deps, comment.Body, indent+"  ", width))
+	out := cardLines(deps, author, text, head, indent, bodyLines(deps, comment.Body, text, width), contentRight(width))
 
 	foot := indent + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-layout.Width(indent), 1)))
-	return append(out, paintLine(authorTint(theme, author), width, foot))
+	return append(out, foot)
 }
 
 // replyCard draws one answer as a frame of its own, nested inside the thread's
 // rail and titled by who wrote it. Its foot is a rule that doubles as the
-// horizontal line under the remark. The card wears its author's wash.
+// horizontal line under the remark. The body wears its author's wash.
 func replyCard(deps Deps, comment store.ReviewComment, indent string, width int) []string {
 	theme := deps.Theme
 	rule := style(theme.HeaderRule, normal)
 	author := userLogin(comment.User)
-	tint := authorTint(theme, author)
+	text := indent + rule.Render(frameRail) + cardIndent
 
 	head := indent + rule.Render(frameTop) + layout.Truncate(
 		authorHeading(deps, author, comment.HTMLURL, comment.CreatedAt, ""),
 		max(width-layout.Width(indent)-frameCells, 8))
 
-	out := cardLines(deps, author, width, head, indent+rule.Render(frameRail),
-		bodyLines(deps, comment.Body, indent+rule.Render(frameRail)+"  ", width))
+	out := cardLines(deps, author, text, head, indent+rule.Render(frameRail),
+		bodyLines(deps, comment.Body, text, width), contentRight(width))
 	foot := indent + rule.Render(frameClose+strings.Repeat("─", max(width-layout.Width(indent)-2, 1)))
-	return append(out, paintLine(tint, width, foot))
+	return append(out, foot)
 }
 
-// cardLines draws one contribution as a wash in its author's shade: the heading,
-// a row of air, then the body. The air row carries the rail the contribution is
-// drawn inside, so a framed card does not break its own frame. A palette with no
-// washes hands the lines back as they are, so a plain render gains the spacing
-// and nothing else.
-func cardLines(deps Deps, login string, width int, head, air string, body []string) []string {
-	tint := authorTint(deps.Theme, login)
-	out := []string{paintLine(tint, width, head)}
+// cardLines draws one contribution: its heading, a row of air, then its body.
+//
+// Only the body is washed, and the wash is the box the comment's own text
+// occupies: from textPrefix, the column the card puts its text at, out to the end
+// of the block's longest line. The heading that names the author, the row of air
+// under it and the rules around it stay plain, as does the pane's content beyond
+// the box, so a wash on this screen marks a comment's text and nothing else. A
+// palette with no washes hands the lines back as they are, so a plain render gains
+// the spacing and nothing else.
+//
+// limit is the pane's own edge: the box never reaches past it.
+func cardLines(deps Deps, login, textPrefix, head, air string, body []string, limit int) []string {
+	out := []string{head}
 	if len(body) == 0 {
 		return out
 	}
-	out = append(out, paintLine(tint, width, air))
+	out = append(out, air)
+	return append(out, bodyBox(deps, login, layout.Width(textPrefix), limit, body)...)
+}
+
+// bodyBox paints a comment's body in its author's shade. The wash is the box the
+// text occupies, and it is the same box on every line of the block: it opens at
+// the column the text starts in and ends on the last cell of the block's longest
+// line, so a line shorter than the box — the last line of a paragraph, the blank
+// line between two of them — is carried out to it rather than left with a gap
+// between two lines that wear one colour.
+func bodyBox(deps Deps, login string, textLeft, limit int, body []string) []string {
+	right := textLeft - 1
 	for _, line := range body {
-		out = append(out, paintLine(tint, width, line))
+		if text := strings.TrimRight(ansi.Strip(line), " "); text != "" {
+			right = min(limit, max(right, ansi.StringWidth(text)-1))
+		}
+	}
+	tint := authorTint(deps.Theme, login)
+	out := make([]string, 0, len(body))
+	for _, line := range body {
+		out = append(out, paintSpan(tint, textLeft, right, line))
 	}
 	return out
 }
@@ -650,7 +686,7 @@ func bodyLines(deps Deps, body, prefix string, width int) []string {
 // time are links to the contribution when the API supplied a URL for it, so the
 // whole of what names it opens it.
 func authorLine(deps Deps, author, url string, at time.Time, state string) string {
-	return "  " + authorHeading(deps, author, url, at, state)
+	return cardIndent + authorHeading(deps, author, url, at, state)
 }
 
 // authorHeading is authorLine without its indent, so a frame can title itself

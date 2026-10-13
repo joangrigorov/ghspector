@@ -989,30 +989,49 @@ thread's rail and each reply inside its own frame, so the air row and the closin
 rule are what tell one remark from the next there. The hunk cap went from three
 lines to six, which the frame around the excerpt is what made affordable.
 
-The card is painted in its author's own wash, and the wash is derived rather than
-chosen: `authorTints` mixes the palette's accent into the palette's background in
-six even steps, so the shades are one family by construction and each palette
-gets washes on its own side of the background — `#05090a` to `#20343d` on the
-dark palette, `#f7fafb` to `#d9e7ed` on the light one. `authorTint` picks a
-shade with an FNV-1a hash of the login, so a person keeps their wash across
-refreshes, screens and conversations and no shade depends on who else is in the
-thread. `TestAuthorWashesStayInOneFamily` checks the property that makes it work
-— every shade takes the same share of the accent in every channel, each shade
-takes more than the last, and each stays quiet enough that the palette's own text
-keeps its contrast (the body colour above 7:1, the muted colour above 4:1) — and
-`TestWashesFollowTheLogin` checks the shade survives case and company.
+The card's body is painted in its author's own wash, and the wash is derived
+rather than chosen: `authorTints` mixes the palette's accent into the palette's
+background in six even steps, so the shades are one family by construction and
+each palette gets washes on its own side of the background — `#05090a` to
+`#20343d` on the dark palette, `#f7fafb` to `#d9e7ed` on the light one.
+`authorTint` picks a shade with an FNV-1a hash of the login, so a person keeps
+their wash across refreshes, screens and conversations and no shade depends on
+who else is in the thread. `TestAuthorWashesStayInOneFamily` checks the property
+that makes it work — every shade takes the same share of the accent in every
+channel, each shade takes more than the last, and each stays quiet enough that
+the palette's own text keeps its contrast (the body colour above 7:1, the muted
+colour above 4:1) — and `TestWashesFollowTheLogin` checks the shade survives case
+and company.
+
+The wash is the box the remark's own text occupies, and nothing else. `cardLines`
+paints the body and only the body: the heading that names the author, the row of
+air under it and the rules around it stay plain, and `bodyBox` measures the block
+before it paints it, so the box opens at the column the card puts its text in and
+ends on the last cell of the block's widest line. Every line of the block is
+carried out to that box, which is what makes a block one colour rather than a set
+of lines that each stop where their own text does. A box that reached past its
+text, or a colour behind the heading, is what the first attempt at this looked
+like in a live pane — the reader called it greedy.
 
 The paint itself needed a helper, because a plain `lipgloss` background does not
-survive its own contents: every styled run inside the line ends with `\x1b[m`,
-and a reset clears the background as well as the colour, so a background on the
-row covers the padding and the gaps between runs but leaves the words on the
-terminal's own colour. `paintLine` re-arms the paint after every reset, pads the
-row to the pane and touches nothing else, which is what lets
-`TestWashesPaintEachContributionWithoutMovingIt` assert that the same text sits in
-the same cells as a plain render. The same helper fixes the header, which had the
-defect already: the band stopped at the title's reset, so the account, the trail
-and the rate limit sat unpainted on roughly half the row —
-`TestHeaderBandPaintsBehindEveryRun` pins the repair.
+survive its own contents: every styled run inside the line ends with a reset, and
+a reset clears the background as well as the colour, so a background on the row
+covers the padding and the gaps between runs but leaves the words on the
+terminal's own colour. `paintLine` re-arms the paint after every reset and pads
+the row to the pane, which is what fixes the header: the band stopped at the
+title's reset, so the account, the trail and the rate limit sat unpainted on
+roughly half the row. `TestHeaderBandPaintsBehindEveryRun` pins that repair, and
+`TestTintLinePaintsUnderTheText` the re-arming.
+
+`paintSpan` paints the same way behind a span of a row rather than the whole of
+it, and it has to re-arm both spellings of a reset — `\x1b[m` and `\x1b[0m` —
+because a markdown body's runs end with the second one. Missing it left the
+padding at the end of a short line unpainted, which turned the box back into a
+per-line highlight the moment the paint was measured rather than eyeballed.
+`TestSpanPaintsTheBoxAndNothingElse` covers the box's two edges and that padding,
+`TestWashesPaintTheCommentBodyAndNothingElse` that the same text sits in the same
+cells as a plain render and that no row which is not a body wears a shade, and
+`TestAWashIsTheCommentsOwnBox` the extent of the box.
 
 Cost, again: a card is two rows taller than the lines it replaced, on top of the
 frame's own rows. At 120x40 the standard fixture's conversation now reaches
@@ -1069,17 +1088,13 @@ leave the scroll alone; the scroll keys leave the focus alone),
 `TestPRCommentsWithoutResolutionKeepTheArrowsOnTheScroll` (no buttons, arrows
 scroll), `TestTheWheelScrollsTheRouteOnScreen`, `TestTheFocusMarkerIsNotBakedIntoTheCache`
 (the same state draws the same screen, and no row carries the marker twice),
-`TestAFoldedThreadKeepsItsAuthorsWash` (both palettes, folded and opened),
-`TestAResolvedThreadIsFoldedUntilItIsOpened` and the two new goldens. Live in a
-tmux pane against a public pull request carrying seven inline threads, four of
-them resolved: the three folded rows sit at one column, `Enter` opens the focused
-one and `Down` moves the marker to the next, and a wheel sequence written into
-the pane scrolls the conversation. Rendered again under a pty that answers the
-background query with a light background and with a dark one, the folded rows
-wear the same shade as the remark they folded — `rgb(27,43,51)` against
-`rgb(11,17,20)` on the dark run, `rgb(223,235,240)` against `rgb(241,246,249)` on
-the light one, both on the light band `rgb(234,234,234)` and the dark one
-`rgb(48,48,48)`.
+`TestAFoldedThreadHoldsItsWashUntilItIsOpened` (both palettes: a folded row is a
+summary and carries no shade, and opening the thread puts the remark's body back
+in its author's), `TestAResolvedThreadIsFoldedUntilItIsOpened` and the two new
+goldens. Live in a tmux pane against a public pull request carrying seven inline
+threads, four of them resolved: the three folded rows sit at one column, `Enter`
+opens the focused one and `Down` moves the marker to the next, and a wheel
+sequence written into the pane scrolls the conversation.
 
 ### Security findings
 

@@ -163,6 +163,65 @@ func TestTintLinePaintsUnderTheText(t *testing.T) {
 	}
 }
 
+// TestSpanPaintsTheBoxAndNothingElse covers the body wash: it is a background
+// behind the cells left to right of a line and nothing else, so the indent before
+// the box keeps the terminal's own colour. The box is the same on every line of a
+// block, which is why a line shorter than it is padded out to it — and that
+// padding sits behind a reset, so the wash has to be armed again after the reset
+// for the box to be one colour rather than a colour with a hole at its end.
+func TestSpanPaintsTheBoxAndNothingElse(t *testing.T) {
+	theme := DarkTheme()
+	tint := authorTint(theme, "carol")
+	code := paintCode(tint)
+	if code == "" {
+		t.Fatal("a coloured palette produced no paint")
+	}
+
+	// A body line at the card's indent, carried out to a box that ends six cells
+	// past its text.
+	line := "  " + style(theme.Title, bold).Render("carol  10:03")
+	got := paintSpan(tint, 2, 19, line)
+
+	// Inside the box, every run that ends by clearing the background is followed by
+	// the wash again; only the closing reset ends it.
+	opened := got[strings.Index(got, code):]
+	resets := strings.Count(opened, "\x1b[m") + strings.Count(opened, "\x1b[0m")
+	armed := strings.Count(opened, "\x1b[m"+code) + strings.Count(opened, "\x1b[0m"+code)
+	if armed != resets-1 {
+		t.Errorf("%d of %d resets inside the box are followed by the wash, want all but the closing one: %q", armed, resets, got)
+	}
+	if want := "  carol  10:03" + strings.Repeat(" ", 6); ansi.Strip(got) != want {
+		t.Errorf("the painted line reads %q, want the text carried out to the box %q", ansi.Strip(got), want)
+	}
+	// The two cells of indent before the box are not in it.
+	if start := ansi.StringWidth(ansi.Strip(got[:strings.Index(got, code)])); start != 2 {
+		t.Errorf("the wash opens at cell %d, want the box's own 2: %q", start, got)
+	}
+	// The padding is inside the wash: the line ends with the closing reset, and the
+	// wash is armed right up against the padding.
+	pad := strings.Repeat(" ", 6)
+	if !strings.HasSuffix(got, pad+ansi.ResetStyle) {
+		t.Fatalf("the box is not closed after the padding: %q", got)
+	}
+	if body := strings.TrimSuffix(got, pad+ansi.ResetStyle); !strings.HasSuffix(body, code) {
+		t.Errorf("the padding is not behind the wash: %q", got)
+	}
+
+	// A line that reaches past the box is cut at it, so the wash never covers a
+	// cell the box does not.
+	if got := paintSpan(tint, 2, 6, line); ansi.Strip(got) != "  carol" {
+		t.Errorf("a line past the box reads %q, want it cut at the box", ansi.Strip(got))
+	}
+
+	// A palette with no washes, and a box with no cells, both hand the line back.
+	if got := paintSpan(nil, 0, 4, "abc"); got != "abc" {
+		t.Errorf("a palette with no washes painted %q, want the line as it was", got)
+	}
+	if got := paintSpan(tint, 5, 4, "abc"); got != "abc" {
+		t.Errorf("a box with no cells painted %q, want the line as it was", got)
+	}
+}
+
 // channels is a colour's three channels, for a test that reasons about how far
 // one colour is from another.
 func channels(t *testing.T, c color.Color) [3]uint8 {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/joangrigorov/ghspector/internal/layout"
 	"github.com/joangrigorov/ghspector/internal/store"
 )
 
@@ -499,11 +500,12 @@ func TestThreadsAreDrawnInFrames(t *testing.T) {
 	}
 }
 
-// TestWashesPaintEachContributionWithoutMovingIt covers the coloured render:
-// every row of a contribution opens in its author's own wash, the wash is a
-// background and nothing else, so the same text sits in the same cells as the
-// plain render, and two authors in one thread do not share a shade.
-func TestWashesPaintEachContributionWithoutMovingIt(t *testing.T) {
+// TestWashesPaintTheCommentBodyAndNothingElse covers the coloured render: the
+// wash is the box of a contribution's own text — no heading, no row of air, and
+// nothing outside the box — it is a background and nothing else, so the same text
+// sits in the same cells as the plain render, and two authors in one thread do
+// not share a shade.
+func TestWashesPaintTheCommentBodyAndNothingElse(t *testing.T) {
 	theme := DarkTheme()
 	conv := newConversation(
 		nil,
@@ -533,11 +535,28 @@ func TestWashesPaintEachContributionWithoutMovingIt(t *testing.T) {
 	if shades["carol"] == "" || shades["carol"] == shades["octocat"] {
 		t.Fatalf("the two authors of one thread share the shade %q", shades["carol"])
 	}
+	// The bodies the fixtures write, and whose shade each of them wears.
+	bodies := map[string]string{
+		"review carol":   "carol",
+		"inline carol":   "carol",
+		"inline octocat": "octocat",
+	}
+	// bodyOf names the contribution a row is the body of, by the text the
+	// fixtures give that body. A row that is not one of them is a heading, a row
+	// of air, a frame or a rule, and carries no wash at all.
+	bodyOf := func(text string) (string, bool) {
+		for body, login := range bodies {
+			if strings.Contains(text, body) {
+				return login, true
+			}
+		}
+		return "", false
+	}
 
-	rows := map[string]int{}
+	washed := map[string]bool{}
 	for i := range painted {
-		// The wash carries the row out to the pane's edge, so the painted row is
-		// the plain one padded; the text itself is untouched.
+		// A wash is a background and nothing else, so the painted row carries the
+		// same text as the plain one.
 		got := strings.TrimRight(ansi.Strip(painted[i]), " ")
 		want := strings.TrimRight(ansi.Strip(plain[i]), " ")
 		if got != want {
@@ -546,20 +565,78 @@ func TestWashesPaintEachContributionWithoutMovingIt(t *testing.T) {
 		if width := ansi.StringWidth(painted[i]); width > 100 {
 			t.Errorf("row %d is %d cells wide, want at most the pane's 100", i, width)
 		}
-		// A row that names an author belongs to that author's block, and a block
-		// is read as one because every one of its rows carries the same wash.
+		worn := ""
 		for login, code := range shades {
-			if strings.Contains(ansi.Strip(painted[i]), login) {
-				if !strings.HasPrefix(painted[i], code) {
-					t.Errorf("row %d names %s but does not open in their shade: %q", i, login, painted[i])
-				}
-				rows[login]++
+			if strings.Contains(painted[i], code) {
+				worn = login
 			}
+		}
+		login, isBody := bodyOf(ansi.Strip(painted[i]))
+		switch {
+		case isBody && worn != login:
+			t.Errorf("row %d is %s's body and wears %q, want their shade %q: %q", i, login, worn, shades[login], got)
+		case isBody:
+			washed[login] = true
+		case worn != "":
+			t.Errorf("row %d is not a comment's body and wears %s's shade: %q", i, worn, got)
 		}
 	}
 	for login := range shades {
-		if rows[login] == 0 {
-			t.Errorf("no row is painted in %s's shade", login)
+		if !washed[login] {
+			t.Errorf("no body is painted in %s's shade", login)
+		}
+	}
+}
+
+// TestAWashIsTheCommentsOwnBox covers the extent of the wash: it is the box the
+// body's own text occupies — it opens at the column the card puts its text at,
+// ends on the last cell of the block's longest line, and is that one box on every
+// line of the block, so the short line of the fixture is carried out to the long
+// one's end rather than left with a wash of its own. The heading above the box and
+// the pane's content past it keep the terminal's colour.
+func TestAWashIsTheCommentsOwnBox(t *testing.T) {
+	const width = 100
+	theme := DarkTheme()
+	comment := aComment(1, "alice", conversationNow)
+	// Two lines of different lengths, so a wash that followed each line rather than
+	// the block would be caught here. A nil renderer wraps the body plainly, which
+	// is what makes the text's own extent predictable.
+	const longest = "and a line long enough to be the widest of them"
+	comment.Body = "a short line\n" + longest
+	conv := newConversation([]store.IssueComment{comment}, nil, nil, false)
+
+	lines := conversationLines(Deps{Theme: theme}, conv, width)
+	code := paintCode(authorTint(theme, "alice"))
+	if code == "" {
+		t.Fatal("the dark palette gives alice no shade")
+	}
+	// The box: the column the text starts in, out to the end of the longest line.
+	box := layout.Width(cardIndent) + ansi.StringWidth(longest)
+	if box >= width {
+		t.Fatalf("the fixture's longest line reaches the pane, so this proves nothing")
+	}
+	painted := 0
+	for i, line := range lines {
+		if !strings.Contains(line, code) {
+			continue
+		}
+		painted++
+		if got := ansi.StringWidth(ansi.Strip(line)); got != box {
+			t.Errorf("row %d is painted out to %d cells, want the block's own box of %d: %q", i, got, box, ansi.Strip(line))
+		}
+		// The wash starts where the text does: the cells before it are the card's
+		// indent, and they keep the terminal's own background.
+		if start := ansi.StringWidth(ansi.Strip(line[:strings.Index(line, code)])); start != layout.Width(cardIndent) {
+			t.Errorf("row %d opens its wash at cell %d, want the text's own %d: %q", i, start, layout.Width(cardIndent), ansi.Strip(line))
+		}
+	}
+	if painted != 2 {
+		t.Errorf("%d rows are painted, want the body's two", painted)
+	}
+	// The heading is above the box and carries no colour of its own.
+	for _, line := range lines {
+		if strings.Contains(ansi.Strip(line), "alice") && strings.Contains(line, "\x1b[48") {
+			t.Errorf("the heading that names the author carries a wash: %q", ansi.Strip(line))
 		}
 	}
 }
@@ -628,12 +705,12 @@ func TestAResolvedThreadIsFoldedUntilItIsOpened(t *testing.T) {
 	}
 }
 
-// TestAFoldedThreadKeepsItsAuthorsWash covers the coloured fold: the row a
-// resolved thread collapses to wears the shade of the remark it hid, so the
-// shade a reader learned for that author survives the fold and the thread
-// unfolds back into it. Both palettes answer, because a shade that only works on
-// one background is a shade that disappears on the other.
-func TestAFoldedThreadKeepsItsAuthorsWash(t *testing.T) {
+// TestAFoldedThreadHoldsItsWashUntilItIsOpened covers the coloured fold: a folded
+// thread is a summary row with no wash on it, and opening it brings back the
+// remark's body in its author's shade — from the column the body's text starts in,
+// with the heading above it left plain. Both palettes answer, because a shade that
+// only works on one background is a shade that disappears on the other.
+func TestAFoldedThreadHoldsItsWashUntilItIsOpened(t *testing.T) {
 	palettes := map[string]Theme{"dark": DarkTheme(), "light": LightTheme()}
 	for name, theme := range palettes {
 		t.Run(name, func(t *testing.T) {
@@ -657,30 +734,36 @@ func TestAFoldedThreadKeepsItsAuthorsWash(t *testing.T) {
 			if len(controls) != 1 {
 				t.Fatalf("the folded conversation carries %d controls, want 1", len(controls))
 			}
-			row := folded[controls[0].row]
-			if !strings.HasPrefix(row, code) {
-				t.Errorf("the folded row does not open in carol's shade: %q", row)
+			// A folded thread is a summary row, not a comment's body: the row the
+			// button is on carries no wash, and the remark it folded is not drawn.
+			if row := folded[controls[0].row]; strings.Contains(row, "\x1b[48") {
+				t.Errorf("the folded row carries a wash: %q", ansi.Strip(row))
 			}
-			plain, _ := conversationLinesOf(plainDeps(), conv, width, view)
-			if got, want := strings.TrimRight(ansi.Strip(row), " "), strings.TrimRight(ansi.Strip(plain[controls[0].row]), " "); got != want {
-				t.Errorf("the wash changed the folded row: %q painted, %q plain", got, want)
+			if strings.Contains(ansi.Strip(strings.Join(folded, "\n")), "inline carol") {
+				t.Error("the folded conversation still draws the remark's body")
 			}
 
-			// Opened, the remark the fold hid opens in the very same shade.
+			// Opened, the remark the fold hid is drawn with its body in carol's
+			// shade, and its heading still carries none.
 			view.expanded = map[int64]bool{100: true}
 			opened, _ := conversationLinesOf(deps, conv, width, view)
-			marked := ""
+			body := ""
 			for _, line := range opened {
-				if strings.Contains(ansi.Strip(line), rootMark) {
-					marked = line
-					break
+				switch {
+				case strings.Contains(ansi.Strip(line), "inline carol"):
+					body = line
+				case strings.Contains(ansi.Strip(line), rootMark) && strings.Contains(line, "\x1b[48"):
+					t.Errorf("the remark's heading carries a wash: %q", ansi.Strip(line))
 				}
 			}
-			if marked == "" {
-				t.Fatal("the opened conversation does not draw the remark the thread started from")
+			if body == "" {
+				t.Fatal("the opened conversation does not draw the remark's body")
 			}
-			if !strings.HasPrefix(marked, code) {
-				t.Errorf("the opened remark does not wear the shade the folded row did: %q", marked)
+			if !strings.Contains(body, code) {
+				t.Errorf("the opened remark's body does not wear carol's shade %q: %q", code, body)
+			}
+			if strings.HasPrefix(body, code) {
+				t.Errorf("the wash starts before the body's own text: %q", ansi.Strip(body))
 			}
 		})
 	}

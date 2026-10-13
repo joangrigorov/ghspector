@@ -331,9 +331,7 @@ func (p *PRDetails) focusedControlRow(start, height int) int {
 //
 // The marker takes the cells of the indent the row already carries, so a control
 // keeps the column it is drawn in when the focus lands on it, and the frame
-// characters below it stay in the column the frame draws them in. A washed row
-// opens with the escape that starts its paint, ahead of that indent, so the
-// indent is cut where it stands and the paint is kept.
+// characters below it stay in the column the frame draws them in.
 func focusRow(theme Theme, row string) string {
 	prefix := highlightPrefix(theme)
 	row = strings.ReplaceAll(row, ansi.ResetStyle, ansi.ResetStyle+prefix)
@@ -342,10 +340,9 @@ func focusRow(theme Theme, row string) string {
 	return prefix + indent + dropIndent(row, threadIndent) + ansi.ResetStyle
 }
 
-// dropIndent removes the indent a row opens with. The indent leads the cells of a
-// plain row and follows the paint of a washed one, so it is cut where it stands
-// rather than from the front of the string. A row that lost its indent already is
-// handed back as it is.
+// dropIndent removes the indent a row opens with. A row may carry escapes ahead
+// of its first cell, so the indent is cut where it stands rather than from the
+// front of the string. A row that lost its indent already is handed back as it is.
 func dropIndent(row, indent string) string {
 	at := strings.Index(row, indent)
 	if at < 0 || layout.Width(row[:at]) > 0 {
@@ -425,11 +422,12 @@ func commentBlockLines(deps Deps, comments []store.IssueComment, width int) []st
 }
 
 // commentBlock renders one comment: who wrote it, when, and the body as
-// markdown.
+// markdown, the body washed in its author's shade.
 func commentBlock(deps Deps, comment store.IssueComment, width int) []string {
 	author := userLogin(comment.User)
 	head := authorLine(deps, author, comment.HTMLURL, comment.CreatedAt, "")
-	return cardLines(deps, author, width, head, "", bodyLines(deps, comment.Body, "  ", width))
+	return cardLines(deps, author, cardIndent, head, "",
+		bodyLines(deps, comment.Body, cardIndent, width), contentRight(width))
 }
 
 // userLogin is the login of the user who wrote something, with a placeholder

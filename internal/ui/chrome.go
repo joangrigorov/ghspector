@@ -357,6 +357,41 @@ func paintLine(c color.Color, width int, line string) string {
 	return code + out + "\x1b[0m"
 }
 
+// paintSpan paints a background behind the cells left to right of a line,
+// inclusive, and leaves every cell outside them alone. It is how a comment's body
+// is washed: the box is the region the comment's own text occupies, so the heading
+// above it, the indentation beside it and the pane's content past it carry no
+// colour.
+//
+// left and right are cells, counted the way layout.Width counts them, so a caller
+// can name the column its text starts in and the last one the box reaches. A line
+// that reaches past right is cut there, and one that stops short of it is padded
+// out to it, so a block of lines painted this way reads as one box. Like
+// paintLine, the paint is re-armed after every reset inside the span, which is
+// what puts the colour behind the words rather than only behind the gaps between
+// them.
+func paintSpan(c color.Color, left, right int, line string) string {
+	code := paintCode(c)
+	if code == "" || right < left {
+		return line
+	}
+	head := ansi.Truncate(line, left, "")
+	span := ansi.TruncateLeft(line, left, "")
+	span = ansi.Truncate(span, right-left+1, "")
+	// A styled run inside the span ends by clearing the background as well as the
+	// foreground, so the paint is re-armed after both spellings of a reset. The
+	// padding below is what this has to cover: without it the last cells of a line
+	// shorter than the box keep the terminal's own colour.
+	span = strings.ReplaceAll(span, "\x1b[0m", "\x1b[0m"+code)
+	span = strings.ReplaceAll(span, ansi.ResetStyle, ansi.ResetStyle+code)
+	if pad := right + 1 - left - layout.Width(span); pad > 0 {
+		span += strings.Repeat(" ", pad)
+	}
+	// The head may have been cut out of a run that was still open, so it is
+	// closed before the span opens its own.
+	return head + ansi.ResetStyle + code + span + ansi.ResetStyle
+}
+
 // paintCode is the escape that starts a background paint of a colour, or "" for
 // a palette that has none.
 func paintCode(c color.Color) string {

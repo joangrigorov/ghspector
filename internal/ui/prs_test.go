@@ -1519,9 +1519,8 @@ func TestPRCommentsWalkTheThreadControlsWithTheArrows(t *testing.T) {
 // TestTheFocusMarkerIsNotBakedIntoTheCache covers the render that draws the
 // focus. The marked row is one of the conversation's cached lines, so a render
 // that wrote the marker into that slice would leave it there and every later
-// render would add another one. The coloured palette is the one that matters: a
-// washed row opens with the escape that starts its wash, ahead of the indent the
-// marker takes its cells from.
+// render would add another one. The coloured palette is the one that matters: the
+// folded row is drawn beside a washed body, and the two must not mix.
 func TestTheFocusMarkerIsNotBakedIntoTheCache(t *testing.T) {
 	second := inlineSpec{
 		id: 4003, review: reviewFixtureID, author: "carol", path: "internal/ui/prpanes.go",
@@ -1536,17 +1535,17 @@ func TestTheFocusMarkerIsNotBakedIntoTheCache(t *testing.T) {
 	m := pressAndDrive(t, openPRDetails(t, painted), "5")
 
 	first := screen(t, m, w, h)
-	var marked, unmarked, rawMarked string
+	var marked, unmarked string
 	for _, raw := range strings.Split(first, "\n") {
 		row := ansi.Strip(raw)
 		if n := strings.Count(row, selectMarker); n > 1 {
 			t.Errorf("a row carries the focus marker %d times: %q", n, row)
 		}
-		if !strings.Contains(row, threadShowLabel) || strings.Contains(row, "Pull Requests") {
+		if !strings.Contains(row, threadShowLabel) {
 			continue
 		}
 		if strings.Contains(row, selectMarker) {
-			marked, rawMarked = row, raw
+			marked = row
 			continue
 		}
 		unmarked = row
@@ -1561,11 +1560,6 @@ func TestTheFocusMarkerIsNotBakedIntoTheCache(t *testing.T) {
 	}
 	if got, want := column(marked), column(unmarked); got != want {
 		t.Errorf("the focused control is at column %d and the other at %d: %q", got, want, marked)
-	}
-	// And it keeps the wash of the thread it folds.
-	code := paintCode(authorTint(DarkTheme(), "carol"))
-	if code == "" || !strings.Contains(rawMarked, code) {
-		t.Errorf("the focused row lost the wash %q: %q", code, rawMarked)
 	}
 	if again := screen(t, m, w, h); again != first {
 		t.Errorf("the same state drew two screens; the second one is:\n%s", ansi.Strip(again))

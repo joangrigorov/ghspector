@@ -15,7 +15,7 @@ whole pane was one background.
 - **A rule closes each remark.** A thread's remark draws its own rule inside the
   thread's rail, and a reply's frame foot is a rule, so the two remarks of a
   thread are separated the way two top-level contributions are.
-- **Each card is washed in its author's shade.** The shades are derived, not
+- **Each remark's body is washed in its author's shade.** The shades are derived, not
   chosen: `authorTints` mixes the palette's accent into the palette's background
   in six even steps, so they are one family by construction and each palette
   gets washes on its own side of the background — `#05090a` to `#20343d` on the
@@ -69,6 +69,33 @@ whole pane was one background.
 
 The `␣` rows are air: blank inside the card, carrying the rail inside a frame.
 
+## Follow-up: the wash is the remark's own box
+
+The first cut painted every row of a card — the author line, the row of air, the
+body and the rules — from the pane's first cell to its last. In a live pane that
+read as greedy: the colour ran behind the name and across the whole width, so it
+marked "a review happened here" rather than "this is the remark".
+
+The wash is now the box the body's own text occupies. `cardLines` paints the body
+and nothing else, and `bodyBox` measures the block before painting it: the box
+opens at the column the card puts its text in and ends on the last cell of the
+block's widest line, with every line of the block carried out to it, so a block is
+one colour rather than one highlight per line. The heading, the row of air, the
+rules and the pane's content past the box keep the terminal's own background, and
+a folded thread's summary row — a summary rather than a remark — carries none at
+all.
+
+That needed a second helper: `paintSpan` paints behind a span of a row instead of
+the whole of it. Measuring the result rather than looking at it is what caught the
+defect the first version had: a markdown run ends with `\x1b[0m`, and the re-arm
+only knew about `\x1b[m`, so the padding that carries a short line out to the box
+fell outside the wash and the box came apart into per-line highlights.
+
+Two commits: the box attempt that followed the first review (`fd0f63f`, a
+six-cell inset that was too subtle to see in a pane) was reverted whole
+(`47a8871`), which put the render, the rules and the seven conversation goldens
+back on `a4ae7a9` byte for byte, and the box above replaced it.
+
 ## Cost, stated plainly
 
 A card is two rows taller than the lines it replaced — the air row and the rule —
@@ -83,23 +110,25 @@ and `TestPRCommentsKeepAThreadTogetherAcrossReviews` read it whole.
 A TUI has no browser, so the checks are the test suite, the recorded golden
 screens, and a render of the real screen shown through a real terminal.
 
-- New `TestWashesPaintEachContributionWithoutMovingIt` asserts that the same text
-  sits in the same cells as a plain render, that every row naming an author opens
-  in that author's shade, and that two authors of one thread do not share one.
-- New `TestAuthorWashesStayInOneFamily`, `TestWashesFollowTheLogin` and
-  `TestTintLinePaintsUnderTheText`, and `TestHeaderBandPaintsBehindEveryRun` for
-  the band the cards share.
+- New `TestWashesPaintTheCommentBodyAndNothingElse` asserts that the same text
+  sits in the same cells as a plain render, that each body wears its author's
+  shade and no row which is not a body wears one, and that two authors of one
+  thread do not share one. `TestAWashIsTheCommentsOwnBox` reads the extent of the
+  wash off a block whose lines are of two different lengths.
+- New `TestAuthorWashesStayInOneFamily`, `TestWashesFollowTheLogin`,
+  `TestTintLinePaintsUnderTheText`, `TestSpanPaintsTheBoxAndNothingElse` and
+  `TestHeaderBandPaintsBehindEveryRun` for the band the cards share.
 - `gofmt -l .` (silent), `go build ./...`, `go vet ./...`, `go test ./...` (every
   package ok), `golangci-lint run ./...` (0 issues), `govulncheck ./...` (no
   vulnerabilities).
 - Goldens regenerated and reviewed: the three pull request conversation screens
   and the two issue conversation screens gain the air rows, the rules and the
   longer excerpt; nothing else moved.
-- The fixture conversation was rendered in both palettes and printed through a
-  real terminal (tmux, `capture-pane -e`): every card row carries its author's
-  background from its first cell to the pane's edge, the paint is re-armed after
-  each reset, the unpainted frame and the red/green diff lines stay distinct, and
-  the header band now spans the whole row, account included.
+- The fixture conversation was rendered in both palettes through the app's own
+  screen composition and the raw output read as an image: the wash is one box
+  behind each remark's own text, and the author line, the rules, the frame and
+  the pane's margin carry no colour. The header band still spans the whole row,
+  account included.
 - The environment sets `NO_COLOR=1`, which strips every colour: the runs that
   showed colour cleared it first, and the first run without that is why the
   missing header band was found.
@@ -109,10 +138,11 @@ screens, and a render of the real screen shown through a real terminal.
 
 - `internal/ui/tints.go`, `internal/ui/tints_test.go` — new: the ramp, the login
   hash, the wash lookup.
-- `internal/ui/chrome.go` — `band` and `paintLine`/`paintCode`.
+- `internal/ui/chrome.go` — `band`, `paintLine`/`paintCode` for the header, and
+  `paintSpan` for a remark's box.
 - `internal/ui/theme.go` — the `AuthorTints` field and its two palettes.
-- `internal/ui/conversation.go` — `cardLines`, `rootCard`, `replyCard`, the
-  six-line excerpt.
+- `internal/ui/conversation.go` — `cardLines`, `bodyBox`, `rootCard`, `replyCard`,
+  the six-line excerpt.
 - `internal/ui/prpanes.go` — the issue conversation's comment block uses the same
   card.
 - `internal/ui/testdata/.../*.golden` — regenerated.
