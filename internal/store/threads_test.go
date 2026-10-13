@@ -23,8 +23,7 @@ func threadsReply(t *testing.T, threads ...map[string]any) string {
 		"repository": map[string]any{
 			"pullRequest": map[string]any{
 				"reviewThreads": map[string]any{
-					"nodes":    nodes,
-					"pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""},
+					"nodes": nodes,
 				},
 			},
 		},

@@ -67,14 +67,15 @@ func (c *Client) ReviewThreads(ctx context.Context, owner, repo string, number i
 // reviewThreadsQuery is the resolution half of a pull request's conversation.
 //
 // The thread's comments are asked for but not read: only their ids are wanted,
-// and the ids are what tie a thread to the remarks REST returned.
+// and the ids are what tie a thread to the remarks REST returned. The
+// connection's PageInfo is not asked for either, because the page it would
+// describe is the only one this query ever reads.
 type reviewThreadsQuery struct {
 	RateLimit  budgetField
 	Repository struct {
 		PullRequest struct {
 			ReviewThreads struct {
-				Nodes    []reviewThreadNode
-				PageInfo pageInfo
+				Nodes []reviewThreadNode
 			} `graphql:"reviewThreads(first: $first)"`
 		} `graphql:"pullRequest(number: $number)"`
 	} `graphql:"repository(owner: $owner, name: $repo)"`
