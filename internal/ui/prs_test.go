@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/joangrigorov/ghspector/internal/keymap"
@@ -90,6 +92,11 @@ type prServerConfig struct {
 	failPermission bool
 	// checks is the check list reported for the pull request's head.
 	checks []checkSpec
+	// resolvedThreads is the answer the GraphQL endpoint serves to the
+	// review-thread resolution query. Nil leaves the endpoint refusing, which is
+	// the state a screen with no resolution data is in; a non-nil empty list is
+	// an answer with nothing resolved.
+	resolvedThreads [][]int64
 }
 
 // checkSpec is one check run in a fixture.
@@ -183,6 +190,58 @@ func withoutConversationComments() prServerOption {
 // failReviewList makes the reviews endpoint fail.
 func failReviewList() prServerOption {
 	return func(c *prServerConfig) { c.failReviews = true }
+}
+
+// withResolvedThreads serves the GraphQL answer the fixture refuses by default:
+// one resolved thread per group, holding exactly the remarks the group names,
+// which is the shape the schema returns for a thread that has been settled. No
+// groups at all is an answer with nothing resolved, which is not the same as an
+// endpoint that will not answer.
+func withResolvedThreads(threads ...[]int64) prServerOption {
+	return func(c *prServerConfig) { c.resolvedThreads = threads }
+}
+
+// queryAsks reports whether a GraphQL request holds a field of this name, which
+// is how the fixture tells the queries it answers from the ones it refuses.
+func queryAsks(r *http.Request, field string) bool {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(body), field)
+}
+
+// threadsBody is the review-thread answer: one resolved thread per group, as the
+// GraphQL transport receives it.
+func threadsBody(t *testing.T, threads [][]int64) string {
+	t.Helper()
+	nodes := make([]any, 0, len(threads))
+	for _, group := range threads {
+		comments := make([]map[string]any, 0, len(group))
+		for _, id := range group {
+			comments = append(comments, map[string]any{"databaseId": id})
+		}
+		nodes = append(nodes, map[string]any{
+			"isResolved": true,
+			"comments":   map[string]any{"nodes": comments},
+		})
+	}
+	return jsonBody(t, map[string]any{"data": map[string]any{
+		"rateLimit": map[string]any{
+			"limit":     5000,
+			"cost":      1,
+			"remaining": 4999,
+			"resetAt":   "2026-10-12T11:00:00Z",
+		},
+		"repository": map[string]any{
+			"pullRequest": map[string]any{
+				"reviewThreads": map[string]any{
+					"nodes":    nodes,
+					"pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""},
+				},
+			},
+		},
+	}})
 }
 
 // failConversation makes every list the conversation is assembled from fail, so
@@ -332,8 +391,13 @@ func prServerWithLog(t *testing.T, log *requestLog, opts ...prServerOption) *htt
 
 		switch {
 		case path == graphQLPath:
-			// The fixture serves REST only; see graphql_test.go for what covers
-			// the search path instead.
+			// The fixture answers one GraphQL query — the resolution state a
+			// test asked for — and refuses the rest: it models no search index,
+			// which is what graphql_test.go covers.
+			if config.resolvedThreads != nil && queryAsks(r, "reviewThreads") {
+				writeBody(w, threadsBody(t, config.resolvedThreads))
+				return
+			}
 			w.WriteHeader(http.StatusNotImplemented)
 			writeBody(w, `{"message":"the fixture serves REST only"}`)
 		case path == "/user":
@@ -1343,6 +1407,216 @@ func TestPRCommentsKeepAThreadTogetherAcrossReviews(t *testing.T) {
 	}
 	if got := strings.Count(out, "octocat  [reviewed]"); got != 1 {
 		t.Errorf("the review that carried the reply is drawn %d times, want once:\n%s", got, out)
+	}
+}
+
+// TestPRCommentsFoldAResolvedThreadAndOpenItAgain covers the resolution state on
+// the screen: a thread GitHub reports as resolved reaches the Comments sub-tab as
+// one row with a button, and the button opens and folds it again.
+func TestPRCommentsFoldAResolvedThreadAndOpenItAgain(t *testing.T) {
+	srv := prServerWithLog(t, newRequestLog(), withResolvedThreads([]int64{4001, 4002}))
+	const w, h = 120, 56
+	m := openPRDetails(t, prsModel(t, srv, w, h))
+	m = pressAndDrive(t, m, "5")
+
+	folded := ansi.Strip(screen(t, m, w, h))
+	for _, want := range []string{
+		threadShowLabel, "internal/ui/table.go:12", "carol", "2 remarks", "resolved",
+	} {
+		if !strings.Contains(folded, want) {
+			t.Errorf("the folded conversation is missing %q:\n%s", want, folded)
+		}
+	}
+	if strings.Contains(folded, "This width needs a name.") {
+		t.Errorf("a folded thread shows its remarks:\n%s", folded)
+	}
+	// The control carries the focus as soon as it exists, so the reader can see
+	// where Enter acts.
+	if !strings.Contains(folded, selectMarker) {
+		t.Errorf("no control carries the focus:\n%s", folded)
+	}
+
+	// Enter opens it: the remarks are back and the button says hide.
+	m = pressAndDrive(t, m, "enter")
+	opened := ansi.Strip(screen(t, m, w, h))
+	for _, want := range []string{threadHideLabel, "This width needs a name.", "Named it tableWidth."} {
+		if !strings.Contains(opened, want) {
+			t.Errorf("the opened thread is missing %q:\n%s", want, opened)
+		}
+	}
+	if strings.Contains(opened, threadShowLabel) {
+		t.Errorf("an opened thread still offers %q:\n%s", threadShowLabel, opened)
+	}
+
+	// And folds it again, which is what makes the button a control rather than a
+	// one-way door.
+	m = pressAndDrive(t, m, "enter")
+	refolded := ansi.Strip(screen(t, m, w, h))
+	if !strings.Contains(refolded, threadShowLabel) || strings.Contains(refolded, "This width needs a name.") {
+		t.Errorf("the thread did not fold again:\n%s", refolded)
+	}
+}
+
+// TestPRCommentsWalkTheThreadControlsWithTheArrows covers what the arrows do on a
+// conversation whose threads have been resolved: they move between the buttons,
+// one thread at a time, and leave the pane's own scrolling to the scroll keys.
+func TestPRCommentsWalkTheThreadControlsWithTheArrows(t *testing.T) {
+	second := inlineSpec{
+		id: 4003, review: reviewFixtureID, author: "carol", path: "internal/ui/prpanes.go",
+		line: 4, hunk: fixtureHunk, at: workflowNow.Add(3 * time.Minute),
+		body: "A free function would do here.",
+	}
+	srv := prServerWithLog(t, newRequestLog(),
+		withInlineComments(append(fixtureInline(), second)...),
+		withResolvedThreads([]int64{4001, 4002}, []int64{4003}))
+	const w, h = 120, 56
+	m := openPRDetails(t, prsModel(t, srv, w, h))
+	m = pressAndDrive(t, m, "5")
+
+	route := prDetailsRoute(t, m)
+	if len(route.threadControls) != 2 {
+		t.Fatalf("the conversation carries %d controls, want the two folded threads", len(route.threadControls))
+	}
+	if route.threadFocus != 0 {
+		t.Errorf("the focus starts on control %d, want the first", route.threadFocus)
+	}
+
+	// The first arrow moves to the second control, and does not scroll the pane.
+	moved := pressAndDrive(t, m, "down")
+	route = prDetailsRoute(t, moved)
+	if route.threadFocus != 1 {
+		t.Errorf("down moved the focus to control %d, want the second", route.threadFocus)
+	}
+	if route.commentScroll != 0 {
+		t.Errorf("the arrows scrolled the pane to line %d, want the scroll left alone", route.commentScroll)
+	}
+	// Exactly one row carries the marker, and it is the second thread's.
+	rows := strings.Split(ansi.Strip(screen(t, moved, w, h)), "\n")
+	marked := 0
+	for _, row := range rows {
+		if !strings.HasPrefix(strings.TrimLeft(row, " "), selectMarker) {
+			continue
+		}
+		marked++
+		if !strings.Contains(row, "prpanes.go:4") {
+			t.Errorf("the focus is on %q, want the second thread's row", row)
+		}
+	}
+	if marked != 1 {
+		t.Errorf("%d rows carry the focus marker, want one", marked)
+	}
+
+	// The scroll keys still scroll, and leave the focus where it was.
+	scrolled := pressAndDrive(t, moved, "d")
+	route = prDetailsRoute(t, scrolled)
+	if route.commentScroll == 0 {
+		t.Error("the scroll key did not scroll the conversation")
+	}
+	if route.threadFocus != 1 {
+		t.Errorf("scrolling moved the focus to control %d, want it left on the second", route.threadFocus)
+	}
+}
+
+// TestTheFocusMarkerIsNotBakedIntoTheCache covers the render that draws the
+// focus. The marked row is one of the conversation's cached lines, so a render
+// that wrote the marker into that slice would leave it there and every later
+// render would add another one. The coloured palette is the one that matters: a
+// washed row opens with the escape that starts its wash, ahead of the indent the
+// marker takes its cells from.
+func TestTheFocusMarkerIsNotBakedIntoTheCache(t *testing.T) {
+	second := inlineSpec{
+		id: 4003, review: reviewFixtureID, author: "carol", path: "internal/ui/prpanes.go",
+		line: 4, hunk: fixtureHunk, at: workflowNow.Add(3 * time.Minute),
+		body: "A free function would do here.",
+	}
+	srv := prServerWithLog(t, newRequestLog(),
+		withInlineComments(append(fixtureInline(), second)...),
+		withResolvedThreads([]int64{4001, 4002}, []int64{4003}))
+	const w, h = 120, 56
+	painted := prsModel(t, srv, w, h, func(o *Options) { o.Theme = DarkTheme() })
+	m := pressAndDrive(t, openPRDetails(t, painted), "5")
+
+	first := screen(t, m, w, h)
+	var marked, unmarked, rawMarked string
+	for _, raw := range strings.Split(first, "\n") {
+		row := ansi.Strip(raw)
+		if n := strings.Count(row, selectMarker); n > 1 {
+			t.Errorf("a row carries the focus marker %d times: %q", n, row)
+		}
+		if !strings.Contains(row, threadShowLabel) || strings.Contains(row, "Pull Requests") {
+			continue
+		}
+		if strings.Contains(row, selectMarker) {
+			marked, rawMarked = row, raw
+			continue
+		}
+		unmarked = row
+	}
+	if marked == "" || unmarked == "" {
+		t.Fatalf("the screen holds %q marked and %q unmarked, want one of each", marked, unmarked)
+	}
+	// The marker takes the cells of the indent, so the control does not move
+	// when the focus lands on it.
+	column := func(row string) int {
+		return ansi.StringWidth(row[:strings.Index(row, threadShowLabel)])
+	}
+	if got, want := column(marked), column(unmarked); got != want {
+		t.Errorf("the focused control is at column %d and the other at %d: %q", got, want, marked)
+	}
+	// And it keeps the wash of the thread it folds.
+	code := paintCode(authorTint(DarkTheme(), "carol"))
+	if code == "" || !strings.Contains(rawMarked, code) {
+		t.Errorf("the focused row lost the wash %q: %q", code, rawMarked)
+	}
+	if again := screen(t, m, w, h); again != first {
+		t.Errorf("the same state drew two screens; the second one is:\n%s", ansi.Strip(again))
+	}
+}
+
+// TestPRCommentsWithoutResolutionKeepTheArrowsOnTheScroll covers the page whose
+// resolution query refused: no thread carries a button, so the arrows scroll the
+// conversation exactly as they did before any of this existed.
+func TestPRCommentsWithoutResolutionKeepTheArrowsOnTheScroll(t *testing.T) {
+	srv := prServerWithLog(t, newRequestLog(), withComments(20))
+	const w, h = 120, 40
+	m := openPRDetails(t, prsModel(t, srv, w, h))
+	m = pressAndDrive(t, m, "5")
+
+	if controls := prDetailsRoute(t, m).threadControls; len(controls) != 0 {
+		t.Fatalf("the conversation carries %d controls, want none", len(controls))
+	}
+	route := prDetailsRoute(t, pressAndDrive(t, m, "down", "down"))
+	if route.commentScroll != 2 {
+		t.Errorf("two downs scrolled to line %d, want 2", route.commentScroll)
+	}
+	if route.threadFocus >= 0 {
+		t.Errorf("the focus is on control %d with no controls in the pane", route.threadFocus)
+	}
+}
+
+// TestTheWheelScrollsTheRouteOnScreen covers the wheel: it resolves into the
+// scroll the keys ask for, so every pane that scrolls is scrolled by it, and it
+// is not a cursor move on a list.
+func TestTheWheelScrollsTheRouteOnScreen(t *testing.T) {
+	srv := prServerWithLog(t, newRequestLog(), withComments(20))
+	const w, h = 120, 40
+	m := openPRDetails(t, prsModel(t, srv, w, h))
+	m = pressAndDrive(t, m, "5")
+
+	down, _ := send(t, m, tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+	route := prDetailsRoute(t, down)
+	if route.commentScroll != diffStep {
+		t.Errorf("a wheel down scrolled to line %d, want the scroll key's %d lines", route.commentScroll, diffStep)
+	}
+	up, _ := send(t, down, tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	if got := prDetailsRoute(t, up).commentScroll; got != 0 {
+		t.Errorf("a wheel up scrolled to line %d, want back at the top", got)
+	}
+
+	list := prsModel(t, srv, w, h)
+	listed, _ := send(t, list, tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+	if got := prsTabOf(t, listed).cursor; got != 0 {
+		t.Errorf("the wheel moved the list cursor to %d, want it left on the first row", got)
 	}
 }
 

@@ -134,8 +134,9 @@ This file is generated from the keymap table, so it cannot drift from the code.
 | `4` | Checks |
 | `2` | Commits |
 | `3` | Files & diff |
-| `j` / `↓` | Down a line |
-| `k` / `↑` | Up a line |
+| `j` / `↓` | Next thread control |
+| `k` / `↑` | Previous thread control |
+| `Enter` | Show or hide a resolved thread |
 | `r` / `Ctrl+R` | Refresh |
 | `u` / `PgUp` | Scroll up |
 | `d` / `PgDn` | Scroll down |

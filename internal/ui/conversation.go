@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,6 +48,73 @@ type reviewThread struct {
 	hunk     []string
 	comments []store.ReviewComment
 }
+
+// first is the remark the thread is placed by: the comment it started from, or
+// the earliest reply when the root is not on the page.
+func (t reviewThread) first() store.ReviewComment {
+	if len(t.comments) == 0 {
+		return store.ReviewComment{}
+	}
+	return t.comments[0]
+}
+
+// rootID is the remark the thread is placed by, as an id. It is what a reader's
+// expansion of a folded thread is remembered against, so opening a thread
+// survives a re-render.
+func (t reviewThread) rootID() int64 { return t.first().ID }
+
+// threadView is what the conversation needs to know about resolution: which
+// remarks belong to a thread the schema reports as resolved, and which resolved
+// threads the reader has opened.
+//
+// The resolution is keyed by remark rather than by thread because the
+// conversation groups the remarks itself, from the REST payload, and a thread
+// whose root is not on the page is placed by the earliest reply it holds. Naming
+// every remark of a resolved thread answers "is this thread resolved" the same
+// way however the page was cut. The focused control is deliberately not part of
+// this: moving the focus changes what a row looks like rather than what is in
+// it, and re-rendering every body to move a highlight is the cost the rendered
+// lines are cached to avoid.
+type threadView struct {
+	// resolved names the remarks that belong to a resolved thread.
+	resolved map[int64]bool
+	// expanded names the resolved threads the reader has opened, by rootID.
+	expanded map[int64]bool
+}
+
+// isResolved reports whether the schema placed any of the thread's remarks in a
+// resolved thread. A thread the answer does not name, which is every thread when
+// the query has not answered at all, is not resolved.
+func (v threadView) isResolved(thread reviewThread) bool {
+	for _, comment := range thread.comments {
+		if v.resolved[comment.ID] {
+			return true
+		}
+	}
+	return false
+}
+
+// isFolded reports whether a thread is drawn as its button row alone: it is
+// resolved, and the reader has not opened it.
+func (v threadView) isFolded(thread reviewThread) bool {
+	return v.isResolved(thread) && !v.expanded[thread.rootID()]
+}
+
+// threadControl is one control of a conversation: the thread its button folds,
+// and the row it was drawn on. The rows come from the render, so they always
+// match the lines on screen, and the thread is what a toggle acts on.
+type threadControl struct {
+	thread int64
+	row    int
+}
+
+// The two labels of the control that folds a resolved thread away and opens it
+// again. They are named here because the rendered row, the help text and the
+// tests all say the same two words.
+const (
+	threadShowLabel = "[show]"
+	threadHideLabel = "[hide]"
+)
 
 // threadIndent is the indent an inline thread is drawn at, inside the indent a
 // top-level contribution uses, because a thread is part of the review above it.
@@ -288,47 +356,74 @@ func hunkLines(hunk string) []string {
 
 // conversationLines renders the conversation: one block per contribution, a rule
 // between them, and the bodies as markdown, so a discussion reads the way its
-// authors wrote it.
+// authors wrote it. It is the render for a conversation whose threads are all
+// drawn in full, which is what a page with no resolution data shows.
 func conversationLines(deps Deps, conv conversation, width int) []string {
-	var out []string
+	lines, _ := conversationLinesOf(deps, conv, width, threadView{})
+	return lines
+}
+
+// conversationLinesOf renders the conversation and reports the controls it drew,
+// so the pane can put the focus on one of them.
+func conversationLinesOf(deps Deps, conv conversation, width int, view threadView) ([]string, []threadControl) {
+	var (
+		out      []string
+		controls []threadControl
+	)
 	for i, entry := range conv.entries {
 		if i > 0 {
 			out = append(out, "", style(deps.Theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-2, 1))), "")
 		}
-		out = append(out, entryLines(deps, entry, width)...)
+		out, controls = appendEntry(out, controls, deps, entry, width, view)
 	}
 	if conv.truncated {
 		out = append(out, "", "  "+style(deps.Theme.Muted, normal).Render(truncatedNote))
 	}
-	return out
+	return out, controls
 }
 
-// entryLines renders one contribution.
-func entryLines(deps Deps, entry conversationEntry, width int) []string {
+// appendEntry draws one contribution onto the conversation and records where its
+// controls landed, offset by what is already drawn.
+func appendEntry(out []string, controls []threadControl, deps Deps, entry conversationEntry, width int, view threadView) ([]string, []threadControl) {
 	switch {
 	case entry.comment != nil:
-		return commentBlock(deps, *entry.comment, width)
+		return append(out, commentBlock(deps, *entry.comment, width)...), controls
 	case entry.review != nil:
-		return reviewLines(deps, *entry.review, entry.threads, width)
+		return appendReview(out, controls, deps, *entry.review, entry.threads, width, view)
 	default:
-		var out []string
-		for _, thread := range entry.threads {
-			out = append(out, threadLines(deps, thread, width)...)
-		}
-		return out
+		return appendThreads(out, controls, deps, entry.threads, width, view)
 	}
 }
 
-// reviewLines renders a review: who wrote it, what they concluded, the summary
-// they left, and the threads they wrote under it.
-func reviewLines(deps Deps, review store.Review, threads []reviewThread, width int) []string {
+// appendThreads draws each thread of an entry and records the rows its buttons
+// landed on. Offset by the lines already drawn, those rows are the lines of the
+// conversation the controls sit on.
+func appendThreads(out []string, controls []threadControl, deps Deps, threads []reviewThread, width int, view threadView) ([]string, []threadControl) {
+	for _, thread := range threads {
+		lines, drawn := threadLines(deps, thread, width, view)
+		controls = offsetControls(drawn, len(out), controls)
+		out = append(out, lines...)
+	}
+	return out, controls
+}
+
+// offsetControls moves the rows a block reported onto the conversation.
+func offsetControls(drawn []threadControl, at int, controls []threadControl) []threadControl {
+	for _, control := range drawn {
+		control.row += at
+		controls = append(controls, control)
+	}
+	return controls
+}
+
+// appendReview draws a review: who wrote it, what they concluded, the summary
+// they left, and the threads they wrote under it, and records where those
+// threads' controls landed.
+func appendReview(out []string, controls []threadControl, deps Deps, review store.Review, threads []reviewThread, width int, view threadView) ([]string, []threadControl) {
 	author := userLogin(review.User)
 	head := authorLine(deps, author, review.HTMLURL, reviewTime(review), reviewStateLabel(deps.Theme, review))
-	out := cardLines(deps, author, width, head, "", bodyLines(deps, review.Body, "  ", width))
-	for _, thread := range threads {
-		out = append(out, threadLines(deps, thread, width)...)
-	}
-	return out
+	out = append(out, cardLines(deps, author, width, head, "", bodyLines(deps, review.Body, "  ", width))...)
+	return appendThreads(out, controls, deps, threads, width, view)
 }
 
 // The frame an inline thread is drawn in.
@@ -357,23 +452,38 @@ const (
 // the exchange itself, inside a frame titled by where the thread is. The title
 // is a link to the thread on GitHub, which is what a reader wants from it: the
 // remark, in the diff it was written against.
-func threadLines(deps Deps, thread reviewThread, width int) []string {
+//
+// A resolved thread is drawn as one row with a `[show]` button until the reader
+// opens it, which is what keeps a settled conversation out of the way of the
+// remarks still being made. The controls returned are the rows of this block that
+// carry a button, which is what the arrows move between.
+func threadLines(deps Deps, thread reviewThread, width int, view threadView) ([]string, []threadControl) {
+	if view.isFolded(thread) {
+		return foldedThreadLines(deps, thread, width)
+	}
 	theme := deps.Theme
 	rule := style(theme.HeaderRule, normal)
 
-	place := thread.path
-	if thread.line > 0 {
-		place = fmt.Sprintf("%s:%d", thread.path, thread.line)
-	}
-	place = hyperlink(theme, style(theme.Muted, bold).Render(place), threadURL(thread))
+	place := threadPlace(theme, thread)
 
-	titleWidth := max(width-len(threadIndent)-frameCells, 8)
+	// A thread the schema reports as resolved carries the button that folds it
+	// away again, and the location gives up the cells it takes.
+	button := ""
+	if view.isResolved(thread) {
+		button = "  " + threadButton(theme, threadHideLabel)
+	}
+
+	titleWidth := max(width-len(threadIndent)-frameCells-layout.Width(button), 8)
 	inner := threadIndent + rule.Render(frameRail)
 	innerWidth := max(width-layout.Width(inner)-frameCells, 8)
 
 	out := []string{
 		"",
-		threadIndent + rule.Render(frameTop) + layout.Truncate(place, titleWidth),
+		threadIndent + rule.Render(frameTop) + layout.Truncate(place, titleWidth) + button,
+	}
+	var controls []threadControl
+	if button != "" {
+		controls = append(controls, threadControl{thread: thread.rootID(), row: 1})
 	}
 
 	if len(thread.hunk) > 0 {
@@ -391,7 +501,64 @@ func threadLines(deps Deps, thread reviewThread, width int) []string {
 		out = append(out, rootCard(deps, comment, inner, innerWidth, width)...)
 	}
 
-	return append(out, threadIndent+rule.Render(frameClose))
+	return append(out, threadIndent+rule.Render(frameClose)), controls
+}
+
+// foldedThreadLines draws a resolved thread as a single row: the button that
+// opens it, then what the thread is — where it was written, who wrote it first,
+// how much of it there is — and the state that folded it away. The button leads
+// the row, so the controls of a conversation line up in one column.
+//
+// The row wears the shade of the remark it folded, so a thread keeps its
+// author's wash while it is out of the way, and unfolds back into it.
+func foldedThreadLines(deps Deps, thread reviewThread, width int) ([]string, []threadControl) {
+	theme := deps.Theme
+	button := threadButton(theme, threadShowLabel)
+	summary := threadSummary(deps, thread)
+	room := max(width-len(threadIndent)-layout.Width(button)-1, 8)
+
+	row := threadIndent + button + " " + layout.Truncate(summary, room)
+	tint := authorTint(theme, userLogin(thread.first().User))
+	return []string{"", paintLine(tint, width, row)}, []threadControl{{thread: thread.rootID(), row: 1}}
+}
+
+// threadPlace is where a thread was written, as the frame's title and a folded
+// row both name it: the path and line, linked to the thread on GitHub.
+func threadPlace(theme Theme, thread reviewThread) string {
+	place := thread.path
+	if thread.line > 0 {
+		place = fmt.Sprintf("%s:%d", thread.path, thread.line)
+	}
+	return hyperlink(theme, style(theme.Muted, bold).Render(place), threadURL(thread))
+}
+
+// threadSummary is what a folded thread says about itself: where it was written,
+// who opened it, how many remarks it holds, and the state that folded it.
+func threadSummary(deps Deps, thread reviewThread) string {
+	theme := deps.Theme
+	parts := []string{threadPlace(theme, thread)}
+	if author := userLogin(thread.first().User); author != "" {
+		parts = append(parts, style(theme.Muted, normal).Render(author))
+	}
+	parts = append(parts, style(theme.Muted, normal).Render(remarkCount(len(thread.comments))))
+	parts = append(parts, style(theme.StatusOK, normal).Render("resolved"))
+	return strings.Join(parts, style(theme.Muted, normal).Render(" · "))
+}
+
+// remarkCount names how many remarks a folded thread holds.
+func remarkCount(n int) string {
+	if n == 1 {
+		return "1 remark"
+	}
+	return strconv.Itoa(n) + " remarks"
+}
+
+// threadButton is the control that folds a resolved thread away and opens it
+// again. It is the one thing on its row that does something, so it carries the
+// accent; which of the controls holds the keyboard is the row highlight the rest
+// of the app uses.
+func threadButton(theme Theme, label string) string {
+	return style(theme.Accent, normal).Render(label)
 }
 
 // rootCard draws the remark a thread started from: its heading, marked so the

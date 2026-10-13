@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/joangrigorov/ghspector/internal/keymap"
 	"github.com/joangrigorov/ghspector/internal/layout"
@@ -281,6 +282,11 @@ func (p *PRDetails) loadMessage(section prSection, empty string) string {
 }
 
 // commentsView is the Comments sub-tab: the conversation, scrolled.
+//
+// The row the arrows are on is drawn highlighted here rather than by the render,
+// because the focus changes what a row looks like and not what is in it: the
+// conversation is cached line by line, and re-rendering every body to move a
+// highlight is exactly the cost that cache exists to avoid.
 func (p *PRDetails) commentsView(deps Deps, r layout.Rect) string {
 	lines := []string{paneTitle(deps.Theme, "COMMENTS", true), ""}
 	conv := p.conversation()
@@ -292,8 +298,60 @@ func (p *PRDetails) commentsView(deps Deps, r layout.Rect) string {
 	_, body := r.SplitRows(len(lines))
 	content := p.commentLines(deps)
 	start := clampOffset(p.commentScroll, len(content))
-	lines = append(lines, take(content[start:], body.H)...)
+	// The cached lines are handed to the pane one by one, and the row the focus
+	// landed on is drawn as it is handed over. The focus cannot be written into
+	// the slice itself: it shares the cache's array, so a marked row would stay
+	// marked and the next render would mark it again.
+	focus := p.focusedControlRow(start, body.H)
+	for i, row := range take(content[start:], body.H) {
+		if i == focus {
+			row = focusRow(deps.Theme, row)
+		}
+		lines = append(lines, row)
+	}
 	return layout.Fit(joinLines(lines), r.W, r.H)
+}
+
+// focusedControlRow is the row of the viewport the focused button is on, or -1
+// when there is no button or it is scrolled out of sight.
+func (p *PRDetails) focusedControlRow(start, height int) int {
+	if p.threadFocus < 0 || p.threadFocus >= len(p.threadControls) {
+		return -1
+	}
+	row := p.threadControls[p.threadFocus].row - start
+	if row < 0 || row >= height {
+		return -1
+	}
+	return row
+}
+
+// focusRow draws the row a control's focus is on: the shared marker in the
+// gutter and the row's own text in the accent, the same treatment a selected row
+// gets in every list, so a highlight means one thing on every screen.
+//
+// The marker takes the cells of the indent the row already carries, so a control
+// keeps the column it is drawn in when the focus lands on it, and the frame
+// characters below it stay in the column the frame draws them in. A washed row
+// opens with the escape that starts its paint, ahead of that indent, so the
+// indent is cut where it stands and the paint is kept.
+func focusRow(theme Theme, row string) string {
+	prefix := highlightPrefix(theme)
+	row = strings.ReplaceAll(row, ansi.ResetStyle, ansi.ResetStyle+prefix)
+	row = strings.TrimSuffix(row, prefix)
+	indent := selectMarker + strings.Repeat(" ", max(layout.Width(threadIndent)-layout.Width(selectMarker), 0))
+	return prefix + indent + dropIndent(row, threadIndent) + ansi.ResetStyle
+}
+
+// dropIndent removes the indent a row opens with. The indent leads the cells of a
+// plain row and follows the paint of a washed one, so it is cut where it stands
+// rather than from the front of the string. A row that lost its indent already is
+// handed back as it is.
+func dropIndent(row, indent string) string {
+	at := strings.Index(row, indent)
+	if at < 0 || layout.Width(row[:at]) > 0 {
+		return row
+	}
+	return row[:at] + row[at+len(indent):]
 }
 
 // conversation is the discussion the Comments sub-tab shows: the conversation
@@ -307,11 +365,35 @@ func (p *PRDetails) conversation() conversation {
 // data, the width and the palette are the ones it was rendered at. It is what
 // the pane draws and what the scroll is clamped against, so a keystroke renders
 // nothing unless something changed.
+//
+// The buttons the render drew are recorded beside the lines, because the two
+// only make sense together: a control's row is a line of the conversation on
+// screen. Rendering the same conversation again is what moves them.
 func (p *PRDetails) commentLines(deps Deps) []string {
 	key := markdownKeyOf(deps.Theme, p.bodyWidth(deps))
 	return p.convLines.linesFrom(p.convVersion, key, func() []string {
-		return conversationLines(deps, p.conversation(), key.width)
+		lines, controls := conversationLinesOf(deps, p.conversation(), key.width, p.threadView())
+		p.threadControls = controls
+		return lines
 	})
+}
+
+// threadView is the resolution state the conversation is rendered with.
+func (p *PRDetails) threadView() threadView {
+	return threadView{resolved: p.threadsResolved, expanded: p.threadsExpanded}
+}
+
+// commentViewport is how many conversation rows the pane shows, derived the way
+// commentsView derives it: the terminal less the chrome, the pull request's own
+// heading and sub-tab strip, and the pane's title with the blank under it. The
+// focus needs it outside a render, to scroll a control into view.
+func (p *PRDetails) commentViewport(deps Deps) int {
+	height := deps.Size.Height
+	if height <= 0 {
+		return defaultCommentViewport
+	}
+	body := height - layout.HeaderHeight - layout.FooterHeight - prHeadRows - prPaneRows
+	return max(body, 1)
 }
 
 // conversationMessage is what the Comments sub-tab says when it holds no

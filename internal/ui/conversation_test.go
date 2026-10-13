@@ -564,6 +564,197 @@ func TestWashesPaintEachContributionWithoutMovingIt(t *testing.T) {
 	}
 }
 
+// TestAResolvedThreadIsFoldedUntilItIsOpened covers the resolution state: a
+// thread GitHub reports as resolved is one row carrying a `[show]` button that
+// says what is folded away, and opening it brings the whole thread back with the
+// button turned into `[hide]`.
+func TestAResolvedThreadIsFoldedUntilItIsOpened(t *testing.T) {
+	root := anInline(100, 10, "carol", "internal/ui/table.go", 12, conversationNow)
+	reply := anInline(101, 10, "octocat", "internal/ui/table.go", 12, conversationNow.Add(time.Minute))
+	reply.InReplyToID = 100
+
+	const width = 100
+	conv := newConversation(
+		nil,
+		[]store.Review{aReview(10, "carol", "APPROVED", conversationNow)},
+		[]store.ReviewComment{root, reply},
+		false,
+	)
+	view := threadView{resolved: map[int64]bool{100: true, 101: true}}
+
+	folded, controls := conversationLinesOf(plainDeps(), conv, width, view)
+	if len(controls) != 1 {
+		t.Fatalf("the folded conversation carries %d controls, want 1", len(controls))
+	}
+	if got := controls[0]; got.thread != 100 || got.row < 0 || got.row >= len(folded) {
+		t.Fatalf("the control is %+v, want the thread's root on a drawn row", got)
+	}
+	row := ansi.Strip(folded[controls[0].row])
+	for _, want := range []string{
+		threadShowLabel, "internal/ui/table.go:12", "carol", "2 remarks", "resolved",
+	} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the folded row is missing %q: %q", want, row)
+		}
+	}
+	if strings.Contains(row, "inline carol") {
+		t.Errorf("a folded thread shows its remarks: %q", row)
+	}
+	// Folding is what the resolution state does; the conversation is otherwise
+	// the one the plain render drew.
+	plain := strings.Join(conversationLines(plainDeps(), conv, width), "\n")
+	if !strings.Contains(ansi.Strip(plain), "inline carol") {
+		t.Fatalf("the unfolded render does not hold the thread:\n%s", ansi.Strip(plain))
+	}
+
+	// Opened: the frame is back, the button says `[hide]`, and it is still the
+	// control the arrows land on.
+	view.expanded = map[int64]bool{100: true}
+	opened, controls := conversationLinesOf(plainDeps(), conv, width, view)
+	if len(controls) != 1 {
+		t.Fatalf("the opened conversation carries %d controls, want the one button", len(controls))
+	}
+	joined := ansi.Strip(strings.Join(opened, "\n"))
+	for _, want := range []string{threadHideLabel, frameTop + "internal/ui/table.go:12", "inline carol", "inline octocat"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the opened thread is missing %q:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, threadShowLabel) {
+		t.Errorf("an opened thread still offers %q:\n%s", threadShowLabel, joined)
+	}
+	if got := ansi.Strip(opened[controls[0].row]); !strings.Contains(got, threadHideLabel) {
+		t.Errorf("the control is not on the row that carries the button: %q", got)
+	}
+}
+
+// TestAFoldedThreadKeepsItsAuthorsWash covers the coloured fold: the row a
+// resolved thread collapses to wears the shade of the remark it hid, so the
+// shade a reader learned for that author survives the fold and the thread
+// unfolds back into it. Both palettes answer, because a shade that only works on
+// one background is a shade that disappears on the other.
+func TestAFoldedThreadKeepsItsAuthorsWash(t *testing.T) {
+	palettes := map[string]Theme{"dark": DarkTheme(), "light": LightTheme()}
+	for name, theme := range palettes {
+		t.Run(name, func(t *testing.T) {
+			root := anInline(100, 10, "carol", "internal/ui/table.go", 12, conversationNow)
+			conv := newConversation(
+				nil,
+				[]store.Review{aReview(10, "carol", "APPROVED", conversationNow)},
+				[]store.ReviewComment{root},
+				false,
+			)
+
+			const width = 100
+			deps := Deps{Theme: theme, Markdown: NewMarkdown()}
+			view := threadView{resolved: map[int64]bool{100: true}}
+			code := paintCode(authorTint(theme, "carol"))
+			if code == "" {
+				t.Fatalf("the %s palette gives carol no shade", name)
+			}
+
+			folded, controls := conversationLinesOf(deps, conv, width, view)
+			if len(controls) != 1 {
+				t.Fatalf("the folded conversation carries %d controls, want 1", len(controls))
+			}
+			row := folded[controls[0].row]
+			if !strings.HasPrefix(row, code) {
+				t.Errorf("the folded row does not open in carol's shade: %q", row)
+			}
+			plain, _ := conversationLinesOf(plainDeps(), conv, width, view)
+			if got, want := strings.TrimRight(ansi.Strip(row), " "), strings.TrimRight(ansi.Strip(plain[controls[0].row]), " "); got != want {
+				t.Errorf("the wash changed the folded row: %q painted, %q plain", got, want)
+			}
+
+			// Opened, the remark the fold hid opens in the very same shade.
+			view.expanded = map[int64]bool{100: true}
+			opened, _ := conversationLinesOf(deps, conv, width, view)
+			marked := ""
+			for _, line := range opened {
+				if strings.Contains(ansi.Strip(line), rootMark) {
+					marked = line
+					break
+				}
+			}
+			if marked == "" {
+				t.Fatal("the opened conversation does not draw the remark the thread started from")
+			}
+			if !strings.HasPrefix(marked, code) {
+				t.Errorf("the opened remark does not wear the shade the folded row did: %q", marked)
+			}
+		})
+	}
+}
+
+// TestThreadsWithNoResolutionCarryNoControl covers the degraded case: a page
+// whose resolution query did not answer has nothing to fold, so every thread is
+// drawn in full and there is no control for the arrows to move to.
+func TestThreadsWithNoResolutionCarryNoControl(t *testing.T) {
+	root := anInline(100, 10, "carol", "internal/ui/table.go", 12, conversationNow)
+
+	conv := newConversation(
+		nil,
+		[]store.Review{aReview(10, "carol", "APPROVED", conversationNow)},
+		[]store.ReviewComment{root},
+		false,
+	)
+
+	for name, view := range map[string]threadView{
+		"no answer":      {},
+		"nothing folded": {resolved: map[int64]bool{}},
+		"another thread": {resolved: map[int64]bool{999: true}},
+	} {
+		lines, controls := conversationLinesOf(plainDeps(), conv, 100, view)
+		if len(controls) != 0 {
+			t.Errorf("%s: the conversation carries %d controls, want none", name, len(controls))
+		}
+		joined := ansi.Strip(strings.Join(lines, "\n"))
+		if !strings.Contains(joined, "inline carol") || strings.Contains(joined, threadShowLabel) {
+			t.Errorf("%s: the thread is not drawn in full:\n%s", name, joined)
+		}
+	}
+}
+
+// TestFoldedThreadsOfferTheirControlsInOrder covers what the arrows walk: one
+// control per folded thread, reported on the row it was drawn on, in the order
+// the threads appear — which is the order the reader meets them.
+func TestFoldedThreadsOfferTheirControlsInOrder(t *testing.T) {
+	first := anInline(100, 10, "carol", "internal/ui/table.go", 12, conversationNow)
+	second := anInline(102, 10, "carol", "internal/ui/prpanes.go", 4, conversationNow.Add(time.Minute))
+
+	const width = 100
+	conv := newConversation(
+		[]store.IssueComment{aComment(1, "alice", conversationNow.Add(-time.Hour))},
+		[]store.Review{aReview(10, "carol", "APPROVED", conversationNow)},
+		[]store.ReviewComment{first, second},
+		false,
+	)
+	view := threadView{resolved: map[int64]bool{100: true, 102: true}}
+
+	lines, controls := conversationLinesOf(plainDeps(), conv, width, view)
+	if len(controls) != 2 {
+		t.Fatalf("the conversation carries %d controls, want 2", len(controls))
+	}
+	for i, want := range []int64{100, 102} {
+		if controls[i].thread != want {
+			t.Errorf("control %d is thread %d, want %d", i, controls[i].thread, want)
+		}
+		if controls[i].row >= len(lines) {
+			t.Fatalf("control %d is on row %d of %d", i, controls[i].row, len(lines))
+		}
+	}
+	if controls[0].row >= controls[1].row {
+		t.Errorf("the controls are on rows %d and %d, want them in reading order", controls[0].row, controls[1].row)
+	}
+	// Each control is on the row that carries its own location.
+	for i, want := range []string{"internal/ui/table.go:12", "internal/ui/prpanes.go:4"} {
+		row := ansi.Strip(lines[controls[i].row])
+		if !strings.Contains(row, want) || !strings.Contains(row, threadShowLabel) {
+			t.Errorf("control %d is on %q, want the row naming %s", i, row, want)
+		}
+	}
+}
+
 // TestReviewStateLabel covers the badge: the vocabulary the rest of the app uses
 // for a state that matters, and the plain fallback for one it does not know.
 func TestReviewStateLabel(t *testing.T) {

@@ -276,8 +276,10 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 - [x] `Esc` / `Backspace` returns to PR Details.
 - [x] `r` / `Ctrl+R` refreshes the comments.
-- [x] `j` / `k` / `Down` / `Up` scroll the conversation by one line.
+- [x] `j` / `k` / `Down` / `Up` move the focus from one thread button to the next, and scroll the conversation by one line when there is no button to move to or the focus is already at the end it is moving towards.
+- [x] `Enter` opens the resolved thread whose button holds the focus, and folds it again.
 - [x] `u` / `d` scroll it by three, the pair the log viewer uses (§4.9).
+- [x] The mouse wheel scrolls the conversation by three lines, wherever the focus is.
 - [x] Other keys are forwarded to the viewport for scrolling. **Superseded:** v2 binds scrolling explicitly, so an unbound key does nothing. `TestIssueCommentsScroll` and `TestPRCommentsScrollWithTheArrowKeys` cover the keys; the conversation keeps the `u`/`d` binding the log viewer has (`keymap.IssueComments`).
 
 **v2 fix: the conversation is three lists, not one.** The tab read `GET /issues/{n}/comments` alone, so a pull request reviewed and never discussed showed "No comments" while the API was holding dozens of reviews (the reported case: 0 conversation comments, 30 reviews, 30 inline review comments). The sub-tab now reads all three lists at the API maximum of one page each (`per_page=100`) and merges them in the order they were written:
@@ -297,6 +299,8 @@ Two edges are deliberate. A review the viewer has not submitted — state `PENDI
 **v2 change: an inline thread is drawn in a frame.** A thread is a titled container — `┌─ path:line`, its content down a left rail, `└─` — and each reply is a frame of its own one rail inside, so an answer reads as belonging to the remark above it without the reader comparing names. The remark the thread started from carries a `●` out on the thread's rail and a reply carries none, because the frame it sits in already says what it is. The hunk rides in a frame of its own with its first line in the frame's corner. The frames are box characters and one colour, so a terminal that paints nothing still shows them.
 
 **v2 change: a contribution is washed, spaced and ruled off.** A long conversation read as one wall of text: the author line sat against the body it introduced, the hunk excerpt showed three lines, and only the top-level contributions were separated. Every contribution is now painted in its author's own wash, a row of air separates the heading from the body, a rule closes every remark — inside a thread as well as between the top-level contributions — and the excerpt runs to six lines. A wash is the palette's own accent mixed into the palette's own background in even steps, which is what keeps the six shades one family and on the side of the background the palette was built for (dark `#05090a`–`#20343d`, light `#f7fafb`–`#d9e7ed`); the shade a person gets follows from their login, so it survives a refresh and a different conversation, and the text on top keeps its contrast (the body colour above 10:1 on every shade of either palette, the muted timestamps above 4:1). The paint is a background and nothing else: the same text sits in the same cells as a plain render.
+
+**v2 change: a resolved thread folds onto one row.** The REST payload carries no resolution state — the fact that a thread was settled exists in the schema alone — so the pane asks for it in one query per pull request, `reviewThreads(first: 100) { isResolved comments(first: 100) { databaseId } }`, and folds every thread the answer reports as resolved. A folded thread is one row: the `[show]` button that opens it, then where it was written (linked to the thread), who started it, how many remarks it holds and the word `resolved`. The button leads the row so the controls of a conversation line up in one column, the row wears the wash of the remark it folded, and opening it restores the frame it was with a `[hide]` button on its title row. The arrows move the focus from one button to the next and hand it back to the scroll at either end, so one pair of keys does both and the reader is never stuck on a button; `Enter` toggles the focused thread and the wheel keeps scrolling. A query that does not answer folds nothing and shows no button: that conversation is drawn in full and the arrows scroll it, which is what the pane did before the feature existed.
 
 ### 4.15 Issue Details
 
@@ -577,6 +581,7 @@ REST calls made by the current implementation. `o` = owner, `r` = repo.
 | `GET /user/orgs` | Context list | REST |
 | `GET /users/{o}/repos`, `GET /orgs/{o}/repos` | Repo list (`sort=pushed&direction=desc`) | REST (the list the run fan-out and the fallback cover) |
 | `POST /graphql` (`search`) | Scope-wide pull request and issue lists, one query per page | GraphQL |
+| `POST /graphql` (`reviewThreads`) | The resolution state of a pull request's inline threads, one query per pull request | GraphQL |
 | `GET /repos/{o}/{r}/actions/runs` | Workflow runs, optional `actor` | REST (the schema has no scope-wide run connection; see §5.3) |
 | `GET /repos/{o}/{r}/actions/runs/{id}` | Single run | REST |
 | `GET /repos/{o}/{r}/actions/runs/{id}/jobs` | Jobs | REST |

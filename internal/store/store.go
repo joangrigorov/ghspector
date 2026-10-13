@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/joangrigorov/ghspector/internal/gh"
+	"github.com/joangrigorov/ghspector/internal/gql"
 )
 
 // Domain types are aliases, so a route can name store.WorkflowRun and the
@@ -42,6 +43,11 @@ type (
 	Review            = gh.Review
 	ReviewComment     = gh.ReviewComment
 	RateLimitInfo     = gh.RateLimitInfo
+
+	// ReviewThread is the one domain type that comes from the GraphQL side of
+	// the store rather than from gh: an inline thread's resolution state exists
+	// in the schema alone. See ReviewThreads.
+	ReviewThread = gql.ReviewThread
 )
 
 // Transport errors are re-exported so callers classify a failure without
@@ -213,6 +219,12 @@ type Store interface {
 	// ReviewComments lists the inline comments of a pull request's reviews,
 	// across every thread, oldest first.
 	ReviewComments(ctx context.Context, repo RepoRef, number int, page Page) (List[ReviewComment], error)
+	// ReviewThreads reports each of a pull request's inline threads with the
+	// resolution state REST does not carry: whether a thread is resolved exists
+	// in GraphQL alone. A thread is matched to the comments above by the id of
+	// the remark it started from, so a caller that has both can tell which of
+	// its threads have been settled.
+	ReviewThreads(ctx context.Context, repo RepoRef, number int) ([]ReviewThread, error)
 
 	// Merge merges a pull request. Method is one of merge, squash or rebase.
 	Merge(ctx context.Context, repo RepoRef, number int, method, title, message string) error
