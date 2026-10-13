@@ -1320,10 +1320,14 @@ func TestPRCommentsSayWhenAPageWasCut(t *testing.T) {
 // draws its own heading and nothing under it.
 func TestPRCommentsKeepAThreadTogetherAcrossReviews(t *testing.T) {
 	srv := prServer(t)
-	m := openPRDetails(t, prsModel(t, srv, 120, 40))
+	// The pane is taller than the 120x40 the goldens use: a framed thread costs a
+	// row or two more than the flat list did, and this test counts a review that
+	// sits at the end of the conversation, so all of it has to fit at once.
+	const w, h = 120, 56
+	m := openPRDetails(t, prsModel(t, srv, w, h))
 	m = pressAndDrive(t, m, "5")
 
-	out := ansi.Strip(screen(t, m, 120, 40))
+	out := ansi.Strip(screen(t, m, w, h))
 	if got := strings.Count(out, "internal/ui/table.go:12"); got != 1 {
 		t.Errorf("the thread's location is drawn %d times, want one thread:\n%s", got, out)
 	}

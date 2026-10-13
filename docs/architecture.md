@@ -940,6 +940,39 @@ built binary against the reported pull request — 41 thread headers became 16, 
 the raw pane carries the OSC 8 tokens for the repository, the compare, the thread
 locations and the comment permalinks.
 
+### Change — a thread is drawn in a frame (this change)
+
+The conversation drew a thread as flat indentation: a location line, the hunk
+under it, then a name-and-time line per remark with the body two cells further
+in. Nothing marked where one remark ended and the next began, and a reply was
+told from the remark it answered only by reading the two.
+
+A thread is now a frame. `┌─ path:line` titles it, its content runs down a `│`
+rail, and `└─` closes it. Each reply is a frame of its own nested one rail
+inside, so nesting carries the relationship between a reply and the remark it
+answers, and the frame's title is the reply's own author line. The remark the
+thread started from carries a `●` out on the thread's rail; a reply carries no
+mark, because the frame around it says what it is. The hunk is a frame inside the
+thread's rail too, with its first line riding in the frame's corner: three lines
+of diff cost four rows instead of five, which matters because `hunkLines` caps
+the excerpt at three.
+
+The frames are box characters and the header-rule colour, which is the whole
+reason they survive the plain palette: goldens keep their structure with no
+colour at all, and bold names stay the only escape sequence a plain render
+carries. The frame is the widest thing on the line, so the width budget is
+arithmetic: the title loses `frameCells` to the corner, and everything inside the
+rail loses it twice.
+
+Cost, and it is a real one: a framed thread is taller than the flat list was —
+about six rows for a thread with a snippet and one reply. At 120x40 the standard
+fixture's conversation no longer reaches the trailing body-less review, so the
+golden for it shows less than it did; `pr_comments_reviews_only_120x40` still
+shows that review, and `TestPRCommentsKeepAThreadTogetherAcrossReviews` reads the
+same property at 120x56, where the whole conversation fits. `TestThreadsAreDrawnInFrames`
+pins the frame's characters, the reply's nesting inside the thread's rail, the
+width budget, and the absence of OSC 8 sequences.
+
 ### Security findings
 
 | Finding | Status |

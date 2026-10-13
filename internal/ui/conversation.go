@@ -333,27 +333,107 @@ func reviewLines(deps Deps, review store.Review, threads []reviewThread, width i
 	return out
 }
 
-// threadLines renders one inline thread: where it is, the lines it was written
-// against, then the exchange itself. The location is a link to the thread on
-// GitHub, which is what a reader wants from it: the remark, in the diff it was
-// written against.
+// The frame an inline thread is drawn in.
+//
+// A thread is a titled container: the title is where it was written, the content
+// runs down a left rail, and a reply is a frame of its own nested one level
+// inside that rail, so an answer reads as belonging to the remark above it. The
+// frames are box characters and one colour, which is what lets them survive on a
+// terminal that paints nothing at all.
+const (
+	frameTop   = "┌─ "
+	frameRail  = "│  "
+	frameClose = "└─"
+	// frameBar is the rail on its own, drawn between two segments of a thread.
+	frameBar = "│"
+	// frameCells is the width frameTop and frameRail occupy, and therefore what
+	// the content inside a frame loses to it.
+	frameCells = 3
+
+	// rootMark sits on the remark a thread started from. A reply carries no mark
+	// of its own: the frame it is drawn in says what it is.
+	rootMark = "●"
+)
+
+// threadLines renders one inline thread: the lines it was written against, then
+// the exchange itself, inside a frame titled by where the thread is. The title
+// is a link to the thread on GitHub, which is what a reader wants from it: the
+// remark, in the diff it was written against.
 func threadLines(deps Deps, thread reviewThread, width int) []string {
 	theme := deps.Theme
+	rule := style(theme.HeaderRule, normal)
+
 	place := thread.path
 	if thread.line > 0 {
 		place = fmt.Sprintf("%s:%d", thread.path, thread.line)
 	}
 	place = hyperlink(theme, style(theme.Muted, bold).Render(place), threadURL(thread))
 
-	out := []string{"", threadIndent + layout.Truncate(place, max(width-len(threadIndent), 8))}
-	for _, line := range thread.hunk {
-		out = append(out, threadIndent+diffStyled(theme, []string{line})[0])
+	titleWidth := max(width-len(threadIndent)-frameCells, 8)
+	inner := threadIndent + rule.Render(frameRail)
+	innerWidth := max(width-layout.Width(inner)-frameCells, 8)
+
+	out := []string{
+		"",
+		threadIndent + rule.Render(frameTop) + layout.Truncate(place, titleWidth),
 	}
-	for _, comment := range thread.comments {
-		out = append(out, threadIndent+authorLine(deps, userLogin(comment.User), comment.HTMLURL, comment.CreatedAt, ""))
-		for _, line := range deps.Markdown.Lines(theme, comment.Body, max(width-layout.Width(threadIndent)-2, 8)) {
-			out = append(out, threadIndent+"  "+line)
+
+	if len(thread.hunk) > 0 {
+		out = append(out, snippetLines(deps, thread.hunk, inner, innerWidth)...)
+		out = append(out, threadIndent+rule.Render(frameBar))
+	}
+
+	for i := range thread.comments {
+		comment := thread.comments[i]
+		if i > 0 {
+			out = append(out, threadIndent+rule.Render(frameBar))
+			out = append(out, replyLines(deps, comment, inner, width)...)
+			continue
 		}
+		head := style(theme.Accent, normal).Render(rootMark) + " " +
+			authorHeading(deps, userLogin(comment.User), comment.HTMLURL, comment.CreatedAt, "")
+		out = append(out, inner+layout.Truncate(head, innerWidth))
+		out = append(out, bodyLines(deps, comment.Body, inner+"  ", width)...)
+	}
+
+	return append(out, threadIndent+rule.Render(frameClose))
+}
+
+// snippetLines renders the lines a remark was written against as a small frame
+// of its own, so an excerpt of code is told apart from prose at a glance. The
+// first line rides in the frame's corner, which keeps a three-line hunk from
+// costing five rows.
+func snippetLines(deps Deps, hunk []string, indent string, inner int) []string {
+	rule := style(deps.Theme.HeaderRule, normal)
+	styled := diffStyled(deps.Theme, hunk)
+	out := make([]string, 0, len(styled)+1)
+	for i, line := range styled {
+		if i == 0 {
+			out = append(out, indent+rule.Render(frameTop)+layout.Truncate(line, inner))
+			continue
+		}
+		out = append(out, indent+rule.Render(frameRail)+layout.Truncate(line, inner))
+	}
+	return append(out, indent+rule.Render(frameClose))
+}
+
+// replyLines renders one answer as a frame of its own, nested inside the thread's
+// rail and titled by who wrote it and when.
+func replyLines(deps Deps, comment store.ReviewComment, indent string, width int) []string {
+	rule := style(deps.Theme.HeaderRule, normal)
+	inner := max(width-layout.Width(indent)-frameCells, 8)
+	head := authorHeading(deps, userLogin(comment.User), comment.HTMLURL, comment.CreatedAt, "")
+	out := []string{indent + rule.Render(frameTop) + layout.Truncate(head, inner)}
+	out = append(out, bodyLines(deps, comment.Body, indent+rule.Render(frameRail)+"  ", width)...)
+	return append(out, indent+rule.Render(frameClose))
+}
+
+// bodyLines renders a contribution's markdown under the prefix its frame puts it
+// at, wrapped to what the pane has left.
+func bodyLines(deps Deps, body, prefix string, width int) []string {
+	var out []string
+	for _, line := range deps.Markdown.Lines(deps.Theme, body, max(width-layout.Width(prefix), 8)) {
+		out = append(out, prefix+line)
 	}
 	return out
 }
@@ -363,8 +443,14 @@ func threadLines(deps Deps, thread reviewThread, width int) []string {
 // time are links to the contribution when the API supplied a URL for it, so the
 // whole of what names it opens it.
 func authorLine(deps Deps, author, url string, at time.Time, state string) string {
+	return "  " + authorHeading(deps, author, url, at, state)
+}
+
+// authorHeading is authorLine without its indent, so a frame can title itself
+// with the same heading.
+func authorHeading(deps Deps, author, url string, at time.Time, state string) string {
 	name := hyperlink(deps.Theme, style(deps.Theme.Title, bold).Render(author), url)
-	out := "  " + name
+	out := name
 	if state != "" {
 		out += "  " + state
 	}

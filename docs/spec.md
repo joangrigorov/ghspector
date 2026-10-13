@@ -284,7 +284,7 @@ Legend: **browser** = opens a URL via `openBrowser` (`xdg-open` / `open` / `rund
 
 - a conversation comment reads as it did;
 - a review reads as its author, its conclusion (`[approved]`, `[changes requested]`, `[reviewed]`), its submission time, and its summary, with the inline threads it carries underneath;
-- an inline thread reads as `path:line`, the last three lines of the hunk it was written against, and the exchange, replies under the comment they answer.
+- an inline thread reads as a frame titled by `path:line`, the last three lines of the hunk it was written against in a frame of their own, the remark the thread started from marked `●` on the thread's rail, and each reply in a frame one rail deeper.
 
 Two edges are deliberate. A review the viewer has not submitted — state `PENDING`, or no submission time — is a draft, so it and the inline remarks it holds are left out. A page that comes back full is part of a longer discussion, so the pane says so at the end rather than showing a fraction of it as the whole.
 
@@ -293,6 +293,8 @@ Two edges are deliberate. A review the viewer has not submitted — state `PENDI
 **v2 fix: the screen links what it names.** The repository and the branch pair in the heading open the repository and the compare between the branches, each inline thread's `path:line` opens the thread on GitHub (the permalink, which lands on the remark after the diff has moved past its line), and both the author and the time of every contribution open that contribution. The links are OSC 8 sequences that a terminal without support ignores and the plain palette the goldens render never emits.
 
 **v2 fix: a keystroke costs nothing.** Merging three lists of markdown bodies made the pane expensive to draw — 163 ms for one render of the pull request this was reported from, twice per key press, once to measure the scroll and once to draw. The rendered lines are now held until the data, the width or the palette changes (`internal/ui/render.go`), which is what a keystroke on the conversation now costs: no markdown work at all. The first render after data arrives still happens on the UI goroutine.
+
+**v2 change: an inline thread is drawn in a frame.** A thread is a titled container — `┌─ path:line`, its content down a left rail, `└─` — and each reply is a frame of its own one rail inside, so an answer reads as belonging to the remark above it without the reader comparing names. The remark the thread started from carries a `●` out on the thread's rail and a reply carries none, because the frame it sits in already says what it is. The hunk rides in a frame of its own with its first line in the frame's corner, which keeps a three-line excerpt from costing five rows. The frames are box characters and one colour, so a terminal that paints nothing still shows them.
 
 ### 4.15 Issue Details
 

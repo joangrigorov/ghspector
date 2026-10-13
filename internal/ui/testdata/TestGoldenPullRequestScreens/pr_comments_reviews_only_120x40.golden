@@ -10,23 +10,23 @@
     [1mcarol[m  [1m[changes requested][m  2024-05-01 10:00                                                                        
     The width needs a name before this lands.                                                                           
                                                                                                                         
-      [1minternal/ui/table.go:12[m                                                                                           
-      -    return 40                                                                                                    
-      +    return tableWidth                                                                                            
-       }                                                                                                                
-        [1mcarol[m  2024-05-01 10:03                                                                                         
-        This width needs a name.                                                                                        
-        [1moctocat[m  2024-05-01 10:04                                                                                       
-        Named it tableWidth.                                                                                            
+      ┌─ [1minternal/ui/table.go:12[m                                                                                        
+      │  ┌─ -    return 40                                                                                              
+      │  │  +    return tableWidth                                                                                      
+      │  │   }                                                                                                          
+      │  └─                                                                                                             
+      │                                                                                                                 
+      │  ● [1mcarol[m  2024-05-01 10:03                                                                                      
+      │    This width needs a name.                                                                                     
+      │                                                                                                                 
+      │  ┌─ [1moctocat[m  2024-05-01 10:04                                                                                   
+      │  │    Named it tableWidth.                                                                                      
+      │  └─                                                                                                             
+      └─                                                                                                                
                                                                                                                         
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────    
                                                                                                                         
     [1mdave[m  [1m[reviewed][m  2024-05-01 10:05                                                                                  
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
                                                                                                                         
                                                                                                                         
                                                                                                                         

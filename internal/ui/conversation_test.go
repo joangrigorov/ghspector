@@ -396,6 +396,62 @@ func TestConversationLinesPlaceAnInlineThread(t *testing.T) {
 	}
 }
 
+// TestThreadsAreDrawnInFrames covers the shape of a thread on screen: a frame
+// titled by where the thread is, the lines it was written against in a frame of
+// their own, the remark the thread started from out on the thread's rail, and
+// each reply in a frame one rail deeper, so an answer reads as belonging to the
+// remark above it.
+func TestThreadsAreDrawnInFrames(t *testing.T) {
+	root := anInline(100, 10, "carol", "internal/ui/table.go", 12, conversationNow)
+	reply := anInline(101, 10, "octocat", "internal/ui/table.go", 12, conversationNow.Add(time.Minute))
+	reply.InReplyToID = 100
+
+	const width = 100
+	lines := conversationLines(plainDeps(), newConversation(
+		nil,
+		[]store.Review{aReview(10, "carol", "APPROVED", conversationNow)},
+		[]store.ReviewComment{root, reply},
+		false,
+	), width)
+	joined := strings.Join(lines, "\n")
+	// The frames are structure, so the assertions read the characters the pane
+	// draws and ignore the weights the bold names carry.
+	plain := ansi.Strip(joined)
+
+	for _, want := range []string{
+		// The thread's frame, titled by the location.
+		threadIndent + frameTop + "internal/ui/table.go:12",
+		threadIndent + frameClose,
+		// The snippet, in a frame inside the thread's rail.
+		threadIndent + frameRail + frameTop + "-    return 40",
+		threadIndent + frameRail + frameClose,
+		// The remark the thread started from, marked, out on the thread's rail.
+		threadIndent + frameRail + rootMark + " carol",
+		// The reply, in a frame of its own one rail further in.
+		threadIndent + frameRail + frameTop + "octocat",
+		threadIndent + frameRail + frameRail + "  inline octocat",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("the thread is missing %q:\n%s", want, plain)
+		}
+	}
+
+	if first, nested := strings.Index(plain, threadIndent+frameTop), strings.Index(plain, threadIndent+frameRail+frameTop); nested <= first {
+		t.Errorf("the reply frame is not nested inside the thread frame (%d, %d):\n%s", first, nested, plain)
+	}
+
+	for i, line := range lines {
+		if got := ansi.StringWidth(line); got > width {
+			t.Errorf("line %d is %d cells wide, want at most %d: %q", i, got, width, line)
+		}
+	}
+
+	// A frame is characters, so it needs no link sequence to hold together.
+	if strings.Contains(joined, "\x1b]8;") {
+		t.Errorf("a conversation without hyperlinks carries OSC 8 sequences:\n%q", joined)
+	}
+}
+
 // TestReviewStateLabel covers the badge: the vocabulary the rest of the app uses
 // for a state that matters, and the plain fallback for one it does not know.
 func TestReviewStateLabel(t *testing.T) {

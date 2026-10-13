@@ -20,21 +20,21 @@
     [1mcarol[m  [1m[approved][m  2024-05-01 10:03                                                                                 
     Ship it once the checks pass.                                                                                       
                                                                                                                         
-      [1minternal/ui/table.go:12[m                                                                                           
-      -    return 40                                                                                                    
-      +    return tableWidth                                                                                            
-       }                                                                                                                
-        [1mcarol[m  2024-05-01 10:03                                                                                         
-        This width needs a name.                                                                                        
-        [1moctocat[m  2024-05-01 10:04                                                                                       
-        Named it tableWidth.                                                                                            
+      ┌─ [1minternal/ui/table.go:12[m                                                                                        
+      │  ┌─ -    return 40                                                                                              
+      │  │  +    return tableWidth                                                                                      
+      │  │   }                                                                                                          
+      │  └─                                                                                                             
+      │                                                                                                                 
+      │  ● [1mcarol[m  2024-05-01 10:03                                                                                      
+      │    This width needs a name.                                                                                     
+      │                                                                                                                 
+      │  ┌─ [1moctocat[m  2024-05-01 10:04                                                                                   
+      │  │    Named it tableWidth.                                                                                      
+      │  └─                                                                                                             
+      └─                                                                                                                
                                                                                                                         
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────    
-                                                                                                                        
-    [1moctocat[m  [1m[reviewed][m  2024-05-01 10:04                                                                               
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
                                                                                                                         
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
   [1m?[m:Help  [1mo[m:Switch account/org  [1mq/Ctrl+C[m:Quit  [1mEsc/Backspace[m:Back  [1m1[m:Info  [1m4[m:Checks  [1m2[m:Commits  [1m3[m:Files & diff          
