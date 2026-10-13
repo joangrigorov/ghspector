@@ -9,7 +9,6 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/joangrigorov/ghspector/internal/layout"
 	"github.com/joangrigorov/ghspector/internal/store"
 )
 
@@ -537,8 +536,8 @@ func TestWashesPaintEachContributionWithoutMovingIt(t *testing.T) {
 
 	rows := map[string]int{}
 	for i := range painted {
-		// The wash is the card's own box and not the pane, so the painted row is
-		// the plain one padded to that box; the text itself is untouched.
+		// The wash carries the row out to the pane's edge, so the painted row is
+		// the plain one padded; the text itself is untouched.
 		got := strings.TrimRight(ansi.Strip(painted[i]), " ")
 		want := strings.TrimRight(ansi.Strip(plain[i]), " ")
 		if got != want {
@@ -562,56 +561,6 @@ func TestWashesPaintEachContributionWithoutMovingIt(t *testing.T) {
 		if rows[login] == 0 {
 			t.Errorf("no row is painted in %s's shade", login)
 		}
-	}
-}
-
-// TestAWashIsTheCardsBoxAndNotThePane covers how far a wash reaches: it is the
-// contribution's own box, so it stops cardMargin cells short of the pane's right
-// edge and the card's text keeps cardPadding clear inside it. A wash that ran to
-// the pane instead would read as a band across the screen rather than as the
-// comment it belongs to.
-func TestAWashIsTheCardsBoxAndNotThePane(t *testing.T) {
-	const width = 100
-	theme := DarkTheme()
-	// A body long enough to wrap is what exercises the width the text is given
-	// inside the box; the one-row fixtures elsewhere never reach it.
-	comment := aComment(1, "alice", conversationNow)
-	comment.Body = strings.TrimSpace(strings.Repeat("a word that wraps, ", 20))
-	conv := newConversation([]store.IssueComment{comment}, nil, nil, false)
-
-	box := cardBox(0, width)
-	if want := width - cardMargin; box != want {
-		t.Fatalf("a card's box is %d cells, want the pane less the margin, %d", box, want)
-	}
-	// The box has to be inset from the pane, or the wash is the band across the
-	// screen this box exists to replace.
-	if margin := width - box; margin < cardPadding {
-		t.Fatalf("the box leaves %d cells at the pane's right, want at least the card's padding, %d", margin, cardPadding)
-	}
-	lines := conversationLines(Deps{Theme: theme, Markdown: NewMarkdown()}, conv, width)
-	code := paintCode(authorTint(theme, "alice"))
-	painted, widest := 0, 0
-	for i, line := range lines {
-		if !strings.HasPrefix(line, code) {
-			continue
-		}
-		painted++
-		if got := ansi.StringWidth(line); got != box {
-			t.Errorf("row %d is painted %d cells wide, want the box's %d", i, got, box)
-		}
-		text := strings.TrimRight(ansi.Strip(line), " ")
-		if got := ansi.StringWidth(text); got+cardPadding > box {
-			t.Errorf("row %d carries %d cells of text into a %d cell box: %q", i, got, box, text)
-		}
-		widest = max(widest, ansi.StringWidth(text))
-	}
-	if painted == 0 {
-		t.Fatal("no row of the conversation wears alice's wash")
-	}
-	// The long body has to have reached the box's own wrap width, or the widths
-	// above were never tested.
-	if room := box - cardPadding - layout.Width(cardIndent); widest < room-4 {
-		t.Errorf("the widest line is %d cells, want the box's own %d", widest, room)
 	}
 }
 

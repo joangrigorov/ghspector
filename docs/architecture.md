@@ -1014,15 +1014,6 @@ defect already: the band stopped at the title's reset, so the account, the trail
 and the rate limit sat unpainted on roughly half the row —
 `TestHeaderBandPaintsBehindEveryRun` pins the repair.
 
-A wash is the card's box and not the pane's. `cardBox` takes the card's own
-indent and the conversation's `cardMargin` off the pane's width, and the rules
-that separate contributions are drawn to the same width, so a conversation has
-one right edge and every wash stops at it; the body wraps `cardPadding` inside
-that edge on top of the indent the card gives its text, so no line of a comment
-touches the wash it sits on. `TestAWashIsTheCardsBoxAndNotThePane` renders a long
-body and asserts both: the painted row is the box and not the pane, the text keeps
-its padding, and the box is inset from the pane at all.
-
 Cost, again: a card is two rows taller than the lines it replaced, on top of the
 frame's own rows. At 120x40 the standard fixture's conversation now reaches
 neither the reply in its thread nor the trailing body-less review, so the golden

@@ -372,7 +372,7 @@ func conversationLinesOf(deps Deps, conv conversation, width int, view threadVie
 	)
 	for i, entry := range conv.entries {
 		if i > 0 {
-			out = append(out, "", style(deps.Theme.HeaderRule, normal).Render(strings.Repeat("─", max(cardBox(0, width), 1))), "")
+			out = append(out, "", style(deps.Theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-2, 1))), "")
 		}
 		out, controls = appendEntry(out, controls, deps, entry, width, view)
 	}
@@ -421,10 +421,8 @@ func offsetControls(drawn []threadControl, at int, controls []threadControl) []t
 // threads' controls landed.
 func appendReview(out []string, controls []threadControl, deps Deps, review store.Review, threads []reviewThread, width int, view threadView) ([]string, []threadControl) {
 	author := userLogin(review.User)
-	box := cardBox(0, width)
 	head := authorLine(deps, author, review.HTMLURL, reviewTime(review), reviewStateLabel(deps.Theme, review))
-	out = append(out, cardLines(deps, author, box, head, "",
-		bodyLines(deps, review.Body, cardIndent, box-cardPadding))...)
+	out = append(out, cardLines(deps, author, width, head, "", bodyLines(deps, review.Body, "  ", width))...)
 	return appendThreads(out, controls, deps, threads, width, view)
 }
 
@@ -475,13 +473,9 @@ func threadLines(deps Deps, thread reviewThread, width int, view threadView) ([]
 		button = "  " + threadButton(theme, threadHideLabel)
 	}
 
-	// The thread is drawn in the conversation's box, so its frame and the wash
-	// of each of its remarks stop where every other card does.
-	box := cardBox(layout.Width(threadIndent), width)
-
-	titleWidth := max(box-len(threadIndent)-frameCells-layout.Width(button), 8)
+	titleWidth := max(width-len(threadIndent)-frameCells-layout.Width(button), 8)
 	inner := threadIndent + rule.Render(frameRail)
-	innerWidth := max(box-layout.Width(inner)-cardPadding, 8)
+	innerWidth := max(width-layout.Width(inner)-frameCells, 8)
 
 	out := []string{
 		"",
@@ -501,10 +495,10 @@ func threadLines(deps Deps, thread reviewThread, width int, view threadView) ([]
 		comment := thread.comments[i]
 		if i > 0 {
 			out = append(out, threadIndent+rule.Render(frameBar))
-			out = append(out, replyCard(deps, comment, inner, box)...)
+			out = append(out, replyCard(deps, comment, inner, width)...)
 			continue
 		}
-		out = append(out, rootCard(deps, comment, inner, innerWidth, box)...)
+		out = append(out, rootCard(deps, comment, inner, innerWidth, width)...)
 	}
 
 	return append(out, threadIndent+rule.Render(frameClose)), controls
@@ -519,14 +513,13 @@ func threadLines(deps Deps, thread reviewThread, width int, view threadView) ([]
 // author's wash while it is out of the way, and unfolds back into it.
 func foldedThreadLines(deps Deps, thread reviewThread, width int) ([]string, []threadControl) {
 	theme := deps.Theme
-	box := cardBox(layout.Width(threadIndent), width)
 	button := threadButton(theme, threadShowLabel)
 	summary := threadSummary(deps, thread)
-	room := max(box-len(threadIndent)-layout.Width(button)-1, 8)
+	room := max(width-len(threadIndent)-layout.Width(button)-1, 8)
 
 	row := threadIndent + button + " " + layout.Truncate(summary, room)
 	tint := authorTint(theme, userLogin(thread.first().User))
-	return []string{"", paintLine(tint, box, row)}, []threadControl{{thread: thread.rootID(), row: 1}}
+	return []string{"", paintLine(tint, width, row)}, []threadControl{{thread: thread.rootID(), row: 1}}
 }
 
 // threadPlace is where a thread was written, as the frame's title and a folded
@@ -571,26 +564,22 @@ func threadButton(theme Theme, label string) string {
 // rootCard draws the remark a thread started from: its heading, marked so the
 // eye finds where the thread began, its body, and the rule that closes it. The
 // card wears its author's wash, and an answer follows the rule.
-//
-// indent is the thread's rail, which the remark starts after; box is the width
-// of the thread's box in the conversation.
-func rootCard(deps Deps, comment store.ReviewComment, indent string, innerWidth, box int) []string {
+func rootCard(deps Deps, comment store.ReviewComment, indent string, innerWidth, width int) []string {
 	theme := deps.Theme
 	author := userLogin(comment.User)
 
 	head := indent + layout.Truncate(style(theme.Accent, normal).Render(rootMark)+" "+
 		authorHeading(deps, author, comment.HTMLURL, comment.CreatedAt, ""), innerWidth)
-	out := cardLines(deps, author, box, head, indent,
-		bodyLines(deps, comment.Body, indent+cardIndent, box-cardPadding))
+	out := cardLines(deps, author, width, head, indent, bodyLines(deps, comment.Body, indent+"  ", width))
 
-	foot := indent + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(box-layout.Width(indent), 1)))
-	return append(out, paintLine(authorTint(theme, author), box, foot))
+	foot := indent + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-layout.Width(indent), 1)))
+	return append(out, paintLine(authorTint(theme, author), width, foot))
 }
 
 // replyCard draws one answer as a frame of its own, nested inside the thread's
 // rail and titled by who wrote it. Its foot is a rule that doubles as the
 // horizontal line under the remark. The card wears its author's wash.
-func replyCard(deps Deps, comment store.ReviewComment, indent string, box int) []string {
+func replyCard(deps Deps, comment store.ReviewComment, indent string, width int) []string {
 	theme := deps.Theme
 	rule := style(theme.HeaderRule, normal)
 	author := userLogin(comment.User)
@@ -598,12 +587,12 @@ func replyCard(deps Deps, comment store.ReviewComment, indent string, box int) [
 
 	head := indent + rule.Render(frameTop) + layout.Truncate(
 		authorHeading(deps, author, comment.HTMLURL, comment.CreatedAt, ""),
-		max(box-layout.Width(indent)-frameCells-cardPadding, 8))
+		max(width-layout.Width(indent)-frameCells, 8))
 
-	out := cardLines(deps, author, box, head, indent+rule.Render(frameRail),
-		bodyLines(deps, comment.Body, indent+rule.Render(frameRail)+cardIndent, box-cardPadding))
-	foot := indent + rule.Render(frameClose+strings.Repeat("─", max(box-layout.Width(indent)-2, 1)))
-	return append(out, paintLine(tint, box, foot))
+	out := cardLines(deps, author, width, head, indent+rule.Render(frameRail),
+		bodyLines(deps, comment.Body, indent+rule.Render(frameRail)+"  ", width))
+	foot := indent + rule.Render(frameClose+strings.Repeat("─", max(width-layout.Width(indent)-2, 1)))
+	return append(out, paintLine(tint, width, foot))
 }
 
 // cardLines draws one contribution as a wash in its author's shade: the heading,
@@ -611,44 +600,17 @@ func replyCard(deps Deps, comment store.ReviewComment, indent string, box int) [
 // drawn inside, so a framed card does not break its own frame. A palette with no
 // washes hands the lines back as they are, so a plain render gains the spacing
 // and nothing else.
-//
-// box is the width of the contribution's own box rather than the pane's: see
-// cardBox. Every line of the card is painted to it, so the wash is the card and
-// not a band across the pane.
-func cardLines(deps Deps, login string, box int, head, air string, body []string) []string {
+func cardLines(deps Deps, login string, width int, head, air string, body []string) []string {
 	tint := authorTint(deps.Theme, login)
-	out := []string{paintLine(tint, box, layout.Truncate(head, box))}
+	out := []string{paintLine(tint, width, head)}
 	if len(body) == 0 {
 		return out
 	}
-	out = append(out, paintLine(tint, box, air))
+	out = append(out, paintLine(tint, width, air))
 	for _, line := range body {
-		out = append(out, paintLine(tint, box, line))
+		out = append(out, paintLine(tint, width, line))
 	}
 	return out
-}
-
-// A contribution is drawn as a box of its own rather than a band across the pane:
-// its wash starts where the card's own text is indented to, which is where its
-// rails are, and stops cardMargin cells short of the pane's right edge. The
-// card's text keeps cardPadding clear of that edge as well, so no line of a
-// comment runs into the wash it sits on.
-const (
-	// cardMargin is the clear space the conversation keeps at the pane's right,
-	// outside every card's box.
-	cardMargin = 6
-	// cardPadding is the clear space a card keeps inside its own box on the
-	// right, the mirror of the cells it indents its text by.
-	cardPadding = 2
-	// cardIndent is how far a card indents its own text: a heading, the row of
-	// air under it, and a body all start here.
-	cardIndent = "  "
-)
-
-// cardBox is the width of the box a contribution is drawn in: the pane's width
-// less the card's own indent and the conversation's right margin.
-func cardBox(indent, width int) int {
-	return max(width-indent-cardMargin, 1)
 }
 
 // snippetLines renders the lines a remark was written against as a small frame
@@ -688,7 +650,7 @@ func bodyLines(deps Deps, body, prefix string, width int) []string {
 // time are links to the contribution when the API supplied a URL for it, so the
 // whole of what names it opens it.
 func authorLine(deps Deps, author, url string, at time.Time, state string) string {
-	return cardIndent + authorHeading(deps, author, url, at, state)
+	return "  " + authorHeading(deps, author, url, at, state)
 }
 
 // authorHeading is authorLine without its indent, so a frame can title itself

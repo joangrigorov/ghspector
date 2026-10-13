@@ -417,7 +417,7 @@ func commentBlockLines(deps Deps, comments []store.IssueComment, width int) []st
 	var out []string
 	for i, comment := range comments {
 		if i > 0 {
-			out = append(out, "", style(deps.Theme.HeaderRule, normal).Render(strings.Repeat("─", max(cardBox(0, width), 1))), "")
+			out = append(out, "", style(deps.Theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-2, 1))), "")
 		}
 		out = append(out, commentBlock(deps, comment, width)...)
 	}
@@ -428,10 +428,8 @@ func commentBlockLines(deps Deps, comments []store.IssueComment, width int) []st
 // markdown.
 func commentBlock(deps Deps, comment store.IssueComment, width int) []string {
 	author := userLogin(comment.User)
-	box := cardBox(0, width)
 	head := authorLine(deps, author, comment.HTMLURL, comment.CreatedAt, "")
-	return cardLines(deps, author, box, head, "",
-		bodyLines(deps, comment.Body, cardIndent, box-cardPadding))
+	return cardLines(deps, author, width, head, "", bodyLines(deps, comment.Body, "  ", width))
 }
 
 // userLogin is the login of the user who wrote something, with a placeholder

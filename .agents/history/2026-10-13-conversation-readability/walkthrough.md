@@ -69,23 +69,6 @@ whole pane was one background.
 
 The `␣` rows are air: blank inside the card, carrying the rail inside a frame.
 
-## Follow-up: the wash is the card's box, not the pane's
-
-The first cut painted each card across the whole pane, which read as a band
-across the screen rather than as the comment it belonged to. A wash is now the
-contribution's own box: `cardBox` takes the card's indent and the conversation's
-`cardMargin` (six cells) off the pane's width, the rules between contributions are
-drawn to that same width so the conversation has one right edge, and the body
-wraps `cardPadding` (two cells) inside it, so no line of a comment runs into the
-wash it sits on. `TestAWashIsTheCardsBoxAndNotThePane` renders a long body and
-asserts the painted row is the box, that the text keeps its padding, and that the
-box is inset from the pane at all — it fails if the margin is taken away.
-
-The change was looked at rather than argued about: the rendered screen was turned
-into an image (the ANSI of `m.View()` through a small PIL renderer) in both
-palettes, folded and opened, and the goldens were regenerated for the shortened
-rules.
-
 ## Cost, stated plainly
 
 A card is two rows taller than the lines it replaced — the air row and the rule —
