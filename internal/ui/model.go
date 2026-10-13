@@ -288,6 +288,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+	case tea.MouseWheelMsg:
+		return m.handleWheel(msg)
 	case tea.PasteMsg:
 		route, cmd := m.routes.Top().Update(m.deps, msg)
 		m.routes = m.routes.Replace(route)
@@ -311,6 +313,25 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m.applyAction(action)
+}
+
+// handleWheel scrolls the route on screen.
+//
+// The wheel is resolved into the same two actions the scroll keys are, rather
+// than into a scroll of its own, so every pane that can be scrolled is scrolled
+// by it the same way and by the same step, and a screen with nothing to scroll
+// ignores it. A modal owns the input while it is open, wheel included, and is
+// offered the event before this.
+func (m Model) handleWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
+	switch msg.Button {
+	case tea.MouseWheelUp:
+		return m.applyAction(keymap.ActionScrollUp)
+	case tea.MouseWheelDown:
+		return m.applyAction(keymap.ActionScrollDown)
+	default:
+		// A horizontal wheel and the extra buttons name nothing this app does.
+		return m, nil
+	}
 }
 
 // resolve looks a key up in the active route's scope, then in the global scope.
@@ -497,6 +518,10 @@ func (m Model) View() tea.View {
 	// Focus reporting is what makes the palette follow a scheme change while the
 	// program is in the background.
 	v.ReportFocus = true
+	// The wheel is reported as a button event, which is what cell motion covers:
+	// every motion reports nothing until a button is held, so a drag does not
+	// stream events the app has no use for.
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 

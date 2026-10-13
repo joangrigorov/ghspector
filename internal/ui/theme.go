@@ -41,6 +41,13 @@ type Theme struct {
 	Muted  color.Color
 	Accent color.Color
 
+	// AuthorTints are the washes the conversation paints behind a contribution,
+	// one shade per commenter: this palette's accent mixed into this palette's
+	// background, in even steps, so the shades are one family and stay on the
+	// side of the background this palette was built for. An empty slice paints
+	// nothing, which is what keeps a plain render free of escape sequences.
+	AuthorTints []color.Color
+
 	// Footer.
 	KeyHint color.Color
 	KeyDesc color.Color
@@ -120,6 +127,8 @@ func DarkTheme() Theme {
 		Muted:  lipgloss.Color(darkMuted),
 		Accent: lipgloss.Color(darkAccent),
 
+		AuthorTints: authorTints(true, lipgloss.Color("#000000"), lipgloss.Color(darkAccent)),
+
 		KeyHint: lipgloss.Color("#5fd7ff"),
 		KeyDesc: lipgloss.Color(darkMuted),
 
@@ -154,6 +163,8 @@ func LightTheme() Theme {
 		Text:   lipgloss.Color(lightText),
 		Muted:  lipgloss.Color(lightMuted),
 		Accent: lipgloss.Color(lightAccent),
+
+		AuthorTints: authorTints(false, lipgloss.Color("#ffffff"), lipgloss.Color(lightAccent)),
 
 		KeyHint: lipgloss.Color(lightAccent),
 		KeyDesc: lipgloss.Color(lightMuted),

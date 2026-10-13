@@ -217,6 +217,18 @@ func TestGoldenPullRequestScreens(t *testing.T) {
 		{"pr_comments_80x24", func(t *testing.T) Model {
 			return pressAndDrive(t, opened(t, 80, 24), "5")
 		}},
+		// The thread GitHub reports as resolved: one row carrying the button that
+		// opens it, which is what keeps a settled conversation out of the way of
+		// the remarks still being made. The row is the control the arrows move
+		// to, so it carries the focus marker.
+		{"pr_comments_resolved_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, openPRDetails(t, prsModel(t, prServer(t, withResolvedThreads([]int64{4001, 4002})), 120, 40)), "5")
+		}},
+		// The same thread opened: the frame is back, the button says hide, and
+		// the remarks are readable.
+		{"pr_comments_resolved_opened_120x40", func(t *testing.T) Model {
+			return pressAndDrive(t, openPRDetails(t, prsModel(t, prServer(t, withResolvedThreads([]int64{4001, 4002})), 120, 40)), "5", "enter")
+		}},
 		// The shape that made the sub-tab look broken: nothing in the
 		// conversation comments and everything in the reviews. The second review
 		// carries no summary, and the reply the standard fixture posts as part

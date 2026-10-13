@@ -236,6 +236,7 @@ type Store interface {
 - Caching and cursors live here, keyed by resource and scope. The UI holds presentation state only.
 - Pagination is cursor-based for GraphQL and page-based for REST, behind the same `Page` types. A cursor API cannot jump to page N, so `store.searchScope` walks the pages before the one asked for; each walk step goes through the cache, and the page before the one being loaded is the page on screen, so a "Load More" costs one query.
 - One rate limiter is shared by the REST and GraphQL transports. REST spends a request; GraphQL reserves the points its query cost, which the response reports after the fact, so the previous query's cost is what the next one reserves. The header renders whichever transport has less left, because either one can cut the app off.
+- A read that only one transport can answer is still a store read. `ReviewThreads` is a `gql` call the UI never sees as such: it goes through the same `fetch` helper, so it is cached and limited like everything else, and it reports its failure like any other read. What that failure means is the route's call, and the conversation route reads it as "nothing to fold".
 
 **Enforced by:** store tests that run the same query against a REST-backed and a GraphQL-backed transport and assert equivalent domain objects, plus a test that the limiter depletes by the reported query cost.
 
@@ -246,6 +247,8 @@ type Store interface {
 Which list belongs on which transport is a schema question, so the answer was read off the published schema (`https://docs.github.com/public/fpt/schema.docs.graphql`) rather than assumed.
 
 **GraphQL (`internal/gql`, via `shurcooL/githubv4`)** serves the scope-wide pull request and issue lists. `Query.search` is the only connection that spans a scope for them: `Organization` exposes no issue or pull request connection at all, and `User.pullRequests` / `User.issues` are the authored-by connections, which answer a different question. Each list is therefore one cursor-paginated search query per page, with `state`, `repo`, `author`, `assignee` and `review-requested` as qualifiers the API applies across the whole scope, `HasMore` from the index's own match count, and the cursor the page ends with starting the next one. `Repository.pullRequests` and `Repository.issues` exist, but using them would rebuild the per-repository fan-out in a different dialect.
+
+**One more question only the schema answers.** Whether an inline thread has been resolved is absent from the REST payload: `GET /pulls/{n}/comments` returns the remarks and says nothing about the thread they belong to. `Repository.pullRequest.reviewThreads` is the connection that carries `isResolved`, so the conversation screen asks for it in one query per pull request (`first: 100` threads, `first: 100` remarks each, so a thread arrives whole rather than as a page of itself) and folds the threads the answer reports as settled. The query is a plain `gql` call behind the store's `fetch` helper, so it is cached, limited and keyed like every other read, and a failure is deliberately not surfaced as an error: a conversation with no resolution data is drawn in full, exactly as it was before the query existed.
 
 **REST (`internal/gh`)** serves everything else:
 
@@ -939,6 +942,159 @@ Verification: the checks the conversation fix above lists, plus a live run of th
 built binary against the reported pull request — 41 thread headers became 16, and
 the raw pane carries the OSC 8 tokens for the repository, the compare, the thread
 locations and the comment permalinks.
+
+### Change — a thread is drawn in a frame (this change)
+
+The conversation drew a thread as flat indentation: a location line, the hunk
+under it, then a name-and-time line per remark with the body two cells further
+in. Nothing marked where one remark ended and the next began, and a reply was
+told from the remark it answered only by reading the two.
+
+A thread is now a frame. `┌─ path:line` titles it, its content runs down a `│`
+rail, and `└─` closes it. Each reply is a frame of its own nested one rail
+inside, so nesting carries the relationship between a reply and the remark it
+answers, and the frame's title is the reply's own author line. The remark the
+thread started from carries a `●` out on the thread's rail; a reply carries no
+mark, because the frame around it says what it is. The hunk is a frame inside the
+thread's rail too, with its first line riding in the frame's corner: three lines
+of diff cost four rows instead of five, which matters because `hunkLines` caps
+the excerpt at three.
+
+The frames are box characters and the header-rule colour, which is the whole
+reason they survive the plain palette: goldens keep their structure with no
+colour at all, and bold names stay the only escape sequence a plain render
+carries. The frame is the widest thing on the line, so the width budget is
+arithmetic: the title loses `frameCells` to the corner, and everything inside the
+rail loses it twice.
+
+Cost, and it is a real one: a framed thread is taller than the flat list was —
+about six rows for a thread with a snippet and one reply. At 120x40 the standard
+fixture's conversation no longer reaches the trailing body-less review, so the
+golden for it shows less than it did; `pr_comments_reviews_only_120x40` still
+shows that review, and `TestPRCommentsKeepAThreadTogetherAcrossReviews` reads the
+same property at 120x56, where the whole conversation fits. `TestThreadsAreDrawnInFrames`
+pins the frame's characters, the reply's nesting inside the thread's rail, the
+width budget, and the absence of OSC 8 sequences.
+
+### Change — a contribution is washed, spaced and ruled off (this change)
+
+Three things made a long conversation hard to read rather than hard to parse: the
+author line sat directly on the body it introduced, only the top-level
+contributions were separated by anything, so a thread's remarks ran together, and
+the hunk excerpt stopped at three lines.
+
+Every contribution is now a card. `cardLines` draws its heading, a row of air,
+then its body, and closes it with a rule; a thread's remark is drawn out on the
+thread's rail and each reply inside its own frame, so the air row and the closing
+rule are what tell one remark from the next there. The hunk cap went from three
+lines to six, which the frame around the excerpt is what made affordable.
+
+The card's body is painted in its author's own wash, and the wash is derived
+rather than chosen: `authorTints` mixes the palette's accent into the palette's
+background in six even steps, so the shades are one family by construction and
+each palette gets washes on its own side of the background — `#05090a` to
+`#20343d` on the dark palette, `#f7fafb` to `#d9e7ed` on the light one.
+`authorTint` picks a shade with an FNV-1a hash of the login, so a person keeps
+their wash across refreshes, screens and conversations and no shade depends on
+who else is in the thread. `TestAuthorWashesStayInOneFamily` checks the property
+that makes it work — every shade takes the same share of the accent in every
+channel, each shade takes more than the last, and each stays quiet enough that
+the palette's own text keeps its contrast (the body colour above 7:1, the muted
+colour above 4:1) — and `TestWashesFollowTheLogin` checks the shade survives case
+and company.
+
+The wash is the box the remark's own text occupies, and nothing else. `cardLines`
+paints the body and only the body: the heading that names the author, the row of
+air under it and the rules around it stay plain, and `bodyBox` measures the block
+before it paints it, so the box opens at the column the card puts its text in and
+ends on the last cell of the block's widest line. Every line of the block is
+carried out to that box, which is what makes a block one colour rather than a set
+of lines that each stop where their own text does. A box that reached past its
+text, or a colour behind the heading, is what the first attempt at this looked
+like in a live pane — the reader called it greedy.
+
+The paint itself needed a helper, because a plain `lipgloss` background does not
+survive its own contents: every styled run inside the line ends with a reset, and
+a reset clears the background as well as the colour, so a background on the row
+covers the padding and the gaps between runs but leaves the words on the
+terminal's own colour. `paintLine` re-arms the paint after every reset and pads
+the row to the pane, which is what fixes the header: the band stopped at the
+title's reset, so the account, the trail and the rate limit sat unpainted on
+roughly half the row. `TestHeaderBandPaintsBehindEveryRun` pins that repair, and
+`TestTintLinePaintsUnderTheText` the re-arming.
+
+`paintSpan` paints the same way behind a span of a row rather than the whole of
+it, and it has to re-arm both spellings of a reset — `\x1b[m` and `\x1b[0m` —
+because a markdown body's runs end with the second one. Missing it left the
+padding at the end of a short line unpainted, which turned the box back into a
+per-line highlight the moment the paint was measured rather than eyeballed.
+`TestSpanPaintsTheBoxAndNothingElse` covers the box's two edges and that padding,
+`TestWashesPaintTheCommentBodyAndNothingElse` that the same text sits in the same
+cells as a plain render and that no row which is not a body wears a shade, and
+`TestAWashIsTheCommentsOwnBox` the extent of the box.
+
+Cost, again: a card is two rows taller than the lines it replaced, on top of the
+frame's own rows. At 120x40 the standard fixture's conversation now reaches
+neither the reply in its thread nor the trailing body-less review, so the golden
+shows less than it did; the same conversation fits at 120x56, where
+`TestPRCommentsKeepAThreadTogetherAcrossReviews` reads it whole, and the snippets
+grew by three rows each.
+
+### Change — a resolved thread folds onto one row (this change)
+
+A settled thread took as much room as a live one. The reader's own suggestion was
+to keep it visible but out of the way: fold it to a button, expand it on demand,
+and let the arrows move between the buttons while the scroll keys and the wheel
+keep scrolling.
+
+The state that folds it is the one thing on this screen REST does not carry.
+`GET /pulls/{n}/comments` returns the remarks of a thread and nothing about the
+thread, so `internal/gql/threads.go` asks the schema —
+`reviewThreads(first: 100) { isResolved comments(first: 100) { databaseId } }`,
+validated against the live schema on a pull request carrying nine resolved
+threads — and `store.Client.ReviewThreads` puts it behind the same `fetch` helper
+every other read uses, so it is cached, limited and keyed like the rest, and
+`prSectionThreads` is fetched with the other three lists of the Comments sub-tab.
+That section is deliberately not part of `conversationSections`: the fallback
+that renders a conversation when a list fails must not be triggered by a query
+whose failure costs nothing but the fold. `applyThreads` records the resolved
+comment ids and never surfaces an error, because a conversation with no
+resolution data is exactly the conversation the pane drew before.
+
+Folding is a render state and the render is cached, so the fold is keyed like the
+rest of it: `threadView{resolved, expanded}` is read by `conversationLinesOf`,
+which needs the same lines twice — with the focus on a button and without — and
+reports the rows its buttons landed on as `threadControl`s. The focus is *not*
+part of the rendered lines. It is applied to the rows as they are handed to the
+pane, because a highlight changes what a row looks like and not what is in it,
+and re-rendering a review-heavy conversation to move a highlight is the cost the
+cache exists to avoid. Two defects came out of doing that, both found in a live
+pane rather than by the tests:
+
+- the marked row was written back into the slice the cache returned, which it
+  shares with the cache's array, so the marker stayed on the row and the next
+  render added another one. The screen then read `› › › › › [show]`. The row is
+  now drawn as it is handed over and the cached slice is left alone;
+- the marker takes its cells from the indent the row already carries, and the
+  indent of a washed row sits behind the escape that starts the paint, so the
+  trim missed it and the row shifted right by the indent's width. `dropIndent`
+  cuts the indent where it stands and keeps the paint, and the marker's padding
+  is measured in cells rather than bytes, so a control keeps its column when the
+  focus lands on it.
+
+Verification: `TestPRCommentsFoldAResolvedThreadAndOpenItAgain`,
+`TestPRCommentsWalkTheThreadControlsWithTheArrows` (the arrows move the focus and
+leave the scroll alone; the scroll keys leave the focus alone),
+`TestPRCommentsWithoutResolutionKeepTheArrowsOnTheScroll` (no buttons, arrows
+scroll), `TestTheWheelScrollsTheRouteOnScreen`, `TestTheFocusMarkerIsNotBakedIntoTheCache`
+(the same state draws the same screen, and no row carries the marker twice),
+`TestAFoldedThreadHoldsItsWashUntilItIsOpened` (both palettes: a folded row is a
+summary and carries no shade, and opening the thread puts the remark's body back
+in its author's), `TestAResolvedThreadIsFoldedUntilItIsOpened` and the two new
+goldens. Live in a tmux pane against a public pull request carrying seven inline
+threads, four of them resolved: the three folded rows sit at one column, `Enter`
+opens the focused one and `Down` moves the marker to the next, and a wheel
+sequence written into the pane scrolls the conversation.
 
 ### Security findings
 

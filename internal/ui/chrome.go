@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"image/color"
 	"strconv"
 	"strings"
 	"time"
@@ -325,11 +327,87 @@ func joinLR(width int, left, right string) string {
 }
 
 // band paints a full-width row with the header background when one is set.
+//
+// The row is built from styled runs, and every run ends by clearing the
+// background along with the colour, so the paint is re-armed behind each of
+// them: a plain background on the row would leave the account, the trail and the
+// rate limit sitting on the terminal's own colour.
 func band(theme Theme, width int, s string) string {
-	if theme.HeaderBackground == nil {
-		return s
+	return paintLine(theme.HeaderBackground, width, s)
+}
+
+// paintLine paints a background across the whole width behind whatever the line
+// holds, and leaves the text inside it untouched. The caller fits the content to
+// the width; the paint only pads what is short of it.
+//
+// A styled run inside the line ends with a reset, and a reset clears the
+// background as well as the foreground, so the paint is re-armed after every one
+// of them; without that a wash would cover the padding between runs and not the
+// words themselves, which is what a plain lipgloss background does.
+func paintLine(c color.Color, width int, line string) string {
+	code := paintCode(c)
+	if code == "" {
+		return line
 	}
-	return lipgloss.NewStyle().Background(theme.HeaderBackground).Width(width).Render(s)
+	out := strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+code)
+	out = strings.ReplaceAll(out, "\x1b[m", "\x1b[m"+code)
+	if pad := width - layout.Width(line); pad > 0 {
+		out += strings.Repeat(" ", pad)
+	}
+	return code + out + "\x1b[0m"
+}
+
+// paintSpan paints a background behind the cells left to right of a line,
+// inclusive, and leaves every cell outside them alone. It is how a comment's body
+// is washed: the box is the region the comment's own text occupies, so the heading
+// above it, the indentation beside it and the pane's content past it carry no
+// colour.
+//
+// left and right are cells, counted the way layout.Width counts them, so a caller
+// can name the column its text starts in and the last one the box reaches. A line
+// that reaches past right is cut there, and one that stops short of it is padded
+// out to it, so a block of lines painted this way reads as one box. Like
+// paintLine, the paint is re-armed after every reset inside the span, which is
+// what puts the colour behind the words rather than only behind the gaps between
+// them.
+func paintSpan(c color.Color, left, right int, line string) string {
+	code := paintCode(c)
+	if code == "" || right < left {
+		return line
+	}
+	head := ansi.Truncate(line, left, "")
+	span := ansi.TruncateLeft(line, left, "")
+	span = ansi.Truncate(span, right-left+1, "")
+	// A styled run inside the span ends by clearing the background as well as the
+	// foreground, so the paint is re-armed after both spellings of a reset. The
+	// padding below is what this has to cover: without it the last cells of a line
+	// shorter than the box keep the terminal's own colour.
+	span = strings.ReplaceAll(span, "\x1b[0m", "\x1b[0m"+code)
+	span = strings.ReplaceAll(span, ansi.ResetStyle, ansi.ResetStyle+code)
+	if pad := right + 1 - left - layout.Width(span); pad > 0 {
+		span += strings.Repeat(" ", pad)
+	}
+	// The head may have been cut out of a run that was still open, so it is
+	// closed before the span opens its own.
+	return head + ansi.ResetStyle + code + span + ansi.ResetStyle
+}
+
+// paintCode is the escape that starts a background paint of a colour, or "" for
+// a palette that has none.
+func paintCode(c color.Color) string {
+	if c == nil {
+		return ""
+	}
+	if rgba, ok := c.(color.RGBA); ok {
+		return fmt.Sprintf("\x1b[48;2;%d;%d;%dm", rgba.R, rgba.G, rgba.B)
+	}
+	// A palette built elsewhere may carry a colour type this package does not
+	// know; ask lipgloss for the code it would use.
+	probe := lipgloss.NewStyle().Background(c).Render("x")
+	if i := strings.IndexByte(probe, 'm'); strings.HasPrefix(probe, "\x1b[") && i > 1 {
+		return probe[:i+1]
+	}
+	return ""
 }
 
 // renderTooSmall is the whole screen when the terminal is below the supported

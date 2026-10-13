@@ -265,8 +265,13 @@ var table = map[Scope][]Binding{
 		{Action: ActionTabChecks, Keys: []string{"4"}, Help: "Checks"},
 		{Action: ActionCommits, Keys: []string{"2"}, Help: "Commits"},
 		{Action: ActionDiff, Keys: []string{"3"}, Help: "Files & diff"},
-		{Action: ActionDown, Keys: []string{"j", "down"}, Help: "Down a line"},
-		{Action: ActionUp, Keys: []string{"k", "up"}, Help: "Up a line"},
+		// The arrows walk the buttons of the resolved threads rather than the
+		// conversation, which the scroll keys below and the wheel do; with no
+		// button to move to, and once the focus has reached an end, they scroll
+		// the pane as well.
+		{Action: ActionDown, Keys: []string{"j", "down"}, Help: "Next thread control"},
+		{Action: ActionUp, Keys: []string{"k", "up"}, Help: "Previous thread control"},
+		{Action: ActionOpen, Keys: []string{"enter"}, Help: "Show or hide a resolved thread"},
 		{Action: ActionRefresh, Keys: []string{"r", "ctrl+r"}, Help: "Refresh"},
 		{Action: ActionScrollUp, Keys: []string{"u", "pgup"}, Help: "Scroll up"},
 		{Action: ActionScrollDown, Keys: []string{"d", "pgdown"}, Help: "Scroll down"},

@@ -251,6 +251,41 @@ func TestHeaderCarriesNoWordmark(t *testing.T) {
 	}
 }
 
+// TestHeaderBandPaintsBehindEveryRun covers the header's background. The row is
+// built from styled runs, and each run ends by clearing the background along with
+// its own colour, so the band has to be re-armed behind every one of them: a
+// single background on the row left the account and the trail on the terminal's
+// own colour, halfway across the header.
+func TestHeaderBandPaintsBehindEveryRun(t *testing.T) {
+	theme := DarkTheme()
+	paint := paintCode(theme.HeaderBackground)
+	if paint == "" {
+		t.Fatal("the dark palette has no header background to paint")
+	}
+	row := band(theme, 60, style(theme.HeaderTitle, bold).Render("Pull Requests › PR #7")+"  "+
+		style(theme.HeaderContext, normal).Render("Account: octocat"))
+
+	if !strings.HasPrefix(row, paint) {
+		t.Errorf("the row does not open with the band: %q", row)
+	}
+	resets := strings.Count(row, "\x1b[m") + strings.Count(row, "\x1b[0m")
+	armed := strings.Count(row, "\x1b[m"+paint) + strings.Count(row, "\x1b[0m"+paint)
+	if armed != resets-1 {
+		t.Errorf("%d of %d resets are followed by the band, want all but the closing one: %q", armed, resets, row)
+	}
+	if got := ansi.StringWidth(row); got != 60 {
+		t.Errorf("the band is %d cells wide, want 60", got)
+	}
+	if got, want := strings.TrimRight(ansi.Strip(row), " "), "Pull Requests › PR #7  Account: octocat"; got != want {
+		t.Errorf("the band changed the text: %q", got)
+	}
+
+	// A palette with no header background paints nothing.
+	if got := band(PlainTheme(), 60, "  Pull Requests"); got != "  Pull Requests" {
+		t.Errorf("a palette with no header background painted %q", got)
+	}
+}
+
 // TestHeaderPutsTheAccountAtTheRightEdge covers the band with a rate limit on it,
 // which no fixture normally provides: the count is written before the account, so
 // a count that changes width — a remaining request crossing a power of ten, or

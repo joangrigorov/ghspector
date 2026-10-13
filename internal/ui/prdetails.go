@@ -61,11 +61,21 @@ const (
 	// review-heavy pull request has nothing in the first of them.
 	prSectionReviews
 	prSectionReviewComments
+	// prSectionThreads is the resolution state of the inline threads, which
+	// GraphQL alone carries. It is deliberately not one of conversationSections:
+	// those three are the discussion itself, and a pane whose resolution query
+	// could not run still shows the whole discussion.
+	prSectionThreads
 )
 
 // conversationSections are the three lists a pull request's discussion is
 // assembled from.
 var conversationSections = []prSection{prSectionComments, prSectionReviews, prSectionReviewComments}
+
+// commentsSections is everything the Comments sub-tab reads: the three lists
+// above, plus the resolution state that decides which of their threads are drawn
+// folded.
+var commentsSections = []prSection{prSectionComments, prSectionReviews, prSectionReviewComments, prSectionThreads}
 
 // readsConversation reports whether a section is one of them.
 func readsConversation(section prSection) bool {
@@ -91,7 +101,11 @@ type prDataMsg struct {
 	reviews        []store.Review
 	reviewComments []store.ReviewComment
 	hasMore        bool
-	err            error
+	// threads is the resolution state GraphQL reports for the inline threads. It
+	// is empty when that query has not answered, which is not an error: the
+	// conversation then draws every thread in full.
+	threads []store.ReviewThread
+	err     error
 }
 
 // prWriteGate is the answer to "may the viewer merge or close this pull
@@ -162,6 +176,15 @@ const (
 	// defaultBodyWidth stands in for the description width before the first
 	// window size arrives, so a scroll clamp has something sane to work with.
 	defaultBodyWidth = 100
+	// prHeadRows is what the pull request screen draws above its panes: the three
+	// lines of the heading, the sub-tab strip, and the blank row under it.
+	prHeadRows = 5
+	// prPaneRows is what a pane draws above its content: its title and a blank
+	// row.
+	prPaneRows = 2
+	// defaultCommentViewport stands in for the conversation's height before the
+	// first window size arrives.
+	defaultCommentViewport = 20
 )
 
 // PRDetails is the pull request screen: the description, the metadata sidebar,
@@ -193,6 +216,19 @@ type PRDetails struct {
 	// convVersion counts the changes to those three lists, so the rendered
 	// conversation below is dropped when one of them lands.
 	convVersion int
+	// threadsResolved names the remarks that belong to a thread the schema
+	// reports as resolved, and threadsExpanded names the resolved threads the
+	// reader has opened. Both are read by the conversation render; the first is
+	// empty when the resolution query has not answered, and every thread is then
+	// drawn in full.
+	threadsResolved map[int64]bool
+	threadsExpanded map[int64]bool
+	// threadControls are the buttons of the rendered conversation, in the order
+	// the arrows move through them, and threadFocus is which of them holds the
+	// keyboard. The render records the controls, so they always match the lines
+	// on screen.
+	threadControls []threadControl
+	threadFocus    int
 	// convLines is the conversation as it was last rendered. Rendering it is
 	// the expensive part of this screen, so a frame, a keystroke and a poll
 	// tick reuse the lines rather than paying for them again.
@@ -236,14 +272,15 @@ type PRDetails struct {
 // has, so the heading is populated before the first fetch lands.
 func newPRDetails(deps Deps, pr store.PullRequest) (*PRDetails, tea.Cmd) {
 	p := &PRDetails{
-		number:      pr.Number,
-		ref:         prRepo(pr),
-		pr:          pr,
-		descFocused: true,
-		mergeMethod: deps.MergeMethod,
-		loaded:      map[prSection]bool{},
-		failed:      map[prSection]error{},
-		sess:        newSession(deps.Ctx),
+		number:          pr.Number,
+		ref:             prRepo(pr),
+		pr:              pr,
+		descFocused:     true,
+		mergeMethod:     deps.MergeMethod,
+		loaded:          map[prSection]bool{},
+		failed:          map[prSection]error{},
+		threadsExpanded: map[int64]bool{},
+		sess:            newSession(deps.Ctx),
 	}
 	return p, tea.Batch(p.loadInfo(deps), checkPRWrite(deps, p.ref, p.number))
 }
@@ -315,6 +352,9 @@ func (p *PRDetails) load(deps Deps, section prSection) tea.Cmd {
 		case prSectionReviewComments:
 			list, err := deps.Store.ReviewComments(ctx, ref, number, store.Page{Number: 1, Size: conversationPageSize})
 			return prDataMsg{section: section, reviewComments: list.Items, hasMore: list.HasMore, err: err}
+		case prSectionThreads:
+			threads, err := deps.Store.ReviewThreads(ctx, ref, number)
+			return prDataMsg{section: section, threads: threads, err: err}
 		}
 		return prDataMsg{section: section}
 	}
@@ -425,6 +465,9 @@ func (p *PRDetails) Update(deps Deps, msg tea.Msg) (Route, tea.Cmd) {
 // apply folds a fetched section into the route.
 func (p *PRDetails) apply(deps Deps, msg prDataMsg) (Route, tea.Cmd) {
 	p.loading = false
+	if msg.section == prSectionThreads {
+		return p.applyThreads(deps, msg)
+	}
 	if msg.err != nil {
 		p.err = msg.err
 		p.failed[msg.section] = msg.err
@@ -458,6 +501,35 @@ func (p *PRDetails) apply(deps Deps, msg prDataMsg) (Route, tea.Cmd) {
 		}
 		p.convVersion++
 	}
+	p.clamp(deps)
+	return p, nil
+}
+
+// applyThreads folds the resolution state in.
+//
+// A query that could not run leaves the conversation with no resolution to show
+// rather than refusing the screen: every thread is then drawn in full, which is
+// what the pane did before this existed, and nothing says the pull request has no
+// discussion. That is why this section reports no error — it is the one fetch
+// whose failure is a quieter screen rather than a missing one.
+func (p *PRDetails) applyThreads(deps Deps, msg prDataMsg) (Route, tea.Cmd) {
+	delete(p.failed, prSectionThreads)
+	p.loaded[prSectionThreads] = true
+
+	p.threadsResolved = nil
+	for _, thread := range msg.threads {
+		if !thread.IsResolved {
+			continue
+		}
+		if p.threadsResolved == nil {
+			p.threadsResolved = make(map[int64]bool, len(thread.CommentIDs))
+		}
+		for _, id := range thread.CommentIDs {
+			p.threadsResolved[id] = true
+		}
+	}
+	// Which threads are folded decides what the conversation looks like.
+	p.convVersion++
 	p.clamp(deps)
 	return p, nil
 }
@@ -540,10 +612,69 @@ func (p *PRDetails) move(deps Deps, delta int) (Route, tea.Cmd, bool) {
 		p.fileCursor += delta
 		p.diffScroll = 0
 	case prTabComments:
-		p.commentScroll += delta
+		return p.moveThreadFocus(deps, delta)
 	}
 	p.clamp(deps)
 	return p, nil, true
+}
+
+// moveThreadFocus walks the arrows through the conversation's buttons.
+//
+// A resolved thread carries a `[show]` or `[hide]` button, and the arrows walk
+// them in the order they appear, one thread at a time, scrolling the focused
+// button into view as they go. That is what leaves the conversation's own
+// scrolling to `u`/`d`, the page keys and the wheel: while there is a control to
+// move to, an arrow moves rather than scrolls. Once the focus has reached an end
+// of the list — and on a page with no resolved thread at all, which has no
+// buttons — the arrows scroll the pane, which is what they did before any of
+// this existed.
+func (p *PRDetails) moveThreadFocus(deps Deps, delta int) (Route, tea.Cmd, bool) {
+	p.threadFocus = clampThreadFocus(p.threadFocus, len(p.threadControls))
+	switch {
+	case len(p.threadControls) == 0,
+		delta > 0 && p.threadFocus >= len(p.threadControls)-1,
+		delta < 0 && p.threadFocus <= 0:
+		p.commentScroll += delta
+	default:
+		p.threadFocus += delta
+	}
+	p.clamp(deps)
+	p.revealThread(deps)
+	return p, nil, true
+}
+
+// toggleThread folds or opens the resolved thread the focus is on.
+func (p *PRDetails) toggleThread(deps Deps) (Route, tea.Cmd, bool) {
+	if p.threadFocus < 0 || p.threadFocus >= len(p.threadControls) {
+		return p, nil, true
+	}
+	thread := p.threadControls[p.threadFocus].thread
+	if p.threadsExpanded[thread] {
+		delete(p.threadsExpanded, thread)
+	} else {
+		p.threadsExpanded[thread] = true
+	}
+	// The lines on screen were rendered from the state that just changed.
+	p.convVersion++
+	p.clamp(deps)
+	p.revealThread(deps)
+	return p, nil, true
+}
+
+// revealThread scrolls the focused button into view, so walking the controls
+// does not walk off the screen.
+func (p *PRDetails) revealThread(deps Deps) {
+	if p.threadFocus < 0 || p.threadFocus >= len(p.threadControls) {
+		return
+	}
+	row := p.threadControls[p.threadFocus].row
+	height := p.commentViewport(deps)
+	if row < p.commentScroll {
+		p.commentScroll = row
+	} else if row >= p.commentScroll+height {
+		p.commentScroll = row - height + 1
+	}
+	p.commentScroll = clampOffset(p.commentScroll, len(p.commentLines(deps)))
 }
 
 // scroll moves the viewport of the active sub-tab by delta steps.
@@ -573,6 +704,18 @@ func (p *PRDetails) clamp(deps Deps) {
 	p.descScroll = clampOffset(p.descScroll, len(p.descriptionLines(deps, p.descriptionWidth(deps))))
 	p.commentScroll = clampOffset(p.commentScroll, len(p.commentLines(deps)))
 	p.diffScroll = clampOffset(p.diffScroll, len(diffLines(p.diffText())))
+	// After the conversation, because rendering it is what records the controls.
+	p.threadFocus = clampThreadFocus(p.threadFocus, len(p.threadControls))
+}
+
+// clampThreadFocus brings the button focus onto a control, or clears it when the
+// conversation has none: a thread that is not resolved carries no button, and a
+// resolution query that failed leaves every thread that way.
+func clampThreadFocus(focus, controls int) int {
+	if controls == 0 {
+		return -1
+	}
+	return min(max(focus, 0), controls-1)
 }
 
 // bodyWidth is the width the panes are laid out in: what a pane's rect works out
@@ -635,6 +778,10 @@ func (p *PRDetails) open(deps Deps) (Route, tea.Cmd, bool) {
 		}
 		details, cmd := newCommitDetails(deps, p.ref, commit)
 		return p, pushRouteThen(details, cmd), true
+	case prTabComments:
+		// The only thing on this tab that is opened rather than followed is a
+		// resolved thread's button.
+		return p.toggleThread(deps)
 	}
 	return p, nil, true
 }
@@ -771,7 +918,7 @@ func (p *PRDetails) activeSections() []prSection {
 	case prTabFiles:
 		return []prSection{prSectionFiles}
 	case prTabComments:
-		return conversationSections
+		return commentsSections
 	}
 	return nil
 }
