@@ -212,12 +212,9 @@ func (d *IssueDetails) heading(deps Deps, width int) []string {
 	}
 	title = hyperlink(theme, title, issueURL(d.issue))
 
-	repo := d.issue.Repository.FullName
-	if repo == "" {
-		repo = d.ref.String()
-	}
-	detail := fmt.Sprintf("Repo: %s | Author: @%s | Assignees: %s",
-		repo, issueAuthor(d.issue), orNone(issueAssignees(d.issue)))
+	repo := repoFullName(d.issue.Repository.FullName, d.ref)
+	detail := "Repo: " + hyperlink(theme, repo, repoPageURL(repo)) +
+		fmt.Sprintf(" | Author: @%s | Assignees: %s", issueAuthor(d.issue), orNone(issueAssignees(d.issue)))
 
 	return []string{
 		"  " + style(colour, bold).Render("["+state+"]") + " " +
@@ -469,13 +466,14 @@ func (c *IssueComments) View(deps Deps, r layout.Rect) string {
 	return layout.Fit(joinLines(lines), r.W, r.H)
 }
 
-// heading names the issue the conversation belongs to.
+// heading names the issue the conversation belongs to, and links it.
 func (c *IssueComments) heading(deps Deps, width int) []string {
 	theme := deps.Theme
 	title := fmt.Sprintf("Comments on issue #%d", c.number)
 	if strings.TrimSpace(c.title) != "" {
 		title += ": " + c.title
 	}
+	title = hyperlink(theme, title, issueCommentsURL(c.ref, c.number))
 	return []string{
 		"  " + style(theme.Title, bold).Render(layout.Truncate(title, max(width-layout.Gutter, 8))),
 		"  " + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-layout.Gutter, 1))),

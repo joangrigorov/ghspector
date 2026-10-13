@@ -219,7 +219,10 @@ func TestGoldenPullRequestScreens(t *testing.T) {
 		}},
 		// The shape that made the sub-tab look broken: nothing in the
 		// conversation comments and everything in the reviews. The second review
-		// carries no summary, so the pane has to read well without one.
+		// carries no summary, and the reply the standard fixture posts as part
+		// of it reads under the thread it answers rather than beneath this
+		// review, so the pane has to read well with a review left holding
+		// nothing of its own.
 		{"pr_comments_reviews_only_120x40", func(t *testing.T) Model {
 			heavy := prServer(t,
 				withoutConversationComments(),
@@ -229,7 +232,7 @@ func TestGoldenPullRequestScreens(t *testing.T) {
 						body: "The width needs a name before this lands.", at: workflowNow,
 					},
 					reviewSpec{
-						id: 3002, author: "dave", state: "COMMENTED",
+						id: replyReviewFixtureID, author: "dave", state: "COMMENTED",
 						at: workflowNow.Add(5 * time.Minute),
 					},
 				),
