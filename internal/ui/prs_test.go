@@ -1206,10 +1206,13 @@ func TestPRDetailsRendersEverySubTab(t *testing.T) {
 func TestPRCommentsShowsTheThreeListsInOneConversation(t *testing.T) {
 	log := newRequestLog()
 	srv := prServerWithLog(t, log)
-	m := openPRDetails(t, prsModel(t, srv, 120, 40))
+	// Taller than the goldens' 120x40: the cards give every contribution air and
+	// a rule, so the whole conversation needs the room to be read at once.
+	const w, h = 120, 56
+	m := openPRDetails(t, prsModel(t, srv, w, h))
 
 	m = pressAndDrive(t, m, "5")
-	out := ansi.Strip(screen(t, m, 120, 40))
+	out := ansi.Strip(screen(t, m, w, h))
 	for _, want := range []string{
 		// The conversation comment.
 		"Comment 1 looks good to me.",

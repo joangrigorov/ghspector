@@ -973,6 +973,51 @@ same property at 120x56, where the whole conversation fits. `TestThreadsAreDrawn
 pins the frame's characters, the reply's nesting inside the thread's rail, the
 width budget, and the absence of OSC 8 sequences.
 
+### Change — a contribution is washed, spaced and ruled off (this change)
+
+Three things made a long conversation hard to read rather than hard to parse: the
+author line sat directly on the body it introduced, only the top-level
+contributions were separated by anything, so a thread's remarks ran together, and
+the hunk excerpt stopped at three lines.
+
+Every contribution is now a card. `cardLines` draws its heading, a row of air,
+then its body, and closes it with a rule; a thread's remark is drawn out on the
+thread's rail and each reply inside its own frame, so the air row and the closing
+rule are what tell one remark from the next there. The hunk cap went from three
+lines to six, which the frame around the excerpt is what made affordable.
+
+The card is painted in its author's own wash, and the wash is derived rather than
+chosen: `authorTints` mixes the palette's accent into the palette's background in
+six even steps, so the shades are one family by construction and each palette
+gets washes on its own side of the background — `#05090a` to `#20343d` on the
+dark palette, `#f7fafb` to `#d9e7ed` on the light one. `authorTint` picks a
+shade with an FNV-1a hash of the login, so a person keeps their wash across
+refreshes, screens and conversations and no shade depends on who else is in the
+thread. `TestAuthorWashesStayInOneFamily` checks the property that makes it work
+— every shade takes the same share of the accent in every channel, each shade
+takes more than the last, and each stays quiet enough that the palette's own text
+keeps its contrast (the body colour above 7:1, the muted colour above 4:1) — and
+`TestWashesFollowTheLogin` checks the shade survives case and company.
+
+The paint itself needed a helper, because a plain `lipgloss` background does not
+survive its own contents: every styled run inside the line ends with `\x1b[m`,
+and a reset clears the background as well as the colour, so a background on the
+row covers the padding and the gaps between runs but leaves the words on the
+terminal's own colour. `paintLine` re-arms the paint after every reset, pads the
+row to the pane and touches nothing else, which is what lets
+`TestWashesPaintEachContributionWithoutMovingIt` assert that the same text sits in
+the same cells as a plain render. The same helper fixes the header, which had the
+defect already: the band stopped at the title's reset, so the account, the trail
+and the rate limit sat unpainted on roughly half the row —
+`TestHeaderBandPaintsBehindEveryRun` pins the repair.
+
+Cost, again: a card is two rows taller than the lines it replaced, on top of the
+frame's own rows. At 120x40 the standard fixture's conversation now reaches
+neither the reply in its thread nor the trailing body-less review, so the golden
+shows less than it did; the same conversation fits at 120x56, where
+`TestPRCommentsKeepAThreadTogetherAcrossReviews` reads it whole, and the snippets
+grew by three rows each.
+
 ### Security findings
 
 | Finding | Status |

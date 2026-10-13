@@ -345,11 +345,9 @@ func commentBlockLines(deps Deps, comments []store.IssueComment, width int) []st
 // commentBlock renders one comment: who wrote it, when, and the body as
 // markdown.
 func commentBlock(deps Deps, comment store.IssueComment, width int) []string {
-	out := []string{authorLine(deps, userLogin(comment.User), comment.HTMLURL, comment.CreatedAt, "")}
-	for _, line := range deps.Markdown.Lines(deps.Theme, comment.Body, max(width-4, 8)) {
-		out = append(out, "  "+line)
-	}
-	return out
+	author := userLogin(comment.User)
+	head := authorLine(deps, author, comment.HTMLURL, comment.CreatedAt, "")
+	return cardLines(deps, author, width, head, "", bodyLines(deps, comment.Body, "  ", width))
 }
 
 // userLogin is the login of the user who wrote something, with a placeholder

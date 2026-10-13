@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"image/color"
 	"strconv"
 	"strings"
 	"time"
@@ -325,11 +327,52 @@ func joinLR(width int, left, right string) string {
 }
 
 // band paints a full-width row with the header background when one is set.
+//
+// The row is built from styled runs, and every run ends by clearing the
+// background along with the colour, so the paint is re-armed behind each of
+// them: a plain background on the row would leave the account, the trail and the
+// rate limit sitting on the terminal's own colour.
 func band(theme Theme, width int, s string) string {
-	if theme.HeaderBackground == nil {
-		return s
+	return paintLine(theme.HeaderBackground, width, s)
+}
+
+// paintLine paints a background across the whole width behind whatever the line
+// holds, and leaves the text inside it untouched. The caller fits the content to
+// the width; the paint only pads what is short of it.
+//
+// A styled run inside the line ends with a reset, and a reset clears the
+// background as well as the foreground, so the paint is re-armed after every one
+// of them; without that a wash would cover the padding between runs and not the
+// words themselves, which is what a plain lipgloss background does.
+func paintLine(c color.Color, width int, line string) string {
+	code := paintCode(c)
+	if code == "" {
+		return line
 	}
-	return lipgloss.NewStyle().Background(theme.HeaderBackground).Width(width).Render(s)
+	out := strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+code)
+	out = strings.ReplaceAll(out, "\x1b[m", "\x1b[m"+code)
+	if pad := width - layout.Width(line); pad > 0 {
+		out += strings.Repeat(" ", pad)
+	}
+	return code + out + "\x1b[0m"
+}
+
+// paintCode is the escape that starts a background paint of a colour, or "" for
+// a palette that has none.
+func paintCode(c color.Color) string {
+	if c == nil {
+		return ""
+	}
+	if rgba, ok := c.(color.RGBA); ok {
+		return fmt.Sprintf("\x1b[48;2;%d;%d;%dm", rgba.R, rgba.G, rgba.B)
+	}
+	// A palette built elsewhere may carry a colour type this package does not
+	// know; ask lipgloss for the code it would use.
+	probe := lipgloss.NewStyle().Background(c).Render("x")
+	if i := strings.IndexByte(probe, 'm'); strings.HasPrefix(probe, "\x1b[") && i > 1 {
+		return probe[:i+1]
+	}
+	return ""
 }
 
 // renderTooSmall is the whole screen when the terminal is below the supported

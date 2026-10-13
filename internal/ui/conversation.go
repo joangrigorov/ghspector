@@ -52,10 +52,11 @@ type reviewThread struct {
 // top-level contribution uses, because a thread is part of the review above it.
 const threadIndent = "    "
 
-// hunkTail is how much of a diff hunk is shown above an inline comment. Three
-// lines is the context GitHub's own view shows around a commented line, and it
-// is what makes a remark like "this should be a const" mean something.
-const hunkTail = 3
+// hunkTail is how much of a diff hunk is shown above an inline comment. GitHub
+// sends a few lines of context around the commented line, and the tail of that
+// is what a remark like "this should be a const" needs to mean anything; six
+// lines give the frame something to hold without pushing the thread off screen.
+const hunkTail = 6
 
 // truncatedNote is what the pane says when a page came back full.
 const truncatedNote = "The API returned a full page; the rest is on GitHub (w opens it)."
@@ -321,12 +322,9 @@ func entryLines(deps Deps, entry conversationEntry, width int) []string {
 // reviewLines renders a review: who wrote it, what they concluded, the summary
 // they left, and the threads they wrote under it.
 func reviewLines(deps Deps, review store.Review, threads []reviewThread, width int) []string {
-	out := []string{authorLine(deps, userLogin(review.User), review.HTMLURL, reviewTime(review), reviewStateLabel(deps.Theme, review))}
-	if strings.TrimSpace(review.Body) != "" {
-		for _, line := range deps.Markdown.Lines(deps.Theme, review.Body, max(width-4, 8)) {
-			out = append(out, "  "+line)
-		}
-	}
+	author := userLogin(review.User)
+	head := authorLine(deps, author, review.HTMLURL, reviewTime(review), reviewStateLabel(deps.Theme, review))
+	out := cardLines(deps, author, width, head, "", bodyLines(deps, review.Body, "  ", width))
 	for _, thread := range threads {
 		out = append(out, threadLines(deps, thread, width)...)
 	}
@@ -387,22 +385,71 @@ func threadLines(deps Deps, thread reviewThread, width int) []string {
 		comment := thread.comments[i]
 		if i > 0 {
 			out = append(out, threadIndent+rule.Render(frameBar))
-			out = append(out, replyLines(deps, comment, inner, width)...)
+			out = append(out, replyCard(deps, comment, inner, width)...)
 			continue
 		}
-		head := style(theme.Accent, normal).Render(rootMark) + " " +
-			authorHeading(deps, userLogin(comment.User), comment.HTMLURL, comment.CreatedAt, "")
-		out = append(out, inner+layout.Truncate(head, innerWidth))
-		out = append(out, bodyLines(deps, comment.Body, inner+"  ", width)...)
+		out = append(out, rootCard(deps, comment, inner, innerWidth, width)...)
 	}
 
 	return append(out, threadIndent+rule.Render(frameClose))
 }
 
+// rootCard draws the remark a thread started from: its heading, marked so the
+// eye finds where the thread began, its body, and the rule that closes it. The
+// card wears its author's wash, and an answer follows the rule.
+func rootCard(deps Deps, comment store.ReviewComment, indent string, innerWidth, width int) []string {
+	theme := deps.Theme
+	author := userLogin(comment.User)
+
+	head := indent + layout.Truncate(style(theme.Accent, normal).Render(rootMark)+" "+
+		authorHeading(deps, author, comment.HTMLURL, comment.CreatedAt, ""), innerWidth)
+	out := cardLines(deps, author, width, head, indent, bodyLines(deps, comment.Body, indent+"  ", width))
+
+	foot := indent + style(theme.HeaderRule, normal).Render(strings.Repeat("─", max(width-layout.Width(indent), 1)))
+	return append(out, paintLine(authorTint(theme, author), width, foot))
+}
+
+// replyCard draws one answer as a frame of its own, nested inside the thread's
+// rail and titled by who wrote it. Its foot is a rule that doubles as the
+// horizontal line under the remark. The card wears its author's wash.
+func replyCard(deps Deps, comment store.ReviewComment, indent string, width int) []string {
+	theme := deps.Theme
+	rule := style(theme.HeaderRule, normal)
+	author := userLogin(comment.User)
+	tint := authorTint(theme, author)
+
+	head := indent + rule.Render(frameTop) + layout.Truncate(
+		authorHeading(deps, author, comment.HTMLURL, comment.CreatedAt, ""),
+		max(width-layout.Width(indent)-frameCells, 8))
+
+	out := cardLines(deps, author, width, head, indent+rule.Render(frameRail),
+		bodyLines(deps, comment.Body, indent+rule.Render(frameRail)+"  ", width))
+	foot := indent + rule.Render(frameClose+strings.Repeat("─", max(width-layout.Width(indent)-2, 1)))
+	return append(out, paintLine(tint, width, foot))
+}
+
+// cardLines draws one contribution as a wash in its author's shade: the heading,
+// a row of air, then the body. The air row carries the rail the contribution is
+// drawn inside, so a framed card does not break its own frame. A palette with no
+// washes hands the lines back as they are, so a plain render gains the spacing
+// and nothing else.
+func cardLines(deps Deps, login string, width int, head, air string, body []string) []string {
+	tint := authorTint(deps.Theme, login)
+	out := []string{paintLine(tint, width, head)}
+	if len(body) == 0 {
+		return out
+	}
+	out = append(out, paintLine(tint, width, air))
+	for _, line := range body {
+		out = append(out, paintLine(tint, width, line))
+	}
+	return out
+}
+
 // snippetLines renders the lines a remark was written against as a small frame
 // of its own, so an excerpt of code is told apart from prose at a glance. The
-// first line rides in the frame's corner, which keeps a three-line hunk from
-// costing five rows.
+// first line rides in the frame's corner, which saves the excerpt a row of its
+// own.
 func snippetLines(deps Deps, hunk []string, indent string, inner int) []string {
 	rule := style(deps.Theme.HeaderRule, normal)
 	styled := diffStyled(deps.Theme, hunk)
@@ -417,20 +464,13 @@ func snippetLines(deps Deps, hunk []string, indent string, inner int) []string {
 	return append(out, indent+rule.Render(frameClose))
 }
 
-// replyLines renders one answer as a frame of its own, nested inside the thread's
-// rail and titled by who wrote it and when.
-func replyLines(deps Deps, comment store.ReviewComment, indent string, width int) []string {
-	rule := style(deps.Theme.HeaderRule, normal)
-	inner := max(width-layout.Width(indent)-frameCells, 8)
-	head := authorHeading(deps, userLogin(comment.User), comment.HTMLURL, comment.CreatedAt, "")
-	out := []string{indent + rule.Render(frameTop) + layout.Truncate(head, inner)}
-	out = append(out, bodyLines(deps, comment.Body, indent+rule.Render(frameRail)+"  ", width)...)
-	return append(out, indent+rule.Render(frameClose))
-}
-
 // bodyLines renders a contribution's markdown under the prefix its frame puts it
-// at, wrapped to what the pane has left.
+// at, wrapped to what the pane has left. An empty body is no lines at all, so a
+// card of a heading only has no air under it.
 func bodyLines(deps Deps, body, prefix string, width int) []string {
+	if strings.TrimSpace(body) == "" {
+		return nil
+	}
 	var out []string
 	for _, line := range deps.Markdown.Lines(deps.Theme, body, max(width-layout.Width(prefix), 8)) {
 		out = append(out, prefix+line)

@@ -336,10 +336,19 @@ func TestCommentLocationFallsBackToTheOriginalLine(t *testing.T) {
 // the hunk is the part just above the remark, and a hunk that is nothing but its
 // header has no context to show.
 func TestHunkLinesKeepsTheContextAboveTheComment(t *testing.T) {
-	hunk := "@@ -1,5 +1,6 @@\n one\n two\n three\n four\n five\n"
-	want := []string{" three", " four", " five"}
+	// A hunk longer than the excerpt gives up its head: what a remark needs is
+	// the lines just above the one it was written against.
+	hunk := "@@ -1,9 +1,10 @@\n one\n two\n three\n four\n five\n six\n seven\n eight\n"
+	want := []string{" three", " four", " five", " six", " seven", " eight"}
 	if got := hunkLines(hunk); !slices.Equal(got, want) {
 		t.Errorf("hunk tail = %q, want %q", got, want)
+	}
+
+	// A short hunk is shown whole, header and all: it says where in the file the
+	// remark was written.
+	short := "@@ -1,2 +1,3 @@\n one\n two\n"
+	if got, want := hunkLines(short), []string{"@@ -1,2 +1,3 @@", " one", " two"}; !slices.Equal(got, want) {
+		t.Errorf("short hunk = %q, want %q", got, want)
 	}
 
 	for name, hunk := range map[string]string{
@@ -417,23 +426,61 @@ func TestThreadsAreDrawnInFrames(t *testing.T) {
 	// The frames are structure, so the assertions read the characters the pane
 	// draws and ignore the weights the bold names carry.
 	plain := ansi.Strip(joined)
+	var stripped []string
+	for _, line := range lines {
+		stripped = append(stripped, ansi.Strip(line))
+	}
 
 	for _, want := range []string{
 		// The thread's frame, titled by the location.
 		threadIndent + frameTop + "internal/ui/table.go:12",
 		threadIndent + frameClose,
 		// The snippet, in a frame inside the thread's rail.
-		threadIndent + frameRail + frameTop + "-    return 40",
+		threadIndent + frameRail + frameTop + "@@ -10,4 +10,5 @@",
 		threadIndent + frameRail + frameClose,
 		// The remark the thread started from, marked, out on the thread's rail.
 		threadIndent + frameRail + rootMark + " carol",
-		// The reply, in a frame of its own one rail further in.
+		// The reply, in a frame of its own one rail further in, its heading and
+		// body separated by air.
 		threadIndent + frameRail + frameTop + "octocat",
-		threadIndent + frameRail + frameRail + "  inline octocat",
+		threadIndent + frameRail + frameRail + "\n" + threadIndent + frameRail + frameRail + "  inline octocat",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("the thread is missing %q:\n%s", want, plain)
 		}
+	}
+
+	// The remark's heading, a row of air that keeps the thread's rail running,
+	// then the body.
+	rows := strings.Split(plain, "\n")
+	heading := -1
+	for i, row := range rows {
+		if strings.HasPrefix(strings.TrimRight(row, " "), threadIndent+frameRail+rootMark) {
+			heading = i
+			break
+		}
+	}
+	if heading < 0 || heading+2 >= len(rows) {
+		t.Fatalf("the remark's heading is not where the frame draws it:\n%s", plain)
+	}
+	if air := strings.TrimRight(rows[heading+1], " "); air != strings.TrimRight(threadIndent+frameRail, " ") {
+		t.Errorf("the row under the heading is %q, want the thread's rail", air)
+	}
+	if !strings.Contains(rows[heading+2], "inline carol") {
+		t.Errorf("the body does not follow the air row: %q", rows[heading+2])
+	}
+
+	// Every remark is closed by a rule: the remark's own line, and the rule that
+	// forms the foot of the reply's frame.
+	rules := 0
+	for _, line := range stripped {
+		line = strings.TrimRight(line, " ")
+		if strings.HasPrefix(line, threadIndent+frameBar+"  ─") || strings.HasPrefix(line, threadIndent+frameRail+frameClose+"─") {
+			rules++
+		}
+	}
+	if rules != 2 {
+		t.Errorf("the remarks are closed by %d rules, want the remark's line and the reply's foot:\n%s", rules, plain)
 	}
 
 	if first, nested := strings.Index(plain, threadIndent+frameTop), strings.Index(plain, threadIndent+frameRail+frameTop); nested <= first {
@@ -449,6 +496,71 @@ func TestThreadsAreDrawnInFrames(t *testing.T) {
 	// A frame is characters, so it needs no link sequence to hold together.
 	if strings.Contains(joined, "\x1b]8;") {
 		t.Errorf("a conversation without hyperlinks carries OSC 8 sequences:\n%q", joined)
+	}
+}
+
+// TestWashesPaintEachContributionWithoutMovingIt covers the coloured render:
+// every row of a contribution opens in its author's own wash, the wash is a
+// background and nothing else, so the same text sits in the same cells as the
+// plain render, and two authors in one thread do not share a shade.
+func TestWashesPaintEachContributionWithoutMovingIt(t *testing.T) {
+	theme := DarkTheme()
+	conv := newConversation(
+		nil,
+		[]store.Review{aReview(10, "carol", "APPROVED", conversationNow)},
+		[]store.ReviewComment{
+			anInline(100, 10, "carol", "internal/ui/table.go", 12, conversationNow),
+			func() store.ReviewComment {
+				reply := anInline(101, 10, "octocat", "internal/ui/table.go", 12, conversationNow.Add(time.Minute))
+				reply.InReplyToID = 100
+				return reply
+			}(),
+		},
+		false,
+	)
+
+	const width = 100
+	painted := conversationLines(Deps{Theme: theme, Markdown: NewMarkdown()}, conv, width)
+	plain := conversationLines(plainDeps(), conv, width)
+	if len(painted) != len(plain) {
+		t.Fatalf("the coloured render has %d rows and the plain one %d", len(painted), len(plain))
+	}
+
+	shades := map[string]string{
+		"carol":   paintCode(authorTint(theme, "carol")),
+		"octocat": paintCode(authorTint(theme, "octocat")),
+	}
+	if shades["carol"] == "" || shades["carol"] == shades["octocat"] {
+		t.Fatalf("the two authors of one thread share the shade %q", shades["carol"])
+	}
+
+	rows := map[string]int{}
+	for i := range painted {
+		// The wash carries the row out to the pane's edge, so the painted row is
+		// the plain one padded; the text itself is untouched.
+		got := strings.TrimRight(ansi.Strip(painted[i]), " ")
+		want := strings.TrimRight(ansi.Strip(plain[i]), " ")
+		if got != want {
+			t.Errorf("row %d reads %q painted and %q plain, want the paint to change no text", i, got, want)
+		}
+		if width := ansi.StringWidth(painted[i]); width > 100 {
+			t.Errorf("row %d is %d cells wide, want at most the pane's 100", i, width)
+		}
+		// A row that names an author belongs to that author's block, and a block
+		// is read as one because every one of its rows carries the same wash.
+		for login, code := range shades {
+			if strings.Contains(ansi.Strip(painted[i]), login) {
+				if !strings.HasPrefix(painted[i], code) {
+					t.Errorf("row %d names %s but does not open in their shade: %q", i, login, painted[i])
+				}
+				rows[login]++
+			}
+		}
+	}
+	for login := range shades {
+		if rows[login] == 0 {
+			t.Errorf("no row is painted in %s's shade", login)
+		}
 	}
 }
 
