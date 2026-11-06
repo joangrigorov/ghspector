@@ -4,11 +4,11 @@ go 1.27.2
 
 require (
 	charm.land/bubbles/v2 v2.2.1
-	charm.land/bubbletea/v2 v2.1.0
+	charm.land/bubbletea/v2 v2.1.1
 	charm.land/glamour/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/x/ansi v0.11.9
-	github.com/charmbracelet/x/exp/golden v0.0.0-20251109135125-8916d276318f
+	github.com/charmbracelet/x/exp/golden v0.1.0
 	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20261011004359-2acd7e345453
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
 	golang.org/x/time v0.16.0
