@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/joangrigorov/ghspector/compare/v0.4.0...v0.4.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **deps:** bump the go-dependencies group across 1 directory with 3 updates ([#35](https://github.com/joangrigorov/ghspector/issues/35)) ([b9f57cc](https://github.com/joangrigorov/ghspector/commit/b9f57cc245f5a43ea0abb7141cdc4da75b132aed))
+
 ## [0.4.0](https://github.com/joangrigorov/ghspector/compare/v0.3.0...v0.4.0) (2026-10-13)
 
 
